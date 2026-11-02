@@ -88,3 +88,9 @@ CSS、JS、图片和数据内嵌，未发现外部资源依赖。`scripts/genera
 - 发布包升级为 `staging/DataPlatform-0.2.0`，旧 0.1.0 包保留。生产业务数据库、源 Excel、共享规则及运行机密不自动打入新代码包。
 - 门户及本地代理共 12 项 Node 测试通过；SOP 默认演示启动和现有业务快照启动均通过。验收截图为 `artifacts/portal-sop-desktop.jpg`。
 - PowerShell 5.1 生成的随机代理 key 已通过 Python `GatewayConfig.load` 跨语言验证；C# 模块离线编译通过。源码补丁在原 SOP 干净工作区通过 `git apply --check`，未应用到原仓库。
+
+## 0.2.1 计划部图标
+
+为计划部专用门户增加统一原创图标：蓝色底、白色计划日历与青绿色推进箭头。已应用到门户标识、浏览器 favicon、移动收藏图标和 SOP 看板；门户名称调整为“智选车计划部数据平台”。提供 SVG、512/180/32 PNG、多尺寸 ICO 及开发导出脚本。
+
+配置与 JavaScript 检查、12 项 Node 测试通过；浏览器确认门户 40px 和 SOP 26px 图标均正常加载，无控制台错误。SOP 上游补丁已包含二进制图标更新并通过原工作区的 `git apply --check`。发布包更新为 `staging/DataPlatform-0.2.1`。

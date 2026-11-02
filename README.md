@@ -1,4 +1,6 @@
-# 智选车统一门户
+# 智选车计划部数据平台
+
+<img src="portal/assets/planning-icon.svg" width="80" height="80" alt="计划部工作空间图标">
 
 纯 HTML / CSS / JavaScript 门户，通过同源 iframe 承载独立业务应用；生产入口为 IIS。本仓库无需前端构建、npm 安装或外部 CDN。Node.js 仅用于本地预览和测试。
 
@@ -43,7 +45,7 @@ npm run dev:sop -- --seed-from 'D:\Projects\SOP' --shared-config 'D:\Projects\Or
 
 公开 Git 仓库只保存源代码、测试和配置模板。OrderIQ 发布网页、SOP 业务数据、本地截图、离线 wheel 及发布 ZIP 均不上传 Git；文中的 `staging/` 和 `offline/` 是开发机生成目录。新克隆仓库需先导入自己的 OrderIQ 发布文件；联网开发机可用 `python -m pip install -r services/sop/requirements-intranet.txt` 安装 SOP 依赖，再运行演示预览。
 
-完整步骤见 [SOP 内网部署](docs/sop-intranet.md)。当前提供 `staging/DataPlatform-0.2.0` 发布包，含门户、OrderIQ、SOP 源码、离线 Python wheel、IIS 身份模块源码及脚本。内网 IIS 的 ARR、URL Rewrite、ASP.NET 4.x 和 Windows Authentication 仍需由管理员安装并验收。
+完整步骤见 [SOP 内网部署](docs/sop-intranet.md)。当前提供 `staging/DataPlatform-0.2.1` 发布包，含门户、OrderIQ、SOP 源码、离线 Python wheel、IIS 身份模块源码及脚本。内网 IIS 的 ARR、URL Rewrite、ASP.NET 4.x 和 Windows Authentication 仍需由管理员安装并验收。
 
 域名和写入域用户组在内网填写；默认不开放写入。业务数据库、原始 Excel 和真实共享规则应从内网现有系统迁移到 Web 根目录外，不随代码包自动复制。`deploy/sop-upstream.patch` 可用于将本轮适配回合并到原 SOP 独立仓库，已做 `git apply --check` 验证。
 
