@@ -1,0 +1,106 @@
+import http from 'node:http';
+import { readFile, realpath, stat } from 'node:fs/promises';
+import path from 'node:path';
+import { fileURLToPath, pathToFileURL } from 'node:url';
+
+export const STATIC_APPS = Object.freeze({ orderiq: 'orderiq', inventory: 'inventory' });
+const PROJECT_ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
+const MIME = {
+  '.html': 'text/html; charset=utf-8', '.css': 'text/css; charset=utf-8',
+  '.js': 'text/javascript; charset=utf-8', '.mjs': 'text/javascript; charset=utf-8',
+  '.json': 'application/json; charset=utf-8', '.svg': 'image/svg+xml',
+  '.png': 'image/png', '.jpg': 'image/jpeg', '.jpeg': 'image/jpeg',
+  '.gif': 'image/gif', '.webp': 'image/webp', '.ico': 'image/x-icon',
+  '.woff': 'font/woff', '.woff2': 'font/woff2', '.txt': 'text/plain; charset=utf-8',
+};
+const PRIVATE = new Set(['web.config', 'deploy', 'data', 'services', 'logs', 'scripts', 'tests', 'node_modules']);
+
+function inside(base, target) {
+  const relative = path.relative(base, target);
+  return relative === '' || (!relative.startsWith(`..${path.sep}`) && relative !== '..' && !path.isAbsolute(relative));
+}
+
+export function parseRequestPath(rawUrl) {
+  const rawPath = rawUrl.split('?')[0];
+  if (!rawPath.startsWith('/') || rawPath.startsWith('//')) throw new Error('Invalid path');
+  // Validate the original string before WHATWG URL normalization can erase traversal.
+  if (/%(?:2f|5c)/i.test(rawPath)) throw new Error('Encoded separator');
+  const decoded = decodeURIComponent(rawPath);
+  if (/[\\%:#\x00-\x1f\x7f]/.test(decoded) || decoded.includes('//')) throw new Error('Invalid path');
+  const parts = decoded.split('/').filter(Boolean);
+  if (parts.some(part => part === '.' || part === '..' || part.startsWith('.') || PRIVATE.has(part.toLowerCase()) || /[. ]$/.test(part))) throw new Error('Private path');
+  return { pathname: decoded, parts };
+}
+
+/** Local-only preview. This intentionally has no authentication or dynamic proxy. */
+export function createServer({ root = PROJECT_ROOT, sopProxy = null } = {}) {
+  if (sopProxy && (!Number.isInteger(sopProxy.port) || sopProxy.port < 1 || sopProxy.port > 65535 || typeof sopProxy.secret !== 'string' || sopProxy.secret.length < 32 || typeof sopProxy.user !== 'string' || /[\r\n]/.test(sopProxy.user))) throw new Error('Invalid local SOP preview configuration');
+  return http.createServer(async (request, response) => {
+    const headers = { 'Cache-Control': 'no-store', 'X-Content-Type-Options': 'nosniff', 'X-Frame-Options': 'SAMEORIGIN' };
+    const send = (status, message, extra = {}) => {
+      const body = Buffer.from(message);
+      response.writeHead(status, { ...headers, 'Content-Type': 'text/plain; charset=utf-8', 'Content-Length': body.length, ...extra });
+      response.end(request.method === 'HEAD' ? undefined : body);
+    };
+    let parsed;
+    try { parsed = parseRequestPath(request.url); } catch { return send(400, 'Invalid or private request path'); }
+    const { pathname, parts } = parsed;
+    if (sopProxy && parts[0] === 'sop') {
+      if (pathname === '/sop') return send(308, 'Redirecting', { Location: '/sop/' });
+      const forwarded = { ...request.headers, host: `127.0.0.1:${sopProxy.port}` };
+      for (const header of Object.keys(forwarded)) if (header.startsWith('x-sop-') || ['connection', 'transfer-encoding', 'proxy-authorization', 'upgrade', 'te', 'trailer'].includes(header)) delete forwarded[header];
+      forwarded['x-sop-proxy-key'] = sopProxy.secret;
+      forwarded['x-sop-user'] = sopProxy.user;
+      const upstream = http.request({ hostname: '127.0.0.1', port: sopProxy.port, path: request.url, method: request.method, headers: forwarded }, incoming => {
+        const incomingHeaders = { ...incoming.headers };
+        delete incomingHeaders['transfer-encoding']; delete incomingHeaders.connection;
+        response.writeHead(incoming.statusCode, incomingHeaders);
+        incoming.pipe(response);
+      });
+      upstream.setTimeout(30000, () => upstream.destroy(new Error('SOP preview timed out')));
+      upstream.on('error', () => { if (!response.headersSent) send(502, 'Local SOP service unavailable'); else response.destroy(); });
+      request.on('aborted', () => upstream.destroy());
+      request.pipe(upstream);
+      return;
+    }
+    if (!['GET', 'HEAD'].includes(request.method)) return send(405, 'Method not allowed', { Allow: 'GET, HEAD' });
+    const appDirectory = Object.hasOwn(STATIC_APPS, parts[0]) ? STATIC_APPS[parts[0]] : null;
+    const base = appDirectory ? path.join(root, 'apps', appDirectory) : path.join(root, 'portal');
+    const relativeParts = appDirectory ? parts.slice(1) : parts;
+    let candidate = path.join(base, ...relativeParts);
+    if (!inside(base, candidate)) return send(403, 'Forbidden');
+    try {
+      const resolvedBase = await realpath(base);
+      candidate = await realpath(candidate);
+      if (!inside(resolvedBase, candidate)) return send(403, 'Forbidden');
+      let info = await stat(candidate);
+      if (info.isDirectory()) {
+        if (!pathname.endsWith('/')) {
+          const query = request.url.includes('?') ? request.url.slice(request.url.indexOf('?')) : '';
+          return send(308, 'Redirecting', { Location: `${encodeURI(pathname)}/${query}` });
+        }
+        candidate = await realpath(path.join(candidate, 'index.html'));
+        if (!inside(resolvedBase, candidate)) return send(403, 'Forbidden');
+        info = await stat(candidate);
+      }
+      if (!info.isFile() || !Object.hasOwn(MIME, path.extname(candidate).toLowerCase())) return send(404, 'Not found');
+      // Read before sending headers so an interrupted publication returns a clear error.
+      const content = request.method === 'HEAD' ? null : await readFile(candidate);
+      response.writeHead(200, { ...headers, 'Content-Type': MIME[path.extname(candidate).toLowerCase()], 'Content-Length': content?.length ?? info.size });
+      response.end(content);
+    } catch (error) {
+      if (['ENOENT', 'ENOTDIR'].includes(error.code)) return send(404, 'Not found');
+      if (['EACCES', 'EPERM'].includes(error.code)) return send(403, 'Forbidden');
+      send(500, 'Unable to read preview file');
+    }
+  });
+}
+
+if (process.argv[1] && import.meta.url === pathToFileURL(path.resolve(process.argv[1])).href) {
+  const portIndex = process.argv.indexOf('--port');
+  const port = portIndex >= 0 ? Number(process.argv[portIndex + 1]) : 4173;
+  if (!Number.isInteger(port) || port < 1 || port > 65535) throw new Error('Port must be between 1 and 65535');
+  const server = createServer();
+  server.on('error', error => { console.error(`Preview failed: ${error.message}`); process.exitCode = 1; });
+  server.listen(port, '127.0.0.1', () => console.log(`本地预览：http://127.0.0.1:${port}/（仅本机，无 Windows 身份认证）`));
+}

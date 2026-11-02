@@ -1,0 +1,12 @@
+{
+  "SiteName": "DataPlatform",
+  "ApplicationPool": "DataPlatform-Static",
+  "DeploymentRoot": "D:\\DataPlatform",
+  "HostName": "",
+  "Port": 8080,
+  "RequireReverseProxy": false,
+  "StaticApplications": [
+    { "Name": "orderiq", "Enabled": true },
+    { "Name": "inventory", "Enabled": false }
+  ]
+}

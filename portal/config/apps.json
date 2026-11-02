@@ -1,0 +1,16 @@
+{
+  "platform": { "name": "智选车业务数据平台", "shortName": "智选车", "version": "0.2.0", "defaultApp": "home", "loadTimeoutMs": 20000, "identityEndpoint": null },
+  "groups": [
+    { "id": "operations", "name": "经营分析", "apps": [
+      { "id": "orderiq", "name": "订单分析", "subtitle": "OrderIQ", "description": "集中查看订单趋势、车型表现与经营数据。", "url": "/orderiq/", "icon": "chart", "enabled": true, "status": "ready", "version": null, "dataUpdatedAt": null },
+      { "id": "inventory", "name": "库存分析", "subtitle": "Inventory", "description": "掌握库存结构与周转情况，辅助业务决策。", "url": "/inventory/", "icon": "box", "enabled": true, "status": "pending", "version": null, "dataUpdatedAt": null }
+    ] },
+    { "id": "planning", "name": "计划管理", "apps": [
+      { "id": "sop", "name": "SOP 计划看板", "subtitle": "Sales & Operations", "description": "协同销售与运营计划，跟踪计划执行进度。", "url": "/sop/", "icon": "calendar", "enabled": true, "status": "ready", "version": "portal-0.2.0", "dataUpdatedAt": null },
+      { "id": "forecast", "name": "销量预测", "subtitle": "Forecast", "description": "结合业务变化，查看销量预测与需求计划。", "url": "/forecast/", "icon": "trend", "enabled": true, "status": "pending", "version": null, "dataUpdatedAt": null }
+    ] },
+    { "id": "growth", "name": "客户运营", "apps": [
+      { "id": "leads", "name": "线索分析", "subtitle": "Leads", "description": "追踪线索流转与转化表现，发现增长机会。", "url": "/leads/", "icon": "users", "enabled": true, "status": "pending", "version": null, "dataUpdatedAt": null }
+    ] }
+  ]
+}

@@ -1,0 +1,195 @@
+"""Acceptance checks for the openpyxl maintenance workbook writer."""
+import json
+import os
+import tempfile
+import unittest
+import xml.etree.ElementTree as ET
+import zipfile
+from datetime import datetime
+from pathlib import Path
+from unittest.mock import patch
+
+from openpyxl import load_workbook
+
+from sop_store import SOPStore, TZ, ValidationError
+from sop_workbook import WorkbookSync
+from tests.test_inline_workbook import change_rows
+from tests.test_workbook_sync import edit_cell
+
+
+class OfflinePlanWorkbookTest(unittest.TestCase):
+    def setUp(self):
+        temp = tempfile.TemporaryDirectory(prefix="sop-offline-plan-")
+        self.addCleanup(temp.cleanup)
+        self.root = Path(temp.name)
+        source = self.root / "sales.json"
+        self.source = source
+        source.write_text(json.dumps({"meta": {}, "products": [
+            {"id": "a", "brand": "问界", "model": "M5", "version": "Max"},
+            {"id": "b", "brand": "问界", "model": "M5", "version": "Ultra"}],
+            "sales": []}, ensure_ascii=False), encoding="utf-8")
+        self.store = SOPStore(self.root / "test.sqlite3", source,
+                              lambda: datetime(2026, 10, 27, 12, tzinfo=TZ))
+        self.addCleanup(self.store.close)
+        self.path = self.root / "SOP计划维护.xlsx"
+        self.sync = WorkbookSync(self.store, self.path)
+        environment = patch.dict(os.environ, {"SOP_EXCEL_ENGINE": "python"})
+        environment.start()
+        self.addCleanup(environment.stop)
+
+    def _spec(self):
+        return self.sync._parse(self.path.read_bytes())[1]["layout"]["sheets"][0]
+
+    def test_maintenance_without_editable_cells_omits_empty_validation_xml(self):
+        from sop_xlsx_plan import write_plan_workbook
+        from tests.test_inline_renderer import input_payload
+
+        payload = input_payload()
+        for mapping in payload["layout"]["cells"]:
+            mapping["editable"] = False
+        write_plan_workbook({**payload, "output_path": str(self.path)})
+        with zipfile.ZipFile(self.path) as archive:
+            sheet = ET.fromstring(archive.read("xl/worksheets/sheet1.xml"))
+        ns = {"m": "http://schemas.openxmlformats.org/spreadsheetml/2006/main"}
+        self.assertIsNone(sheet.find("m:dataValidations", ns))
+        self.assertIsNotNone(sheet.find("m:mergeCells", ns))
+        book = load_workbook(self.path, data_only=True)
+        try:
+            row = next(item["row"] for item in payload["layout"]["sheets"][0]["rows"]
+                       if item.get("product_id") == "a")
+            self.assertEqual(book["SOP计划"][f"P{row}"].value, 40)
+            self.assertTrue(book["SOP计划"][f"M{row}"].protection.locked)
+        finally:
+            book.close()
+
+    def test_default_sync_writes_readable_styled_workbook_and_imports_edit(self):
+        self.store.save_plans({"owner": "验收", "changes": [
+            {"product_id": "a", "month": "2026-10", "sop": 0, "forecast": 10, "revision": 0},
+            {"product_id": "b", "month": "2026-10", "sop": 125, "forecast": None, "revision": 0}]})
+        status = self.sync.sync()
+        self.assertEqual(status["status"], "synced", status)
+        token, expected, _, _, values = self.sync._parse(self.path.read_bytes())
+        self.assertTrue(token)
+        self.assertEqual((values["a\t2026-10"], values["b\t2026-10"]), (0, 125))
+        self.assertEqual(expected["months"][-1], "2027-12")
+
+        workbook = load_workbook(self.path, data_only=True)
+        self.addCleanup(workbook.close)
+        sheet = workbook["SOP计划"]
+        self.assertEqual(sheet["A1"].value, "SOP计划表")
+        self.assertEqual(sheet["D1"].value, "2026-01—2027-12")
+        self.assertIn("A1:C1", {str(area) for area in sheet.merged_cells.ranges})
+        self.assertEqual(sheet.freeze_panes, "D5")
+        self.assertIn("A5:A8", {str(area) for area in sheet.merged_cells.ranges})
+        self.assertIn("B5:B6", {str(area) for area in sheet.merged_cells.ranges})
+        self.assertEqual(sheet["P5"].value, 0)
+        self.assertEqual(sheet["P6"].value, 125)
+        self.assertEqual(sheet["M7"].value, 125)
+        self.assertEqual(sheet["P10"].value, 125)
+        self.assertEqual(sheet["D5"].fill.fgColor.rgb[-6:], "F0F2F4")
+        self.assertEqual(sheet["M5"].font.sz, 11)
+        self.assertEqual(sheet["P6"].font.color.rgb[-6:], "B62025")
+        self.assertFalse(sheet["M5"].protection.locked)
+        self.assertTrue(sheet["P5"].protection.locked)
+        self.assertEqual(workbook["_layout"].sheet_state, "hidden")
+        from openpyxl.utils import get_column_letter
+        self.assertTrue(sheet.column_dimensions[get_column_letter(expected["layout"]["sheets"][0]["product_column"])].hidden)
+        self.assertEqual(sheet.column_dimensions[get_column_letter(expected["layout"]["sheets"][0]["product_column"])].width, 0)
+
+        address = next(cell["cell"] for cell in expected["layout"]["cells"]
+                       if cell["product_id"] == "a" and cell["month"] == "2026-10")
+        edit_cell(self.path, address, 15)
+        status = self.sync.sync()
+        self.assertEqual(status["status"], "synced", status)
+        plan = self.store.db.execute("SELECT sop, forecast FROM plans WHERE product_id='a' AND month='2026-10'").fetchone()
+        self.assertEqual((plan["sop"], plan["forecast"]), (15, 10))
+
+    def test_inline_add_and_delete_still_import_with_python_writer(self):
+        self.assertEqual(self.sync.sync()["status"], "synced")
+        spec = self._spec()
+        second = next(row["row"] for row in spec["rows"] if row.get("product_id") == "b")
+        month = next(column["column"] for column in spec["columns"] if column.get("month") == "2026-10")
+        from openpyxl.utils import get_column_letter
+        change_rows(self.path, second, insert={"A": "问界", "B": "M7", "C": "新版本",
+                                                get_column_letter(month): 7})
+        status = self.sync.sync()
+        self.assertEqual(status["status"], "synced", status)
+        added = next(product for product in self.store.list_products()["items"] if product["model"] == "M7")
+        plan = self.store.db.execute("SELECT sop FROM plans WHERE product_id=? AND month='2026-10'",
+                                     (added["id"],)).fetchone()
+        self.assertEqual(plan["sop"], 7)
+
+        spec = self._spec()
+        first = next(row["row"] for row in spec["rows"] if row.get("product_id") == "a")
+        change_rows(self.path, first, delete=True)
+        status = self.sync.sync()
+        self.assertEqual(status["status"], "synced", status)
+        product = next(item for item in self.store.list_products()["items"] if item["id"] == "a")
+        self.assertFalse(product["active"])
+
+    def test_formula_like_catalog_labels_are_literal_text(self):
+        sales = json.loads(self.source.read_text(encoding="utf-8"))
+        sales["products"][0].update(brand="=问界", model="+M5", version="@高配")
+        self.source.write_text(json.dumps(sales, ensure_ascii=False), encoding="utf-8")
+        status = self.sync.sync()
+        self.assertEqual(status["status"], "synced", status)
+        workbook = load_workbook(self.path, data_only=False)
+        self.addCleanup(workbook.close)
+        sheet = workbook["SOP计划"]
+        row = next(item["row"] for item in self._spec()["rows"] if item.get("product_id") == "a")
+        self.assertEqual([sheet[f"{column}{row}"].value for column in "ABC"], ["=问界", "+M5", "@高配"])
+        self.assertTrue(all(sheet[f"{column}{row}"].data_type == "s" for column in "ABC"))
+        self.assertEqual(self.sync._parse(self.path.read_bytes())[4]["a\t2026-10"], None)
+
+    def test_changed_layout_label_keeps_plan_edit_and_regenerates_metadata(self):
+        self.assertEqual(self.sync.sync()["status"], "synced")
+        token, expected, *_ = self.sync._parse(self.path.read_bytes())
+        address = next(item["cell"] for item in expected["layout"]["cells"]
+                       if item["product_id"] == "a" and item["month"] == "2026-10")
+        edit_cell(self.path, "B5", "continuous-inline-v1", sheet=3)
+        edit_cell(self.path, address, 24)
+        status = self.sync.sync()
+        self.assertEqual(status["status"], "synced", status)
+        self.assertEqual(self.store.db.execute(
+            "SELECT sop FROM plans WHERE product_id='a' AND month='2026-10'").fetchone()[0], 24)
+        workbook = load_workbook(self.path, read_only=True)
+        try:
+            self.assertEqual(workbook["_meta"]["B5"].value, expected["layout_version"])
+            self.assertNotEqual(workbook["_meta"]["B2"].value, token)
+        finally:
+            workbook.close()
+
+    def test_managed_workbook_is_created_only_on_explicit_request(self):
+        on_demand = WorkbookSync(self.store, self.path, auto_create=False)
+        with patch.object(on_demand, "writer", side_effect=AssertionError("unexpected Excel writer")):
+            self.assertEqual(on_demand.sync()["status"], "absent")
+        self.assertFalse(self.path.exists())
+        self.assertEqual(on_demand.sync(force_export=True)["status"], "synced")
+        self.assertTrue(self.path.exists())
+        self.path.unlink()
+        self.assertEqual(on_demand.sync()["status"], "absent")
+        self.assertFalse(self.path.exists())
+        self.assertEqual(on_demand.sync(force_export=True)["status"], "synced")
+
+    def test_changed_layout_label_does_not_bypass_hidden_mapping_validation(self):
+        self.assertEqual(self.sync.sync()["status"], "synced")
+        edit_cell(self.path, "B5", "continuous-inline-v1", sheet=3)
+        edit_cell(self.path, "A2", "unknown-product", sheet=4)
+        status = self.sync.sync()
+        self.assertEqual(status["status"], "error", status)
+        self.assertIn("隐藏的版本月份基准已被改动", status["message"])
+
+    def test_unknown_ledger_layout_stays_unsupported(self):
+        self.assertEqual(self.sync.sync()["status"], "synced")
+        _, expected, *_ = self.sync._parse(self.path.read_bytes())
+        workbook = load_workbook(self.path, read_only=True)
+        try:
+            expected["layout_version"] = "continuous-inline-unsupported"
+            with self.assertRaisesRegex(ValidationError, "主表布局标识已被改动"):
+                self.sync._parse_inline(workbook, {"layout_version": "continuous-inline-unsupported"}, expected)
+        finally:
+            workbook.close()
+
+
+if __name__ == "__main__":
+    unittest.main()

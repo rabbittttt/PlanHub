@@ -1,0 +1,1363 @@
+diff --git a/PORTAL-INTEGRATION.md b/PORTAL-INTEGRATION.md
+new file mode 100644
+--- /dev/null
++++ b/PORTAL-INTEGRATION.md
+@@ -0,0 +1,13 @@
++# SOP 门户适配副本
++
++来源：`D:\Projects\SOP`，基线提交 `eec3b69`（原工作区检查时干净）。此目录从受版本管理的源文件复制，不含原业务输入、数据库、运行依赖或 Git 元数据。门户发布包使用这里的适配副本。
++
++代理模式通过 `server.py --gateway-config <服务器配置路径>` 启用。根目录本机模式继续用于独立开发。服务器配置、机密、业务输入与 SQLite/Excel 文件都放在 Web 根目录之外。
++
++代理路径固定按配置保留前缀，例如 `/sop/api/state`，由后端识别并剥离。内网域名和写入组需在目标服务器配置。默认关闭写入，前端显示只读；IIS 和 Python 共同执行服务端校验。
++
++外部路径使用 `SOP_SOURCE_DIR`、`SOP_DATA_DIR`、`SOP_SHARED_CONFIG`；由 gateway 配置映射，控制台开发不设置这些变量时沿用原目录。
++
++部署使用 `SOP_EXCEL_ENGINE=python`，仅需要 Python 和 openpyxl，无需开发机的 Codex/Node 导出依赖。详细步骤见项目根目录 `docs/sop-intranet.md`。
++
++后续更新业务源码时，将门户适配改动合入 SOP 独立仓库并运行测试；不要直接用旧版业务仓库覆盖此发布副本。此轮适配没有在原 SOP 仓库提交或推送。
+diff --git a/requirements-intranet.txt b/requirements-intranet.txt
+new file mode 100644
+--- /dev/null
++++ b/requirements-intranet.txt
+@@ -0,0 +1,3 @@
++# Validated offline runtime; pure Python wheels support Windows Python 3.10+.
++openpyxl==3.1.5
++et-xmlfile==2.0.0
+diff --git a/server.py b/server.py
+--- a/server.py
++++ b/server.py
+@@ -25,6 +25,7 @@
+ from sop_export import ExportError, MAX_REQUEST_BYTES, PlanExport
+ from sop_refresh import SalesRefresh
+ from sop_source_rules import MergeRuleError
++from sop_gateway import GatewayConfig, GatewayError, attributed_body
+ 
+ ROOT = Path(__file__).resolve().parent
+ LOGGER = logging.getLogger("sop")
+@@ -68,7 +69,7 @@
+     print(f"未能自动打开浏览器，请手动访问：{url}", flush=True)
+ 
+ 
+-def make_handler(store, web_root, port, workbook_sync=None, snapshot_backup=None, plan_export=None, source_refresh=None, plan_roundtrip=None):
++def make_handler(store, web_root, port, workbook_sync=None, snapshot_backup=None, plan_export=None, source_refresh=None, plan_roundtrip=None, gateway=None):
+     plan_export = plan_export or PlanExport(root=ROOT)
+     roundtrip_lock = threading.Lock()
+ 
+@@ -88,6 +89,22 @@
+     class Handler(BaseHTTPRequestHandler):
+         server_version = "SOPLocal/1.0"
+ 
++        def send_response(self, code, message=None):
++            super().send_response(code, message)
++            if gateway and self.command not in {"GET", "HEAD"}:
++                # JSON escaping prevents usernames/paths becoming log directives;
++                # never log the proxy key, request body, or client-claimed owner.
++                LOGGER.info("sop_audit %s", json.dumps({
++                    "principal": getattr(self, "gateway_user", None),
++                    "method": self.command, "path": self.path.split("?", 1)[0], "status": code,
++                }, ensure_ascii=True))
++
++        def end_headers(self):
++            if gateway:
++                self.send_header("X-Frame-Options", "SAMEORIGIN")
++                self.send_header("Content-Security-Policy", "frame-ancestors 'self'")
++            super().end_headers()
++
+         def log_message(self, format, *args):
+             LOGGER.info("%s %s", self.client_address[0], format % args)
+ 
+@@ -97,17 +114,66 @@
+             self.send_header("Content-Length", str(length))
+             self.send_header("Cache-Control", "no-store")
+             self.send_header("X-Content-Type-Options", "nosniff")
+-            self.send_header("X-Frame-Options", "DENY")
++            if not gateway:
++                self.send_header("X-Frame-Options", "DENY")
+             self.send_header("Referrer-Policy", "same-origin")
+             self.end_headers()
+ 
+         def _json(self, body, status=200):
++            if status >= 400:
++                self._discard_rejected_body()
+             encoded = json.dumps(body, ensure_ascii=False, allow_nan=False).encode("utf-8")
+             self._headers(status, "application/json; charset=utf-8", len(encoded))
+             if self.command != "HEAD":
+                 self.wfile.write(encoded)
+ 
++        def _discard_rejected_body(self):
++            """Keep a small rejected POST from resetting its own HTTP error.
++
++            Closing a Windows socket with unread request bytes can discard the
++            403 response via TCP RST. Drain only unambiguous small bodies, with
++            a short timeout; never parse or execute the rejected operation.
++            """
++            if self.command != "POST" or getattr(self, "request_body_consumed", False):
++                return
++            self.request_body_consumed = True
++            self.close_connection = True
++            lengths = self.headers.get_all("Content-Length", [])
++            if self.headers.get_all("Transfer-Encoding", []) or len(lengths) != 1:
++                return
++            raw_length = lengths[0]
++            if (not raw_length.isascii() or not raw_length.isdigit() or len(raw_length) > 6
++                    or not 0 < int(raw_length) <= 64 * 1024):
++                return
++            previous_timeout = self.connection.gettimeout()
++            try:
++                self.connection.settimeout(.25)
++                self.rfile.read(int(raw_length))
++            except (OSError, ValueError):
++                # Missing/slow bodies are still denied, without an unbounded wait.
++                pass
++            finally:
++                self.connection.settimeout(previous_timeout)
++
+         def _local_request(self):
++            if gateway:
++                try:
++                    self.gateway_user = gateway.authorize(self.headers, self.client_address[0], port, self.command)
++                    self.application_path = gateway.route(self.path)
++                    if self.application_path is None:
++                        if self.command not in {"GET", "HEAD"}:
++                            raise GatewayError("应用路径不存在。", 404)
++                        self.send_response(308)
++                        self.send_header("Location", gateway.base_path + "/")
++                        self.send_header("Content-Length", "0")
++                        self.end_headers()
++                        return False
++                    if self.command == "POST" and not gateway.allow_writes:
++                        raise GatewayError("写入尚未开放，请联系管理员配置允许写入的域用户组。")
++                    return True
++                except GatewayError as error:
++                    self._json({"error": str(error)}, error.status)
++                    return False
+             host = self.headers.get("Host", "").lower()
+             if host not in allowed_hosts:
+                 self._json({"error": "仅允许本机访问。"}, 403)
+@@ -130,7 +196,9 @@
+             if length <= 0 or length > max_bytes:
+                 raise ValidationError(f"请求为空或超过 {max_bytes // (1024 * 1024)} MB。")
+             try:
+-                value = json.loads(self.rfile.read(length).decode("utf-8"))
++                encoded = self.rfile.read(length)
++                self.request_body_consumed = True
++                value = json.loads(encoded.decode("utf-8"))
+             except (UnicodeDecodeError, json.JSONDecodeError):
+                 raise ValidationError("JSON 格式无效。")
+             if not isinstance(value, dict):
+@@ -156,12 +224,18 @@
+             if not self._local_request():
+                 return
+             parsed = urlparse(self.path)
+-            path = unquote(parsed.path)
++            path = self.application_path if gateway else unquote(parsed.path)
+             query = {key: values[-1] for key, values in parse_qs(parsed.query).items()}
+             try:
+-                if path == "/api/health":
+-                    self._json({"app_id": "hima-sop", "workspace": str(ROOT), "port": port,
+-                                "pid": os.getpid(), "launch_mode": getattr(self.server, "launch_mode", None)})
++                if path == "/api/session":
++                    self._json({"mode": "gateway" if gateway else "console",
++                                "user": self.gateway_user if gateway else None,
++                                "canWrite": gateway.allow_writes if gateway else True})
++                elif path == "/api/health":
++                    health = {"app_id": "hima-sop", "launch_mode": "gateway" if gateway else getattr(self.server, "launch_mode", None)}
++                    if not gateway:
++                        health.update(workspace=str(ROOT), port=port, pid=os.getpid())
++                    self._json(health)
+                 elif path == "/api/state":
+                     state = store.state()
+                     state["source_refresh"] = source_refresh.status()
+@@ -178,7 +252,12 @@
+                     self._json({**workbook_sync.status(), "source_refresh": source_refresh.status(),
+                                 "generation_view": generation_view})
+                 elif path == "/api/plan-workbook/download" and workbook_sync:
+-                    result = workbook_sync.sync(force_export=not workbook_sync.path.is_file())
++                    # Public GET must not import workbook edits into business data.
++                    if gateway and not workbook_sync.path.is_file():
++                        self._json({"error": "维护表尚未生成，请联系维护人员。"}, 404)
++                        return
++                    result = ({"status": "ready"} if gateway else
++                              workbook_sync.sync(force_export=not workbook_sync.path.is_file()))
+                     if result["status"] in {"conflict", "error", "pending"}:
+                         self._json({"error": result["message"], "workbook_sync": result}, 409)
+                         return
+@@ -239,7 +318,7 @@
+                     self._headers(200, content_type, len(encoded))
+                     if self.command != "HEAD":
+                         self.wfile.write(encoded)
+-            except (BrokenPipeError, ConnectionResetError):
++            except (BrokenPipeError, ConnectionResetError, ConnectionAbortedError):
+                 pass
+             except Exception as error:
+                 self._handle_error(error)
+@@ -248,10 +327,20 @@
+             if not self._local_request():
+                 return
+             try:
+-                path = urlparse(self.path).path
++                path = self.application_path if gateway else urlparse(self.path).path
++                if gateway and path == "/api/plan-workbook/open":
++                    self._json({"error": "服务端不支持从浏览器打开服务器桌面文件，请下载副本。"}, 403)
++                    return
+                 limit = 17 * 1024 * 1024 if path == "/api/plans/import-xlsx" else MAX_REQUEST_BYTES
+                 body = self._body(limit)
+-                if path == "/api/plans/export-xlsx":
++                if gateway:
++                    body = attributed_body(body, self.gateway_user)
++                    if path in {"/api/plans", "/api/plans/batch-edit", "/api/products", "/api/shipments"}:
++                        body["owner"] = self.gateway_user
++                if path == "/api/write-access":
++                    self._json({"canWrite": True})
++                    return
++                elif path == "/api/plans/export-xlsx":
+                     context = None
+                     if "row_product_ids" in body:
+                         body, context = roundtrip_service().prepare(body)
+@@ -284,7 +373,8 @@
+                         raise ValidationError("Excel 文件内容无效，请重新选择文件。")
+                     if not decoded or len(decoded) > 12 * 1024 * 1024:
+                         raise ValidationError("Excel 文件为空或超过 12 MB。")
+-                    result = roundtrip_service().import_content(decoded, choice=body.get("choice"))
++                    result = roundtrip_service().import_content(decoded, choice=body.get("choice"),
++                        **({"actor": self.gateway_user} if gateway else {}))
+                     if not result.get("ok", False):
+                         self._json(result, 409 if result.get("status") == "conflict" else 400)
+                         return
+@@ -358,7 +448,7 @@
+                     self._json({"error": "接口不存在。"}, 404)
+                     return
+                 self._json(result)
+-            except (BrokenPipeError, ConnectionResetError):
++            except (BrokenPipeError, ConnectionResetError, ConnectionAbortedError):
+                 pass
+             except Exception as error:
+                 self._handle_error(error)
+@@ -374,13 +464,31 @@
+     parser.add_argument("--web-dir", type=Path, default=ROOT / "web")
+     parser.add_argument("--plan-file", type=Path, default=plan_workbook_path(ROOT))
+     parser.add_argument("--open-browser", action="store_true", help="就绪后自动打开工作台网页")
++    parser.add_argument("--gateway-config", type=Path, help="IIS代理配置，显式启用子路径和可信身份模式")
+     args = parser.parse_args()
++    if not 1 <= args.port <= 65535:
++        parser.error("端口必须为 1 至 65535。")
++    gateway = None
++    if args.gateway_config:
++        try:
++            gateway = GatewayConfig.load(args.gateway_config)
++            gateway.configure_environment()
++            if "data_dir" in gateway.paths:
++                args.data_dir = gateway.paths["data_dir"]
++            if "plan_file" in gateway.paths:
++                args.plan_file = gateway.paths["plan_file"]
++            # Validate a moved deployment's rules before creating or changing data.
++            importlib.import_module("sop_source_rules").load_merge_rules()
++        except (ValueError, OSError) as error:
++            parser.error(f"代理配置无效：{error}")
++        if args.open_browser:
++            parser.error("代理服务不支持 --open-browser，请通过 IIS 入口访问。")
+     url = f"http://{args.host}:{args.port}"
+     # Bind before touching persistent data, so a busy port cannot start a second writer.
+     try:
+         server = WorkbenchHTTPServer((args.host, args.port), BaseHTTPRequestHandler)
+     except OSError as error:
+-        if workbench_running(args.host, args.port):
++        if not gateway and workbench_running(args.host, args.port):
+             print("工作台已在另一个窗口运行；请保留原窗口，关闭原窗口即可停止。", flush=True)
+             if args.open_browser:
+                 open_workbench(url)
+@@ -428,14 +536,18 @@
+             worker = threading.Thread(target=target, name=name, daemon=True)
+             worker.start()
+             workers.append(worker)
++        server.launch_mode = "gateway" if gateway else "console"
+         server.RequestHandlerClass = make_handler(store, args.web_dir, args.port, workbook_sync,
+-                                                  snapshot_backup, source_refresh=source_refresh)
++                                                  snapshot_backup, source_refresh=source_refresh, gateway=gateway)
+         print(f"\nSOP计划工作台已就绪：{url}\n保持此窗口打开；关闭窗口或按 Ctrl+C 即停止。\n关闭浏览器页面不会停止工作台。\n", flush=True)
+         if args.open_browser:
+             threading.Thread(target=open_workbench, args=(url,), name="open-browser", daemon=True).start()
+         server.serve_forever(poll_interval=0.5)
+     except KeyboardInterrupt:
+         pass
++    except Exception:
++        LOGGER.exception("SOP服务启动或运行失败；请检查数据目录、原始锁单文件、共享规则及运行日志。")
++        return 1
+     finally:
+         stop.set()
+         server.server_close()
+diff --git a/sop_data.py b/sop_data.py
+--- a/sop_data.py
++++ b/sop_data.py
+@@ -20,7 +20,7 @@
+ 
+ import openpyxl
+ 
+-from sop_paths import sales_source_files
++from sop_paths import sales_source_files, source_directory, runtime_data_directory
+ 
+ 
+ ROOT = Path(__file__).resolve().parent
+@@ -152,7 +152,7 @@
+     Optional paths are resolved against the caller's current directory; defaults
+     are anchored beside this module so refresh() also works from a launcher.
+     """
+-    source_dir = Path(source_dir) if source_dir is not None else DEFAULT_SOURCE_DIR
++    source_dir = Path(source_dir) if source_dir is not None else source_directory(ROOT)
+     path = source_dir / SOURCE_NAME
+     if not path.is_file():
+         raise FileNotFoundError(f"未找到销量汇总文件：{path}")
+@@ -341,7 +341,7 @@
+     the workbook mtime, another tab, or the consolidated daily reference. IDs
+     encode generation and configuration, so year-model changes remain separate.
+     """
+-    source_dir = Path(source_dir) if source_dir is not None else DEFAULT_SOURCE_DIR
++    source_dir = Path(source_dir) if source_dir is not None else source_directory(ROOT)
+     now = datetime.now(SHANGHAI)
+     observation = _date(as_of) if as_of else now.date()
+     if observation is None:
+@@ -482,7 +482,7 @@
+     """A user-confirmed source interpretation persists across ordinary refreshes."""
+     basis = explicit
+     if basis is None:
+-        settings_path = Path(settings_path) if settings_path else ROOT / "data" / "source_settings.json"
++        settings_path = Path(settings_path) if settings_path else runtime_data_directory(ROOT) / "source_settings.json"
+         if settings_path.is_file():
+             settings = json.loads(settings_path.read_text(encoding="utf-8-sig"))
+             basis = settings.get("version_lock_basis", "unconfirmed")
+@@ -640,7 +640,7 @@
+ 
+ def extract(source_dir=None, *, as_of=None, version_lock_basis=None):
+     """Read inputs without writing any file, including during source validation."""
+-    source_dir = Path(source_dir) if source_dir is not None else DEFAULT_SOURCE_DIR
++    source_dir = Path(source_dir) if source_dir is not None else source_directory(ROOT)
+     basis = _resolve_lock_basis(version_lock_basis)
+     version_data = _extract_version_reference(source_dir, as_of=as_of)
+     models = _model_monthly_locks(source_dir, as_of=as_of)
+@@ -652,7 +652,7 @@
+ def refresh(source_dir=None, output_path=None, *, as_of=None, version_lock_basis=None):
+     """Refresh the local JSON atomically from input_file; never modify sources."""
+     result = extract(source_dir, as_of=as_of, version_lock_basis=version_lock_basis)
+-    output_path = Path(output_path) if output_path is not None else ROOT / "data" / "sales.json"
++    output_path = Path(output_path) if output_path is not None else runtime_data_directory(ROOT) / "sales.json"
+     output_path.parent.mkdir(parents=True, exist_ok=True)
+     temporary = output_path.with_suffix(output_path.suffix + ".tmp")
+     temporary.write_text(json.dumps(result, ensure_ascii=False, indent=2, allow_nan=False), encoding="utf-8")
+diff --git a/sop_gateway.py b/sop_gateway.py
+new file mode 100644
+--- /dev/null
++++ b/sop_gateway.py
+@@ -0,0 +1,169 @@
++"""Explicit trust boundary for the IIS-hosted SOP deployment.
++
++IIS must overwrite both proxy headers and authorize every POST by Windows group.
++The shared key authenticates that proxy, not a browser or a Windows user by itself.
++"""
++from __future__ import annotations
++
++from dataclasses import dataclass, field
++import base64
++import binascii
++import hmac
++import ipaddress
++import json
++import os
++from pathlib import Path
++import re
++from urllib.parse import unquote, urlsplit
++
++
++class GatewayError(ValueError):
++    def __init__(self, message, status=403):
++        super().__init__(message)
++        self.status = status
++
++
++def canonical_origin(value):
++    if not isinstance(value, str) or any(ord(char) <= 32 or ord(char) == 127 for char in value):
++        raise ValueError("Origin must be an explicit HTTP(S) origin without whitespace.")
++    parsed = urlsplit(value)
++    if (parsed.scheme not in {"http", "https"} or not parsed.hostname
++            or parsed.username is not None or parsed.password is not None
++            or parsed.path or parsed.query or parsed.fragment or "\\" in value
++            or "?" in value or "#" in value):
++        raise ValueError("Origin must contain only an HTTP(S) scheme and host, with optional port.")
++    try:
++        port = parsed.port
++    except ValueError as error:
++        raise ValueError("Origin port is invalid.") from error
++    host = parsed.hostname.lower()
++    if not re.fullmatch(r"[a-z0-9.-]+|[a-f0-9:]+", host, re.I):
++        raise ValueError("Origin hostname must be an ASCII DNS name or IP address.")
++    if ":" in host:
++        ipaddress.IPv6Address(host)
++        host = f"[{host}]"
++    if port == (443 if parsed.scheme == "https" else 80):
++        port = None
++    return f"{parsed.scheme}://{host}" + (f":{port}" if port is not None else "")
++
++
++def single_header(headers, name, *, required=False):
++    values = headers.get_all(name, [])
++    if len(values) > 1 or (required and len(values) != 1):
++        raise GatewayError("代理请求头缺失或重复。")
++    value = values[0] if values else None
++    if value is not None and (not value or value != value.strip() or any(ord(c) < 32 or ord(c) == 127 for c in value)):
++        raise GatewayError("代理请求头格式无效。")
++    return value
++
++
++@dataclass(frozen=True)
++class GatewayConfig:
++    base_path: str
++    public_origin: str
++    proxy_secret: str = field(repr=False)
++    allow_writes: bool = False
++    paths: dict = field(default_factory=dict)
++
++    @classmethod
++    def load(cls, path):
++        raw = json.loads(Path(path).read_text(encoding="utf-8-sig"))
++        allowed = {"base_path", "public_origin", "proxy_secret_env", "allow_writes",
++                   "data_dir", "source_dir", "shared_config", "plan_file"}
++        if not isinstance(raw, dict) or set(raw) - allowed:
++            raise ValueError("Gateway configuration contains unsupported fields.")
++        base = raw.get("base_path")
++        if not isinstance(base, str) or not re.fullmatch(r"/[a-z][a-z0-9-]*(?:/[a-z][a-z0-9-]*)*", base):
++            raise ValueError("base_path must be an explicit subpath such as /sop, without trailing slash.")
++        origin = canonical_origin(raw.get("public_origin"))
++        env_name = raw.get("proxy_secret_env")
++        if not isinstance(env_name, str) or not re.fullmatch(r"[A-Za-z_][A-Za-z0-9_]*", env_name):
++            raise ValueError("proxy_secret_env must name an environment variable.")
++        secret = os.environ.get(env_name, "")
++        if not re.fullmatch(r"[A-Za-z0-9_-]{32,256}", secret):
++            raise ValueError("Proxy secret environment variable must contain a 32-256 character URL-safe random key.")
++        writes = raw.get("allow_writes", False)
++        if not isinstance(writes, bool):
++            raise ValueError("allow_writes must be a boolean.")
++        paths = {}
++        for name in ("data_dir", "source_dir", "shared_config", "plan_file"):
++            if name in raw:
++                value = raw[name]
++                if not isinstance(value, str) or not Path(value).is_absolute():
++                    raise ValueError(f"{name} must be an absolute local filesystem path.")
++                paths[name] = Path(value)
++        return cls(base, origin, secret, writes, paths)
++
++    def configure_environment(self):
++        for field_name, env_name in (("data_dir", "SOP_DATA_DIR"), ("source_dir", "SOP_SOURCE_DIR"),
++                                     ("shared_config", "SOP_SHARED_CONFIG")):
++            if field_name in self.paths:
++                os.environ[env_name] = str(self.paths[field_name])
++
++    def authorize(self, headers, peer, port, method):
++        try:
++            if not ipaddress.ip_address(peer).is_loopback:
++                raise GatewayError("仅允许受信代理访问。")
++        except ValueError:
++            raise GatewayError("仅允许受信代理访问。")
++        key = single_header(headers, "X-SOP-Proxy-Key", required=True)
++        if not key.isascii() or not hmac.compare_digest(key, self.proxy_secret):
++            raise GatewayError("代理身份验证失败。")
++        user = single_header(headers, "X-SOP-User", required=True)
++        if user.startswith("b64:"):
++            try:
++                user = base64.b64decode(user[4:], validate=True).decode("utf-8")
++            except (binascii.Error, UnicodeError, ValueError):
++                raise GatewayError("Windows 用户身份编码无效。")
++        elif not user.isascii():
++            raise GatewayError("Windows 用户身份编码无效。")
++        if (not user or user != user.strip() or len(user) > 100 or "," in user
++                or any(ord(c) < 32 or ord(c) == 127 for c in user)
++                or not re.fullmatch(r"[^\\@]+\\[^\\@]+|[^\\@]+@[^\\@]+", user)):
++            raise GatewayError("Windows 用户身份无效。")
++        host = single_header(headers, "Host", required=True).lower()
++        public_host = urlsplit(self.public_origin).netloc
++        allowed_hosts = {public_host, f"127.0.0.1:{port}", f"localhost:{port}", f"[::1]:{port}"}
++        if port == 80:
++            allowed_hosts.update({"127.0.0.1", "localhost", "[::1]"})
++        if host not in allowed_hosts:
++            raise GatewayError("代理 Host 不匹配。")
++        origin = single_header(headers, "Origin", required=method == "POST")
++        if origin is not None:
++            try:
++                permitted = canonical_origin(origin) == self.public_origin
++            except ValueError:
++                permitted = False
++            if not permitted:
++                raise GatewayError("请求来源不允许。")
++        if headers.get_all("Transfer-Encoding", []) or len(headers.get_all("Content-Length", [])) > 1:
++            raise GatewayError("请求长度或传输格式无效。", 400)
++        return user
++
++    def route(self, target):
++        if not isinstance(target, str) or not target.startswith("/") or target.startswith("//"):
++            raise GatewayError("应用路径无效。", 400)
++        raw = target.split("?", 1)[0]
++        if re.search(r"%(?:2f|5c)", raw, re.I):
++            raise GatewayError("应用路径包含编码分隔符。", 400)
++        try:
++            path = unquote(raw, errors="strict")
++        except (UnicodeError, ValueError):
++            raise GatewayError("应用路径编码无效。", 400)
++        if (any(ord(char) < 32 or ord(char) == 127 for char in path) or any(c in path for c in "\\%:#")
++                or "//" in path or any(part in {".", ".."} for part in path.split("/"))):
++            raise GatewayError("应用路径无效。", 400)
++        if path == self.base_path:
++            return None
++        if not path.startswith(self.base_path + "/"):
++            raise GatewayError("应用路径不存在。", 404)
++        return path[len(self.base_path):]
++
++
++def attributed_body(body, user):
++    """Replace every client-supplied owner, while preserving the business values."""
++    if isinstance(body, list):
++        return [attributed_body(item, user) for item in body]
++    if not isinstance(body, dict):
++        return body
++    return {key: user if key == "owner" else attributed_body(value, user) for key, value in body.items()}
+diff --git a/sop_paths.py b/sop_paths.py
+--- a/sop_paths.py
++++ b/sop_paths.py
+@@ -1,9 +1,18 @@
+ """Shared paths for the editable plan and raw sales workbooks."""
+ 
++import os
+ from pathlib import Path
+ 
+ 
+ PLAN_WORKBOOK_NAME = "SOP计划维护.xlsx"
++
++
++def source_directory(root):
++    return Path(os.environ["SOP_SOURCE_DIR"]) if os.environ.get("SOP_SOURCE_DIR") else Path(root) / "input_file"
++
++
++def runtime_data_directory(root):
++    return Path(os.environ["SOP_DATA_DIR"]) if os.environ.get("SOP_DATA_DIR") else Path(root) / "data"
+ 
+ 
+ def plan_workbook_path(root):
+diff --git a/sop_refresh.py b/sop_refresh.py
+--- a/sop_refresh.py
++++ b/sop_refresh.py
+@@ -11,7 +11,7 @@
+ import time
+ import uuid
+ 
+-from sop_paths import sales_source_files
++from sop_paths import sales_source_files, source_directory, runtime_data_directory
+ from sop_store import ValidationError
+ 
+ LOGGER = logging.getLogger("sop")
+@@ -33,10 +33,11 @@
+             return dict(self._status)
+ 
+     def fingerprint(self):
+-        paths = [self.root / "input_file" / name for name in (
++        source = source_directory(self.root)
++        paths = [source / name for name in (
+             "鸿蒙智行大定选配比例分析.xlsx", "鸿蒙智行锁单选配比例分析.xlsx")]
+-        paths = sorted(set(paths) | set(sales_source_files(self.root / "input_file")))
+-        paths.append(self.root / "data/source_settings.json")
++        paths = sorted(set(paths) | set(sales_source_files(source)))
++        paths.append(runtime_data_directory(self.root) / "source_settings.json")
+         result = []
+         for path in paths:
+             try:
+diff --git a/sop_roundtrip.py b/sop_roundtrip.py
+--- a/sop_roundtrip.py
++++ b/sop_roundtrip.py
+@@ -468,9 +468,13 @@
+                 entries.append({**labels, "plans": plans})
+             return token, expected, values, entries
+ 
+-    def import_content(self, content, choice=None):
++    def import_content(self, content, choice=None, *, actor=None):
+         if choice not in {None, "db", "workbook"}:
+             raise ValidationError("请选择保留网页值或使用表格值。")
++        if actor is not None:
++            actor = text_field(actor, "登录用户", 100)
++            if not actor:
++                raise ValidationError("登录用户不能为空。")
+         token, exported, values, entries = self._parse(content)
+         with self._lock():
+             self._sync_before()
+@@ -519,7 +523,7 @@
+                     result = self.store.import_workbook_plans({"changes": changes, "entries": entries, "choice": choice,
+                                                               "catalog_changes": exported.get("_catalog_changes", []),
+                                                               "entry_tracking_token": token if exported.get("manifest") is not None else None,
+-                                                              "owner": "Excel导入", "reason": "导出计划表回填", "notes": ""})
++                                                              "owner": actor or "Excel导入", "reason": "导出计划表回填", "notes": ""})
+                 except ConflictError as error:
+                     for conflict in error.conflicts:
+                         index = conflict.get("manual_entry")
+diff --git a/sop_source_rules.py b/sop_source_rules.py
+--- a/sop_source_rules.py
++++ b/sop_source_rules.py
+@@ -1,6 +1,7 @@
+ """Read shared generation rules for each operation; never cache Python imports."""
+ import ast
+ import hashlib
++import os
+ import re
+ import unicodedata
+ from collections import defaultdict
+@@ -112,7 +113,7 @@
+ 
+ def load_merge_rules(path=None):
+     """Read only the literal MERGE_GROUPS assignment; never execute the file."""
+-    path = Path(path) if path is not None else DEFAULT_CONFIG_PATH
++    path = Path(path) if path is not None else Path(os.environ.get("SOP_SHARED_CONFIG") or DEFAULT_CONFIG_PATH)
+     label = CONFIG_RELATIVE_PATH.as_posix() if path == DEFAULT_CONFIG_PATH else str(path)
+     try:
+         source = path.read_bytes()
+diff --git a/tests/frontend_gateway.mjs b/tests/frontend_gateway.mjs
+new file mode 100644
+--- /dev/null
++++ b/tests/frontend_gateway.mjs
+@@ -0,0 +1,104 @@
++import assert from 'node:assert/strict';
++import {readFileSync} from 'node:fs';
++import vm from 'node:vm';
++
++const source=readFileSync(new URL('../web/app.js',import.meta.url),'utf8');
++const prefix=source.split("document.addEventListener('click'")[0];
++const plain=value=>JSON.parse(JSON.stringify(value));
++function element(id='',dataset={}) {
++  const attrs=new Map(),classes=new Set();
++  return {id,dataset:{...dataset},type:'button',value:'',textContent:'',innerHTML:'',title:'',disabled:false,hidden:false,
++    classList:{toggle(name,on){if(on)classes.add(name);else classes.delete(name);}},
++    setAttribute(name,value){attrs.set(name,String(value));},removeAttribute(name){attrs.delete(name);},
++    hasAttribute(name){if(attrs.has(name))return true;return name.startsWith('data-')&&Object.hasOwn(this.dataset,name.slice(5).replace(/-([a-z])/g,(_,x)=>x.toUpperCase()));},
++    getAttribute:name=>attrs.get(name),focus(){}};
++}
++function fixture(base='/sop/') {
++  const requests=[],controls=[element('',{action:'bulk-plan'}),element('',{action:'export-plan'}),element('',{action:'refresh-sales'}),element('',{action:'view-save'}),element('generation-filter'),element('bridge-toggle'),element('',{catalogEdit:'p1'}),element('',{action:'open-workbook'})];
++  const nodes=new Map(['access-status','owner-btn','grid-owner'].map(id=>['#'+id,element(id)]));
++  const replies=new Map();
++  const context=vm.createContext({URL,location:{href:'http://data.example'+base},
++    document:{currentScript:{src:'http://data.example'+base+'app.js'},querySelector:selector=>nodes.get(selector)||null,
++      querySelectorAll:selector=>selector.startsWith('input[id$=')?[nodes.get('#grid-owner')]:selector.startsWith('[data-action]')?controls:[]},
++    localStorage:{getItem:key=>key==='sop-owner'?'client-provided-owner':null,setItem(){}},
++    fetch:async(path,options)=>{requests.push({path,options});const reply=replies.get(path);if(!reply)throw new Error('Unexpected path: '+path);return reply();}});
++  vm.runInContext(prefix,context);
++  const run=code=>vm.runInContext(code,context);
++  const respond=(path,status,body)=>replies.set(base.replace(/\/$/,'')+path,async()=>({ok:status>=200&&status<300,status,json:async()=>body}));
++  return {run,respond,requests,nodes,controls};
++}
++
++// Every request, including binary imports/exports and snapshots, shares one scoped transport.
++assert.equal((source.match(/\bfetch\s*\(/g)||[]).length,1);
++assert.doesNotMatch(source,/(?:href|src)\s*=\s*['"]\/api\//);
++let f=fixture();
++assert.equal(f.run("serviceUrl('/api/history?product_id=a%2Fb&month=2026-11')"),'/sop/api/history?product_id=a%2Fb&month=2026-11');
++assert.equal(f.run("serviceUrl('/api/snapshots/12/excel')"),'/sop/api/snapshots/12/excel');
++assert.throws(()=>f.run("serviceUrl('https://other.example/api/state')"),/无效/);
++f.respond('/api/session',200,{mode:'gateway',user:'CORP\\reader',canWrite:false});
++await f.run('initializeAccess()');
++assert.equal(f.run('access.canWrite'),false);
++assert.equal(f.run('owner'),'CORP\\reader','The server identity replaces the browser owner');
++assert.equal(f.requests.length,1,'Read-only configuration does not probe write access');
++assert.match(f.nodes.get('#access-status').textContent,/只读/);
++assert.equal(f.nodes.get('#owner-btn').disabled,true);
++assert.equal(f.nodes.get('#grid-owner').readOnly,true);
++assert.equal(f.nodes.get('#grid-owner').value,'CORP\\reader');
++assert.equal(f.controls[0].disabled,true);
++assert.equal(f.controls[1].disabled,true,'POST Excel generation is disabled without write permission');
++assert.equal(f.controls[2].disabled,true);
++assert.equal(f.controls[3].disabled,false,'Browser-only saved views remain available');
++assert.equal(f.controls[4].disabled,true);
++assert.equal(f.controls[5].disabled,true);
++assert.equal(f.controls[6].disabled,true);
++const before=f.requests.length;
++await assert.rejects(f.run("api('/api/plans',{owner:'spoofed'})"),/只读/);
++await assert.rejects(f.run("serviceFetch('/api/plans/import-xlsx',{method:'POST',body:'{}'})"),/只读/);
++assert.throws(()=>f.run('bulkPlan()'),/只读/);
++assert.equal(f.requests.length,before,'No mutating request leaves a read-only UI');
++assert.match(f.run("button('保存','save-settings')"),/disabled/);
++assert.doesNotMatch(f.run("button('恢复隐藏行','rows-restore')"),/disabled/);
++f.respond('/api/state',200,{products:[]});
++assert.deepEqual(plain(await f.run("api('/api/state')")),{products:[]});
++assert.equal(f.requests.at(-1).path,'/sop/api/state');
++
++// Configured writes still require a successful request through the IIS method gate.
++f=fixture();
++f.respond('/api/session',200,{mode:'gateway',user:'CORP\\planner',canWrite:true});
++f.respond('/api/write-access',403,{error:'forbidden'});
++await f.run('initializeAccess()');
++assert.equal(f.run('access.canWrite'),false);
++assert.equal(f.requests.at(-1).options.method,'POST');
++assert.match(f.nodes.get('#access-status').textContent,/只读/);
++
++f=fixture();
++f.respond('/api/session',200,{mode:'gateway',user:'CORP\\planner',canWrite:true});
++f.respond('/api/write-access',200,{canWrite:true});
++f.respond('/api/plans',200,{ok:true});
++await f.run('initializeAccess()');
++assert.equal(f.run('access.canWrite'),true);
++assert.equal(f.controls[0].disabled,false);
++assert.equal(f.controls[7].disabled,true,'A web user cannot open server desktop Excel');
++assert.match(f.nodes.get('#access-status').textContent,/CORP\\planner/);
++await f.run("api('/api/plans',{owner:'CORP\\planner',changes:[]})");
++assert.equal(f.requests.at(-1).path,'/sop/api/plans');
++f.respond('/api/plans',403,{error:'permission revoked'});
++await assert.rejects(f.run("api('/api/plans',{changes:[]})"),/只读/);
++assert.equal(f.run('access.canWrite'),false,'Permission revocation locks subsequent edits');
++assert.equal(f.controls[0].disabled,true);
++
++for(const session of [{mode:'console',canWrite:true},{mode:'gateway',canWrite:true},{mode:'gateway',user:'CORP\\reader',canWrite:'yes'},null]) {
++  f=fixture();f.respond('/api/session',200,session);await f.run('initializeAccess()');
++  assert.equal(f.run('access.canWrite'),false,'Malformed or mismatched sessions fail closed under a subpath');
++}
++f=fixture();f.respond('/api/session',503,{error:'unavailable'});await f.run('initializeAccess()');
++assert.equal(f.run('access.canWrite'),false);
++assert.match(f.nodes.get('#access-status').textContent,/无法确认/);
++
++// The independent legacy console keeps its root API and editable owner workflow.
++f=fixture('/');f.respond('/api/session',404,{error:'not found'});await f.run('initializeAccess()');
++assert.equal(f.run('serviceBase'),'');assert.equal(f.run('access.canWrite'),true);
++assert.equal(f.run('owner'),'client-provided-owner');
++assert.equal(f.nodes.get('#access-status').hidden,true);
++
++console.log('PASS: scoped API/Excel transport, gateway session checks, IIS write probe, fail-closed read-only UI, trusted owner display, permission revocation and legacy console.');
+diff --git a/tests/test_deployment_paths.py b/tests/test_deployment_paths.py
+new file mode 100644
+--- /dev/null
++++ b/tests/test_deployment_paths.py
+@@ -0,0 +1,46 @@
++import json
++import os
++import tempfile
++import unittest
++from pathlib import Path
++from unittest.mock import patch
++
++import sop_data
++from sop_paths import source_directory, runtime_data_directory
++from sop_refresh import SalesRefresh
++from sop_source_rules import load_merge_rules
++
++
++class DeploymentPathsTest(unittest.TestCase):
++    def test_sources_settings_and_watcher_share_external_paths(self):
++        with tempfile.TemporaryDirectory() as folder:
++            root = Path(folder)
++            source, data = root / 'external-input', root / 'external-data'
++            source.mkdir(); data.mkdir()
++            (source / 'source.xlsx').write_bytes(b'not-read')
++            (data / 'source_settings.json').write_text(json.dumps({'version_lock_basis': 'model_lock_row'}))
++            with patch.dict(os.environ, {'SOP_SOURCE_DIR': str(source), 'SOP_DATA_DIR': str(data)}):
++                self.assertEqual(source_directory(root / 'service'), source)
++                self.assertEqual(runtime_data_directory(root / 'service'), data)
++                self.assertEqual(sop_data._resolve_lock_basis(), 'model_lock_row')
++                watcher = SalesRefresh(None, root=root / 'service')
++                names = {item[0] for item in watcher.fingerprint()}
++                self.assertIn(str(source / 'source.xlsx'), names)
++                self.assertIn(str(data / 'source_settings.json'), names)
++                self.assertFalse(any('service' in name for name in names))
++
++    def test_shared_rules_are_read_from_explicit_deployment_configuration(self):
++        with tempfile.TemporaryDirectory() as folder:
++            rules = Path(folder) / 'shared.py'
++            rules.write_text('MERGE_GROUPS = {}', encoding='utf-8')
++            with patch.dict(os.environ, {'SOP_SHARED_CONFIG': str(rules)}):
++                self.assertEqual(load_merge_rules()['groups'], {})
++                self.assertEqual(load_merge_rules()['config_path'], str(rules))
++
++    def test_explicit_source_argument_keeps_precedence_over_deployment_environment(self):
++        with patch.dict(os.environ, {'SOP_SOURCE_DIR': '/deployment/input'}), \
++             patch.object(sop_data, '_extract_version_reference', return_value={}) as source, \
++             patch.object(sop_data, '_model_monthly_locks', return_value=[]), \
++             patch.object(sop_data, '_build_lock_data', return_value={'meta': {}}):
++            sop_data.extract('/explicit/input', version_lock_basis='unconfirmed')
++            source.assert_called_once_with(Path('/explicit/input'), as_of=None)
+diff --git a/tests/test_portal_gateway.py b/tests/test_portal_gateway.py
+new file mode 100644
+--- /dev/null
++++ b/tests/test_portal_gateway.py
+@@ -0,0 +1,281 @@
++"""Gateway transport tests use isolated data and never touch a production workbook."""
++import base64
++from contextlib import contextmanager
++from email.message import Message
++import http.client
++from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
++import json
++import os
++from pathlib import Path
++import tempfile
++import threading
++import time
++import unittest
++from unittest.mock import patch
++
++from server import make_handler
++from sop_gateway import GatewayConfig, GatewayError, canonical_origin
++from sop_store import ValidationError
++
++
++KEY = "x" * 48
++PRINCIPAL = "EXAMPLE\\alice"
++ORIGIN = "https://data.example.test"
++
++
++class StoreStub:
++    def __init__(self):
++        self.saved = []
++
++    def save_plans(self, body):
++        self.saved.append(body)
++        return {"ok": True}
++
++    def list_products(self):
++        return {"items": []}
++
++
++class RefreshStub:
++    def status(self):
++        return {"status": "watching"}
++
++
++class RoundtripStub:
++    def __init__(self):
++        self.actors = []
++
++    def import_content(self, content, choice=None, *, actor=None):
++        self.actors.append(actor)
++        return {"ok": True}
++
++
++@contextmanager
++def running(*, writes=False, gateway_mode=True):
++    with tempfile.TemporaryDirectory() as temporary:
++        root = Path(temporary)
++        (root / "index.html").write_text("<h1>isolated SOP</h1>", encoding="utf-8")
++        store, roundtrip = StoreStub(), RoundtripStub()
++        server = ThreadingHTTPServer(("127.0.0.1", 0), BaseHTTPRequestHandler)
++        cfg = GatewayConfig("/sop", ORIGIN, KEY, writes) if gateway_mode else None
++        server.RequestHandlerClass = make_handler(store, root, server.server_port,
++            source_refresh=RefreshStub(), plan_roundtrip=roundtrip, gateway=cfg)
++        thread = threading.Thread(target=lambda: server.serve_forever(poll_interval=.01), daemon=True)
++        thread.start()
++        try:
++            yield server, store, roundtrip
++        finally:
++            server.shutdown()
++            thread.join(timeout=5)
++            server.server_close()
++
++
++def request(server, path="/sop/", *, method="GET", body=None, headers=None):
++    connection = http.client.HTTPConnection("127.0.0.1", server.server_port, timeout=5)
++    request_headers = {"X-SOP-Proxy-Key": KEY, "X-SOP-User": PRINCIPAL}
++    if method == "POST":
++        request_headers.update({"Content-Type": "application/json", "Origin": ORIGIN})
++    if headers:
++        for key, value in headers.items():
++            if value is None:
++                request_headers.pop(key, None)
++            else:
++                request_headers[key] = value
++    connection.request(method, path, json.dumps(body if body is not None else {}) if method == "POST" else None,
++                       request_headers)
++    response = connection.getresponse()
++    result = response.status, dict(response.getheaders()), response.read()
++    connection.close()
++    return result
++
++
++class GatewayHTTPTest(unittest.TestCase):
++    def test_rejected_post_drains_a_delayed_small_body_before_returning_403(self):
++        with running(writes=True) as (server, store, _):
++            # Send the headers ahead of the body: rejecting/closing immediately
++            # used to race these unread bytes and reset the response on Windows.
++            body = json.dumps({"owner": "forged", "notes": "x" * 4096}).encode()
++            connection = http.client.HTTPConnection("127.0.0.1", server.server_port, timeout=5)
++            connection.putrequest("POST", "/sop/api/plans")
++            for name, value in {"X-SOP-Proxy-Key": KEY, "X-SOP-User": PRINCIPAL,
++                                "Origin": "https://untrusted.example", "Content-Type": "application/json",
++                                "Content-Length": str(len(body))}.items():
++                connection.putheader(name, value)
++            connection.endheaders()
++            time.sleep(.05)
++            connection.send(body)
++            response = connection.getresponse()
++            self.assertEqual(response.status, 403)
++            self.assertIn("error", json.loads(response.read()))
++            connection.close()
++            self.assertEqual(store.saved, [])
++
++    def test_rejected_post_does_not_wait_indefinitely_for_an_absent_body(self):
++        with running(writes=False) as (server, store, _):
++            connection = http.client.HTTPConnection("127.0.0.1", server.server_port, timeout=3)
++            connection.putrequest("POST", "/sop/api/plans")
++            for name, value in {"X-SOP-Proxy-Key": KEY, "X-SOP-User": PRINCIPAL, "Origin": ORIGIN,
++                                "Content-Type": "application/json", "Content-Length": "64"}.items():
++                connection.putheader(name, value)
++            start = time.monotonic()
++            connection.endheaders()
++            response = connection.getresponse()
++            self.assertEqual(response.status, 403)
++            self.assertIn("error", json.loads(response.read()))
++            self.assertLess(time.monotonic() - start, 2)
++            connection.close()
++            self.assertEqual(store.saved, [])
++
++    def test_prefixed_page_can_embed_and_root_cannot_bypass_prefix(self):
++        with running() as (server, store, _):
++            code, headers, body = request(server)
++            self.assertEqual(code, 200)
++            self.assertIn(b"isolated SOP", body)
++            self.assertEqual(headers["X-Frame-Options"], "SAMEORIGIN")
++            self.assertEqual(headers["Content-Security-Policy"], "frame-ancestors 'self'")
++            self.assertEqual(request(server, "/api/products")[0], 404)
++            self.assertEqual(request(server, "/sop-other/api/products")[0], 404)
++            self.assertEqual(request(server, "/sop")[0:1], (308,))
++            self.assertEqual(request(server, "/sop")[1]["Location"], "/sop/")
++            code, headers, body = request(server, method="HEAD")
++            self.assertEqual(code, 200)
++            self.assertEqual(body, b"")
++
++    def test_secret_and_valid_windows_identity_are_mandatory(self):
++        with running() as (server, _, _):
++            for headers in ({"X-SOP-Proxy-Key": None}, {"X-SOP-Proxy-Key": "forged"},
++                            {"X-SOP-User": None}, {"X-SOP-User": "self-claimed"}, {"X-SOP-User": "\\"},
++                            {"Host": "external.example"}):
++                with self.subTest(headers=headers):
++                    self.assertEqual(request(server, headers=headers)[0], 403)
++            self.assertEqual(request(server, headers={"Host": "data.example.test"})[0], 200)
++
++    def test_bridge_base64_identity_preserves_unicode_without_allowing_controls(self):
++        with running(writes=True) as (server, store, _):
++            principal = "EXAMPLE\\王小明"
++            encoded = "b64:" + base64.b64encode(principal.encode("utf-8")).decode("ascii")
++            code, _, body = request(server, "/sop/api/session", headers={"X-SOP-User": encoded})
++            self.assertEqual(code, 200)
++            self.assertEqual(json.loads(body)["user"], principal)
++            request(server, "/sop/api/plans", method="POST", body={"changes": []}, headers={"X-SOP-User": encoded})
++            self.assertEqual(store.saved[0]["owner"], principal)
++            for invalid in ("b64:%%", "b64:/w==", "b64:" + base64.b64encode(b"DOMAIN\\a\n").decode("ascii")):
++                self.assertEqual(request(server, headers={"X-SOP-User": invalid})[0], 403)
++
++    def test_origin_is_explicit_and_writes_fail_closed(self):
++        with running() as (server, store, _):
++            code, _, body = request(server, "/sop/api/session")
++            self.assertEqual(json.loads(body), {"mode": "gateway", "user": PRINCIPAL, "canWrite": False})
++            self.assertEqual(request(server, "/sop/api/write-access", method="POST")[0], 403)
++            self.assertEqual(request(server, "/sop/api/plans", method="POST", body={"owner": "forged"})[0], 403)
++            self.assertEqual(request(server, headers={"Origin": "https://other.example"})[0], 403)
++            self.assertEqual(store.saved, [])
++        with running(writes=True) as (server, store, _):
++            for origin in (None, "null", "http://data.example.test", ORIGIN + "/", ORIGIN + "@evil.example"):
++                self.assertEqual(request(server, "/sop/api/plans", method="POST", headers={"Origin": origin})[0], 403)
++            self.assertEqual(request(server, "/sop/api/write-access", method="POST")[0], 200)
++            self.assertEqual(store.saved, [])
++
++    def test_owner_is_server_attributed_and_audited(self):
++        with running(writes=True) as (server, store, _):
++            payload = {"owner": "forged", "changes": [{"owner": "forged too", "sop": 7}]}
++            with self.assertLogs("sop", level="INFO") as messages:
++                code, _, _ = request(server, "/sop/api/plans", method="POST", body=payload)
++            self.assertEqual(code, 200)
++            self.assertEqual(store.saved, [{"owner": PRINCIPAL, "changes": [{"owner": PRINCIPAL, "sop": 7}]}])
++            audit = next(line for line in messages.output if "sop_audit" in line)
++            self.assertIn("alice", audit)
++            self.assertIn('"status": 200', audit)
++            self.assertNotIn(KEY, audit)
++            self.assertNotIn("forged", audit)
++
++    def test_import_receives_trusted_actor_and_server_open_is_disabled(self):
++        with running(writes=True) as (server, _, roundtrip):
++            payload = {"filename": "plan.xlsx", "content_base64": base64.b64encode(b"fixture").decode()}
++            self.assertEqual(request(server, "/sop/api/plans/import-xlsx", method="POST", body=payload)[0], 200)
++            self.assertEqual(roundtrip.actors, [PRINCIPAL])
++            self.assertEqual(request(server, "/sop/api/plan-workbook/open", method="POST")[0], 403)
++
++    def test_import_actor_reaches_committed_plan_audit_rows(self):
++        from tests.test_roundtrip import RoundtripTest
++        fixture = RoundtripTest()
++        fixture.setUp()
++        try:
++            fixture.save("a", "2026-10", 4)
++            fixture.export()
++            fixture.change("a", "2026-10", 9)
++            result = fixture.service.import_content(fixture.path.read_bytes(), actor=PRINCIPAL)
++            self.assertTrue(result["ok"])
++            self.assertEqual(fixture.value(field="owner"), PRINCIPAL)
++            self.assertEqual(fixture.store.db.execute("SELECT owner FROM events ORDER BY id DESC LIMIT 1").fetchone()[0], PRINCIPAL)
++        finally:
++            fixture.tearDown()
++
++    def test_unsafe_paths_are_rejected_before_static_lookup(self):
++        with running() as (server, _, _):
++            for path in ("/sop/../index.html", "/sop/%2e%2e/index.html", "/sop/%252e%252e/index.html",
++                         "/sop/%2fapi/products", "/sop/%5capi/products", "/sop//api/products",
++                         "/sop/%00", "/sop/index.html:stream"):
++                with self.subTest(path=path):
++                    self.assertEqual(request(server, path)[0], 400)
++
++    def test_duplicate_headers_are_rejected(self):
++        with running(writes=True) as (server, _, _):
++            for duplicated in ("Host", "X-SOP-Proxy-Key", "X-SOP-User", "Origin", "Content-Length"):
++                connection = http.client.HTTPConnection("127.0.0.1", server.server_port, timeout=5)
++                connection.putrequest("POST", "/sop/api/write-access", skip_host=True)
++                values = {"Host": f"127.0.0.1:{server.server_port}", "X-SOP-Proxy-Key": KEY,
++                          "X-SOP-User": PRINCIPAL, "Origin": ORIGIN, "Content-Length": "0", "Content-Type": "application/json"}
++                for name, value in values.items():
++                    connection.putheader(name, value)
++                    if name == duplicated:
++                        connection.putheader(name, value)
++                connection.endheaders()
++                response = connection.getresponse()
++                self.assertIn(response.status, {400, 403})
++                response.read()
++                connection.close()
++
++    def test_health_does_not_disclose_server_paths_or_pid(self):
++        with running() as (server, _, _):
++            code, _, body = request(server, "/sop/api/health")
++            self.assertEqual(code, 200)
++            self.assertEqual(json.loads(body), {"app_id": "hima-sop", "launch_mode": "gateway"})
++
++    def test_console_behavior_remains_explicit_and_cannot_embed(self):
++        with running(gateway_mode=False) as (server, _, _):
++            code, headers, body = request(server, "/api/session")
++            self.assertEqual(code, 200)
++            self.assertEqual(json.loads(body), {"mode": "console", "user": None, "canWrite": True})
++            self.assertEqual(headers["X-Frame-Options"], "DENY")
++            self.assertEqual(request(server, "/api/session", headers={"Origin": ORIGIN})[0], 403)
++
++
++class GatewayConfigTest(unittest.TestCase):
++    def test_configuration_is_explicit_and_secrets_are_environment_only(self):
++        with tempfile.TemporaryDirectory() as temporary, patch.dict(os.environ, {"TEST_SOP_PROXY_KEY": KEY}):
++            file = Path(temporary) / "gateway.json"
++            raw = {"base_path": "/sop", "public_origin": ORIGIN, "proxy_secret_env": "TEST_SOP_PROXY_KEY"}
++            file.write_text(json.dumps(raw), encoding="utf-8")
++            config = GatewayConfig.load(file)
++            self.assertFalse(config.allow_writes)
++            self.assertNotIn(KEY, repr(config))
++            self.assertEqual(config.public_origin, ORIGIN)
++            for updates in ({"base_path": "/"}, {"base_path": "/sop/"}, {"allow_writes": "false"},
++                            {"public_origin": "https://host/path"}, {"public_origin": "https://user:pass@host"},
++                            {"proxy_secret_env": "MISSING_SOP_KEY"}, {"proxy_secret": KEY}, {"data_dir": "relative"}):
++                file.write_text(json.dumps({**raw, **updates}), encoding="utf-8")
++                with self.subTest(updates=updates), self.assertRaises(ValueError):
++                    GatewayConfig.load(file)
++            self.assertEqual(canonical_origin("HTTPS://DATA.EXAMPLE.TEST:443"), ORIGIN)
++
++    def test_loopback_is_not_enough_without_proxy_authentication(self):
++        headers = Message()
++        for name, value in {"Host": "data.example.test", "X-SOP-Proxy-Key": KEY, "X-SOP-User": PRINCIPAL}.items():
++            headers[name] = value
++        config = GatewayConfig("/sop", ORIGIN, KEY)
++        with self.assertRaises(GatewayError):
++            config.authorize(headers, "192.0.2.10", 8876, "GET")
++
++
++if __name__ == "__main__":
++    unittest.main()
+diff --git a/web/app.js b/web/app.js
+--- a/web/app.js
++++ b/web/app.js
+@@ -1,6 +1,90 @@
+ /* S&OP workbench: all business records are persisted by the local service. */
+ const $ = (s, root = document) => root.querySelector(s);
+ const $$ = (s, root = document) => [...root.querySelectorAll(s)];
++// Resolve from the loaded script so both standalone / and the IIS /sop/ mount work.
++const serviceBase = (() => {
++  if (typeof location === 'undefined') return ''; // Standalone unit-test context.
++  const script = document.currentScript?.src;
++  const directory = new URL('.', script || location.href).pathname;
++  return directory === '/' ? '' : directory.replace(/\/$/, '');
++})();
++const access = {gateway:!!serviceBase,canWrite:!serviceBase,user:'',message:serviceBase?'正在确认访问权限…':''};
++const writeActions = new Set(['grid-save','grid-add','manage-products','new-product','rename-model','open-workbook','sync-workbook','resolve-db','resolve-workbook','edit-first','bulk-plan','export-plan','import-plan','detail-edit','edit-shipments','save-settings','refresh-sales','create-snapshot']);
++const readOnlyMessage = '当前为只读访问。计划维护、导入、生成Excel及规则修改需由管理员配置写入权限。';
++function serviceUrl(path) {
++  if (typeof path !== 'string' || !path.startsWith('/api/') || /[\\\r\n]/.test(path)) throw new Error('无效的业务接口地址');
++  return serviceBase + path;
++}
++function requireWrite() {
++  if (access.canWrite) return;
++  const error = new Error(access.message || readOnlyMessage);
++  error.definite = true;
++  throw error;
++}
++async function serviceFetch(path, options = {}, writeProbe = false) {
++  const method = (options.method || 'GET').toUpperCase();
++  const mutating = !['GET','HEAD'].includes(method);
++  if (mutating && !(writeProbe && path === '/api/write-access')) requireWrite();
++  const response = await fetch(serviceUrl(path), {credentials:'same-origin',...options});
++  if (mutating && response.status === 403 && access.gateway) {
++    access.canWrite = false; access.message = readOnlyMessage; applyAccessControls();
++    if (!writeProbe) {const error = new Error(readOnlyMessage);error.definite = true;throw error;}
++  }
++  return response;
++}
++function applyAccessControls() {
++  const banner = $('#access-status');
++  if (banner) {
++    banner.hidden = !access.gateway;
++    banner.textContent = access.canWrite ? `当前用户：${access.user} · 已获得计划维护权限` : access.message || readOnlyMessage;
++    banner.classList.toggle('read-only', !access.canWrite);
++  }
++  const ownerButton = $('#owner-btn');
++  if (ownerButton && access.gateway) {
++    ownerButton.textContent = access.user || '企业用户';
++    ownerButton.disabled = true;
++    ownerButton.setAttribute('aria-label', '当前登录用户');
++    ownerButton.title = '操作人由企业登录身份确定';
++  }
++  $$('[data-action],[data-edit],[data-catalog-edit],[data-catalog-bind],#generation-filter,#bridge-toggle,#edit-dialog button[type="submit"]').forEach(control => {
++    const mutating = writeActions.has(control.dataset?.action) || control.hasAttribute?.('data-edit') || control.hasAttribute?.('data-catalog-edit') || control.hasAttribute?.('data-catalog-bind') || ['generation-filter','bridge-toggle'].includes(control.id) || control.type === 'submit';
++    const unavailable = (mutating && !access.canWrite) || (access.gateway && control.dataset?.action === 'open-workbook');
++    if (unavailable) {
++      if (!control.disabled) control.dataset.accessDisabled = 'true';
++      control.disabled = true;
++      control.title = access.gateway && control.dataset?.action === 'open-workbook' ? '内网平台通过下载或导出使用Excel，不会打开服务器桌面程序' : readOnlyMessage;
++    } else if (control.dataset?.accessDisabled === 'true') {
++      control.disabled = false; delete control.dataset.accessDisabled;
++    }
++  });
++  if (access.gateway) $$('input[id$="-owner"]').forEach(control => {control.value = access.user;control.readOnly = true;control.setAttribute('aria-readonly','true');});
++}
++async function initializeAccess() {
++  try {
++    const signal = typeof AbortSignal !== 'undefined' && AbortSignal.timeout ? AbortSignal.timeout(5000) : undefined;
++    const response = await serviceFetch('/api/session', {signal});
++    if (!response.ok) throw new Error('登录信息暂不可用');
++    const session = await response.json();
++    if (!session || !['gateway','console'].includes(session.mode) || (serviceBase && session.mode !== 'gateway') || typeof session.canWrite !== 'boolean') throw new Error('登录信息暂不可用');
++    access.gateway = session.mode === 'gateway';
++    access.user = typeof session.user === 'string' ? session.user : '';
++    access.canWrite = !access.gateway && session.canWrite;
++    if (access.gateway) {
++      if (!access.user.trim()) throw new Error('登录信息暂不可用');
++      owner = access.user;
++      if (session.canWrite) {
++        const check = await serviceFetch('/api/write-access', {method:'POST',headers:{'Content-Type':'application/json'},body:'{}',signal}, true);
++        if (check.ok) {const permitted = await check.json();access.canWrite = permitted.canWrite === true || permitted.ok === true;}
++      }
++      access.message = access.canWrite ? '' : readOnlyMessage;
++    }
++  } catch {
++    // A root-only legacy console has no session API. Subpath deployments fail closed.
++    access.canWrite = !serviceBase && !access.gateway;
++    access.message = '无法确认企业登录或写入权限，当前仅允许查看。请稍后刷新或联系管理员。';
++  }
++  applyAccessControls();
++}
+ const esc = v => String(v ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+ const fmt = v => v == null ? '—' : Number(v).toLocaleString('zh-CN', {maximumFractionDigits: 2});
+ const conflictValue = c => v => c.kind==='catalog' ? esc(typeof v==='boolean'?(v?'使用中':'停用'):v??'—') : fmt(v);
+@@ -105,7 +189,7 @@
+   const fallback=row.isModel?sumPlan(state.products.filter(p=>!isModelPlan(p)&&p.brand===row.brand&&p.model===row.model),month,'sop').value:null;
+   return `<input class="grid-quantity${String(value)!==String(old)?' changed':''}" data-grid-id="${esc(row.id)}" data-grid-month="${month}"${row.isModel?` data-grid-model="${esc(row.model)}"`:''} inputmode="numeric" value="${esc(value)}" aria-label="${esc(row.isModel?row.model:row.version||'新增版本')} ${month} SOP计划量" placeholder="${fallback==null?'—':`汇总${fmt(fallback)}`}"${row.isModel?' title="填写车型总量；留空时使用版本汇总，0表示明确零值"':''} ${gridLocked()||row.deleted?'disabled':''}>`;
+ }
+-function gridToolbar(){if(!gridDraft)return '';return `<section class="grid-toolbar" aria-label="网页维护"><div class="toolbar"><label class="field inline-field">维护人<input id="grid-owner" maxlength="100" value="${esc(gridDraft.owner)}" ${gridLocked()?'disabled':''}></label><label class="field inline-field">调整原因<input id="grid-reason" maxlength="200" value="${esc(gridDraft.reason)}" ${gridLocked()?'disabled':''}></label>${button('新增车型','grid-add','small',gridLocked()?'disabled':'')}<span class="grid-hint">车型填总量，展开改版本；总量优先，留空按版本汇总。合计在保存后更新。</span></div><div id="grid-error" class="inline-error" role="alert">${esc(gridDraft.error||'')}</div></section>`;}
++function gridToolbar(){if(!gridDraft)return '';return `<section class="grid-toolbar" aria-label="网页维护"><div class="toolbar"><label class="field inline-field">维护人<input id="grid-owner" maxlength="100" value="${esc(gridDraft.owner)}" ${gridLocked()?'disabled':''} ${access.gateway?'readonly aria-readonly="true"':''}></label><label class="field inline-field">调整原因<input id="grid-reason" maxlength="200" value="${esc(gridDraft.reason)}" ${gridLocked()?'disabled':''}></label>${button('新增车型','grid-add','small',gridLocked()?'disabled':'')}<span class="grid-hint">车型填总量，展开改版本；总量优先，留空按版本汇总。合计在保存后更新。</span></div><div id="grid-error" class="inline-error" role="alert">${esc(gridDraft.error||'')}</div></section>`;}
+ function gridNewRows(anchor,visible){if(!gridDraft)return '';return [...gridDraft.rows.values()].filter(row=>row.isNew&&!row.virtual&&row.anchor===anchor).map(row=>`<tr class="version-row metric-plan-row grid-new-row" data-new-row="${esc(row.id)}"><th class="sticky-name" scope="row">${gridLabel(row)}</th><td class="sticky-metric">SOP计划量</td>${visible.map(m=>`<td class="sop-cell number${m<state.current_month?' past-month':''}">${isPlanMonthOpen(m)?gridCell(row,m):'未开放'}</td>${range==='rolling'&&m.endsWith('-12')?'<td class="annual-total">保存后计算</td>':''}`).join('')}${range==='rolling'?'':'<td class="annual-total">保存后计算</td>'}</tr>`).join('');}
+ function gridAddRow(b=brand,m='',anchor=''){if(!gridDraft||gridLocked()||gridDraft.groups.get(anchor)?.deleted)return;const group=gridDraft.groups.get(anchor);if(group){b=group.brand;m=group.model;}const id='new_'+gridUUID(),isModel=!anchor;gridDraft.rows.set(id,{id,isNew:true,isModel,brand:b||'',model:m||'',version:isModel?modelPlanLabel:'',anchor,values:{},baselines:{},deleted:false});if(anchor)expanded.add(anchor);gridDraft.request=null;gridRender();$(`[data-grid-id="${id}"][data-grid-field="${isModel?'model':'version'}"]`)?.focus();}
+ function gridRemoveRow(id){if(!gridDraft||gridLocked())return;const row=gridRow(id);if(!row)return;if(row.isNew)gridDraft.rows.delete(id);else row.deleted=!row.deleted;gridDraft.request=null;gridRender();}
+@@ -139,7 +223,7 @@
+ async function saveGrid(){
+   if(!gridDraft||gridDraft.saving)return;let payload;try{payload=gridDraft.request||gridPayload();if(!payload.changes.length&&!payload.catalog_changes.length&&!payload.entries.length)return toast('没有需要保存的修改');}catch(error){gridDraft.error=error.message;$('#grid-error').textContent=error.message;return;}
+   gridDraft.request=payload;gridDraft.saving=true;gridDraft.error='';gridRender();
+-  try{const response=await fetch('/api/plans/batch-edit',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(payload)});let result;try{result=await response.json();}catch{throw new Error('无法确认保存结果，请重试确认；草稿已保留');}
++  try{const response=await serviceFetch('/api/plans/batch-edit',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(payload)});let result;try{result=await response.json();}catch{throw new Error('无法确认保存结果，请重试确认；草稿已保留');}
+     if(!response.ok){const error=new Error(result.error||'保存失败');error.definite=response.status>=400&&response.status<500&&response.status!==408&&response.status!==429;throw error;}
+     if(!result.ok)throw new Error('无法确认保存结果，请重试确认');
+     for(const c of payload.catalog_changes.filter(c=>c.active===false)){const p=gridRow(c.id)?.original;hiddenRows[rowViewKey('version',c.id)]=p?`${p.model} · ${p.version}（已停用）`:c.id;}
+@@ -156,7 +240,7 @@
+ function dateText(t) { return t ? String(t).replace('T',' ').replace(/\.\d+/,'').replace(/\+08:00|Z/g,'').slice(0,19) : '尚未维护'; }
+ function toast(msg, error = false) { const el = $('#toast'); el.textContent = msg; el.className = `toast visible ${error?'error':''}`; clearTimeout(toast.timer); toast.timer = setTimeout(()=>el.className='toast',5000); }
+ async function api(path, body) {
+-  const response = await fetch(path, body === undefined ? {} : {method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify(body)});
++  const response = await serviceFetch(path, body === undefined ? {} : {method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify(body)});
+   const data = await response.json();
+   if (!response.ok) throw new Error(data.error || data.message || `请求失败（${response.status}）`);
+   return data;
+@@ -173,6 +257,7 @@
+   $('#current-time').textContent = `北京时间 ${dateText(state.now)}`;
+   const ob = $('#owner-btn'); if (ob) ob.textContent = owner || '设置维护人';
+   if(render) await renderPage();
++  applyAccessControls();
+ }
+ function generationMode() { return state?.generation_view?.mode||state?.settings?.generation_mode||'detail'; }
+ function generationModeLabel(mode=generationMode()) { return mode==='summary'?'汇总代际':'单代际'; }
+@@ -191,6 +276,7 @@
+   return notes.length?`<div class="callout subtle" role="status"><p><strong>${generationModeLabel()}范围提示：</strong>${notes.map(esc).join('；')}</p></div>`:'';
+ }
+ async function changeGenerationMode(value,control) {
++  requireWrite();
+   if(generationSwitchPending)return;
+   if(!['detail','summary'].includes(value))throw new Error('请选择单代际或汇总代际');
+   if(value===generationMode())return;
+@@ -210,7 +296,7 @@
+     catch { showGenerationError('无法确认当前代际范围，请刷新重试。'+error.message); }
+     toast(error.message,true);
+   } finally {
+-    generationSwitchPending=false;control.disabled=false;control.value=generationMode();
++    generationSwitchPending=false;control.disabled=!access.canWrite;control.value=generationMode();
+     app.inert=false;app.removeAttribute('aria-busy');
+     $('#generation-filter')?.focus({preventScroll:true});
+   }
+@@ -297,7 +383,7 @@
+ }
+ function opt(value,label,current) { return `<option value="${esc(value)}" ${value===current?'selected':''}>${esc(label)}</option>`; }
+ function heading(sub, actions='') { return `<div class="page-heading"><div><h1>${titles[page]}</h1><p class="subtitle">${sub}</p></div><div class="toolbar">${actions}</div></div>`; }
+-function button(text,action,cls='secondary',extra='') { return `<button type="button" class="button ${cls}" data-action="${action}" ${extra}>${text}</button>`; }
++function button(text,action,cls='secondary',extra='') { if ((writeActions.has(action)&&!access.canWrite)||(access.gateway&&action==='open-workbook')) extra+=' disabled title="'+esc(readOnlyMessage)+'"'; return `<button type="button" class="button ${cls}" data-action="${action}" ${extra}>${text}</button>`; }
+ function brandTabs() { return `<div class="brand-tabs" role="group" aria-label="品牌筛选">${['',...brands].map(b=>`<button class="brand-tab ${b===brand?'active':''}" data-brand="${b}" aria-pressed="${b===brand}">${b||'全部品牌'}<span>${state.products.filter(p=>!b||p.brand===b).length}</span></button>`).join('')}</div>`; }
+ function filterBar(extra='') {
+   const ms=[...new Set(state.products.filter(p=>!brand||p.brand===brand).map(p=>p.model))];
+@@ -352,7 +438,7 @@
+       const q=sumPlan(ps,m,'sop');
+       const open=isPlanMonthOpen(m)&&(!one||canEditProduct(p,m));
+       const closedLabel=one&&p.read_only?'—':one&&!productApplies(p,m)?'未适用':one&&p.active===false?'—':'未开放';
+-      cell=`<td class="sop-cell number${past}${open?'':' closed-month'}"${open?'':` title="${one&&p.read_only?'汇总代际计划自动相加，请切换至单代际维护':one&&p.active===false?'版本已停用，已有计划保留':one&&!productApplies(p,m)?'此月不在版本适用月份内':'此月份不在已开放计划范围内'}"`}>${one&&open?`<button class="edit-cell" data-edit="${p.id}" data-month="${m}" aria-label="编辑${esc(p.version)} ${m} SOP计划${q.value==null?'（待维护）':''}" title="${q.value==null?'待维护，点击输入计划量':'点击维护计划量'}">${quantity(q,'—')}</button>`:quantity(q,open?'—':closedLabel)}</td>`;
++      cell=`<td class="sop-cell number${past}${open?'':' closed-month'}"${open?'':` title="${one&&p.read_only?'汇总代际计划自动相加，请切换至单代际维护':one&&p.active===false?'版本已停用，已有计划保留':one&&!productApplies(p,m)?'此月不在版本适用月份内':'此月份不在已开放计划范围内'}"`}>${one&&open&&access.canWrite?`<button class="edit-cell" data-edit="${p.id}" data-month="${m}" aria-label="编辑${esc(p.version)} ${m} SOP计划${q.value==null?'（待维护）':''}" title="${q.value==null?'待维护，点击输入计划量':'点击维护计划量'}">${quantity(q,'—')}</button>`:quantity(q,open?'—':closedLabel)}</td>`;
+     }
+     if(draftRow&&!isLock&&(modelDraft?isPlanMonthOpen(m)&&(!draftRow.original||canEditProduct(draftRow.original,m)):canEditProduct(p,m)))cell=`<td class="sop-cell number${past}">${gridCell(draftRow,m)}</td>`;
+     return cell+(range==='rolling'&&m.endsWith('-12')?calendarPlanCell(ps,m.slice(0,4),field):'');
+@@ -409,7 +495,7 @@
+     <div class="sheet-footnote"><span>— 暂无数据或待维护；0为明确零值；灰底为已过去月份；未开放月份不可维护。${rolling?'年度计划量统计对应年1—12月，含视图外月份；':''}合计仅累加已知值。</span><span>${showLocks?(modelLockBasis?'锁单取源表“交车锁单”车型汇总，未分配至版本。':versionLockBasis?`车型锁单取“交车锁单”行，版本锁单取“版本／数量”行；版本锁单最新来源月：${versionLockLatest?shortMonth(versionLockLatest):'暂无'}。`:''):'锁单数已隐藏，可用上方按钮打开。'}点击车型展开版本${showLocks?'锁单和':''}计划。</span></div>
+     ${notes.length?`<details class="sheet-notes"><summary>数据口径与来源说明</summary>${notes.map(n=>`<p>${esc(n.message)}</p>`).join('')}</details>`:''}`;  if(gridDraft){$$('.annual-toolbar input,.annual-toolbar select,.saved-view-strip input,.saved-view-strip select,.saved-view-strip button,[data-action=toggle-wenjie],[data-action=import-plan],[data-action=export-plan]').forEach(el=>el.disabled=true);if(gridLocked())$$('[data-expand],[data-action=expand-all],[data-action=toggle-locks]').forEach(el=>el.disabled=true);}
+ }
+-function openDialog(html) { $('#edit-dialog').classList.toggle('catalog-dialog',html.includes('id="catalog-manager"')); $('#edit-dialog').classList.toggle('export-dialog',html.includes('id="export-plan-form"')||html.includes('id="import-plan-form"')); $('#dialog-content').innerHTML=html; const title=$('h2',$('#dialog-content'));if(title)title.id='dialog-title';$('#edit-dialog').showModal(); }
++function openDialog(html) { $('#edit-dialog').classList.toggle('catalog-dialog',html.includes('id="catalog-manager"')); $('#edit-dialog').classList.toggle('export-dialog',html.includes('id="export-plan-form"')||html.includes('id="import-plan-form"')); $('#dialog-content').innerHTML=html; const title=$('h2',$('#dialog-content'));if(title)title.id='dialog-title';applyAccessControls();$('#edit-dialog').showModal(); }
+ function closeDialog() { $('#edit-dialog').close(); }
+ function productManager() {
+   const catalog=state.products.filter(p=>!p.read_only);
+@@ -466,6 +552,7 @@
+   }catch(err){productFormError(err);save.disabled=false;}};
+ }
+ function bulkPlan() {
++  requireWrite();
+   if(gridDraft)return;
+   clearTimeout(searchTimer);
+   const rows=new Map(),modelRows=new Map(),groups=new Map();
+@@ -482,6 +569,7 @@
+ }
+ function editorOptions(id,ps=products()) {return ps.filter(p=>!p.read_only).map(p=>opt(p.id,`${p.brand} · ${p.model} · ${p.version}`,id)).join('');}
+ async function editInGrid(id,month=state.current_month){
++  requireWrite();
+   const product=state.products.find(p=>p.id===id);
+   if(!product||!canEditProduct(product,month))return toast('此行当前不可维护，请核对代际和月份',true);
+   if($('#edit-dialog')?.open)closeDialog();
+@@ -594,7 +682,7 @@
+ async function downloadPlanExport(options) {
+   const result=buildPlanExport(options,exportProducts(options)),chosen=result.selectedMonths,includeVersions=result.headers.includes('版本');
+   const scope=exportScope(options);
+-  const response=await fetch('/api/plans/export-xlsx',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({
++  const response=await serviceFetch('/api/plans/export-xlsx',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({
+     schema_version:1,current_month:state.current_month,months:chosen,include_locks:!!options.includeLocks,include_versions:includeVersions,
+     ...(state.generation_view?{generation_mode:generationMode(),generation_rule_signature:state.generation_view.rule_signature}:{}),
+     scope,headers:result.headers,rows:result.rows,annual_plans:result.annualPlans,row_product_ids:result.rowProductIds,selected_product_ids:result.selectedProductIds
+@@ -665,7 +753,7 @@
+ async function submitPlanImport(payload,choice) {
+   if(choice!==undefined&&!['db','workbook'].includes(choice))throw new Error('请选择冲突项的处理方式');
+   const body={filename:payload.filename,content_base64:payload.content_base64,...(choice?{choice}:{})};
+-  const response=await fetch('/api/plans/import-xlsx',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)});
++  const response=await serviceFetch('/api/plans/import-xlsx',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)});
+   let data;
+   try{data=await response.json();}catch{throw new Error('未能确认导入结果，请刷新看板检查后重试');}
+   if(!response.ok){const fallback=response.status===409?'表格与网页存在同时修改的计划，请核对后选择保留值':`导入未完成（${response.status}）`;const error=new Error(data.error||data.message||fallback);error.status=response.status;error.data=data;throw error;}
+@@ -808,8 +896,8 @@
+ function dataPage() {
+   const meta=state.meta,sources=state.sources?.length?state.sources:(meta.source_files||[]),q=meta.quality||[];
+   $('#app').innerHTML=heading('数据来源、Excel同步与计划规则。',button('来源与停用管理','manage-products')+button(state.workbook_sync?.status==='absent'?'创建维护Excel':'打开维护Excel','open-workbook')+(state.workbook_sync?.status==='absent'?'':button('同步Excel','sync-workbook'))+button('刷新销量文件','refresh-sales','primary'))+
+-    `<div class="two-col"><section class="card"><div class="panel-head"><div><h2>销量数据接入</h2><p>只更新历史参考，不覆盖人工计划</p></div><span class="badge good">已接入</span></div><div class="card-body"><dl class="info-list"><dt>文件目录</dt><dd>项目目录 / input_file</dd><dt>业务数据截至</dt><dd>${esc(meta.data_through||'待确认')}</dd><dt>自动更新</dt><dd>${esc(state.source_refresh?.message||'原始文件每分钟检查，保存稳定后自动读取')}</dd><dt>最近读取</dt><dd>${dateText(meta.generated_at)}</dd><dt>版本数量</dt><dd>${state.products.length} 个</dd><dt>参考口径</dt><dd>${meta.metrics.map(m=>esc(m.label)).join('、')}</dd></dl><h3>来源文件</h3><ul class="source-list">${sources.map(s=>`<li>${esc(typeof s==='string'?s:s.file||s.name||s.path||JSON.stringify(s))}${s.sheet?`<small>${esc(s.sheet)}</small>`:''}</li>`).join('')}</ul>${(meta.notes||[]).map(n=>`<p class="form-help">${esc(n)}</p>`).join('')}</div></section><section class="card"><div class="panel-head"><div><h2>计划与快照规则</h2><p>所有日期与截点使用北京时间</p></div></div><div class="card-body"><dl class="info-list"><dt>维护颗粒度</dt><dd>品牌 → 车型＋年款 × 月份；版本可选</dd><dt>本月计划口径</dt><dd>全月总量（含已发生部分）</dd><dt>年度扩展</dt><dd>每年9月开放到次年12月</dd><dt>当前计划截止</dt><dd>${shortMonth(state.plan_end)}</dd><dt>每天保存</dt><dd>24:00；周日24点快照同时用于考核</dd><dt>提前0周</dt><dd>月初周按周一至周日：月内超过4天取上周日，否则取当周日。2027年1月取1月3日24点。</dd></dl><label class="checkbox-field"><input id="bridge-toggle" type="checkbox" ${state.settings.bridge_m6!==false?'checked':''}>7、8月补足M+6（7月到次年1月，8月到次年2月）</label><p class="form-help">已确认7、8月补足M+6；每年9月扩展到次年12月。维护人姓名用于留痕，本机版不提供账号身份认证。</p>${button('保存规则','save-settings')}</div></section></div>`+
+-    `<section class="card page-section"><div class="panel-head"><div><h2>数据检查与口径说明</h2><p>显示来源实际包含的内容，不用推算代替历史数据</p></div></div><div class="card-body">${q.length?q.map(v=>`<div class="quality-row"><span class="badge ${v.status==='ok'||v.status==='passed'?'good':'neutral'}">${esc(v.level==='warning'?'待核对':v.status||'说明')}</span><span>${esc(typeof v==='string'?v:v.message||v.name||JSON.stringify(v))}</span></div>`).join(''):'<p>数据读取已完成。详细汇总与映射说明见来源记录。</p>'}<div class="callout">实际发货量由SP或IoC单独提供；预测销量、SOP计划量由负责人维护。未维护的数据不会自动补0。</div></div></section><section class="card page-section"><div class="panel-head"><div><h2>运行与留存</h2><p>保持工作台命令窗口运行，浏览器页面可以关闭</p></div></div><div class="card-body"><p>双击“启动工作台.cmd”运行，关闭命令窗口或按Ctrl+C即停止。运行期间自动保存每日快照，电脑关机或关闭工作台后无法实时执行；下次启动会依据修改日志还原截点，并标注实际生成时间。首次启用之前的计划历史不补造。</p><p class="form-help">计划与修改记录保存在本项目的 data/sop.sqlite3，表格只是同一数据的另一维护入口。需要多位同事共同维护时，应将同一服务部署到内网主机并配置身份访问。</p></div></section>`;
++    `<div class="two-col"><section class="card"><div class="panel-head"><div><h2>销量数据接入</h2><p>只更新历史参考，不覆盖人工计划</p></div><span class="badge good">已接入</span></div><div class="card-body"><dl class="info-list"><dt>文件目录</dt><dd>项目目录 / input_file</dd><dt>业务数据截至</dt><dd>${esc(meta.data_through||'待确认')}</dd><dt>自动更新</dt><dd>${esc(state.source_refresh?.message||'原始文件每分钟检查，保存稳定后自动读取')}</dd><dt>最近读取</dt><dd>${dateText(meta.generated_at)}</dd><dt>版本数量</dt><dd>${state.products.length} 个</dd><dt>参考口径</dt><dd>${meta.metrics.map(m=>esc(m.label)).join('、')}</dd></dl><h3>来源文件</h3><ul class="source-list">${sources.map(s=>`<li>${esc(typeof s==='string'?s:s.file||s.name||s.path||JSON.stringify(s))}${s.sheet?`<small>${esc(s.sheet)}</small>`:''}</li>`).join('')}</ul>${(meta.notes||[]).map(n=>`<p class="form-help">${esc(n)}</p>`).join('')}</div></section><section class="card"><div class="panel-head"><div><h2>计划与快照规则</h2><p>所有日期与截点使用北京时间</p></div></div><div class="card-body"><dl class="info-list"><dt>维护颗粒度</dt><dd>品牌 → 车型＋年款 × 月份；版本可选</dd><dt>本月计划口径</dt><dd>全月总量（含已发生部分）</dd><dt>年度扩展</dt><dd>每年9月开放到次年12月</dd><dt>当前计划截止</dt><dd>${shortMonth(state.plan_end)}</dd><dt>每天保存</dt><dd>24:00；周日24点快照同时用于考核</dd><dt>提前0周</dt><dd>月初周按周一至周日：月内超过4天取上周日，否则取当周日。2027年1月取1月3日24点。</dd></dl><label class="checkbox-field"><input id="bridge-toggle" type="checkbox" ${state.settings.bridge_m6!==false?'checked':''}>7、8月补足M+6（7月到次年1月，8月到次年2月）</label><p class="form-help">已确认7、8月补足M+6；每年9月扩展到次年12月。${access.gateway?'操作人由企业登录身份确定，服务端校验写入权限并留存操作记录。':'维护人姓名用于留痕，本机版不提供账号身份认证。'}</p>${button('保存规则','save-settings')}</div></section></div>`+
++    `<section class="card page-section"><div class="panel-head"><div><h2>数据检查与口径说明</h2><p>显示来源实际包含的内容，不用推算代替历史数据</p></div></div><div class="card-body">${q.length?q.map(v=>`<div class="quality-row"><span class="badge ${v.status==='ok'||v.status==='passed'?'good':'neutral'}">${esc(v.level==='warning'?'待核对':v.status||'说明')}</span><span>${esc(typeof v==='string'?v:v.message||v.name||JSON.stringify(v))}</span></div>`).join(''):'<p>数据读取已完成。详细汇总与映射说明见来源记录。</p>'}<div class="callout">实际发货量由SP或IoC单独提供；预测销量、SOP计划量由负责人维护。未维护的数据不会自动补0。</div></div></section><section class="card page-section"><div class="panel-head"><div><h2>运行与留存</h2><p>${access.gateway?'由内网服务统一运行，浏览器页面可以关闭':'保持工作台命令窗口运行，浏览器页面可以关闭'}</p></div></div><div class="card-body"><p>${access.gateway?'内网服务由管理员维护，访问者无需运行本机命令窗口。服务运行期间自动保存每日快照；停机后按已留存修改记录还原截点并标注实际生成时间，不补造上线前历史。':'双击“启动工作台.cmd”运行，关闭命令窗口或按Ctrl+C即停止。运行期间自动保存每日快照，电脑关机或关闭工作台后无法实时执行；下次启动会依据修改日志还原截点，并标注实际生成时间。首次启用之前的计划历史不补造。'}</p><p class="form-help">${access.gateway?'计划与修改记录集中保存在服务器的数据目录；表格是同一数据的另一维护入口。访问和写入权限由内网平台及业务服务执行。':'计划与修改记录保存在本项目的 data/sop.sqlite3，表格只是同一数据的另一维护入口。需要多位同事共同维护时，应将同一服务部署到内网主机并配置身份访问。'}</p></div></section>`;
+ }
+ async function renderPage() {
+   $('#page-title').textContent=titles[page];
+@@ -818,6 +906,8 @@
+   if(page==='planning')planning();else if(page==='history')await historyPage();else if(page==='matching')await matchingPage();else dataPage();
+ }
+ async function handleAction(action,el) {
++  if(writeActions.has(action))requireWrite();
++  if(access.gateway&&action==='open-workbook')throw new Error('请通过下载或导出使用Excel');
+   if(action==='grid-save')return saveGrid();
+   if(action==='grid-cancel'){if(gridLocked())return;gridDraft=null;planning();return;}
+   if(action==='grid-add')return gridAddRow();
+@@ -876,7 +966,7 @@
+   if(action==='export-snapshot') {
+     const s=currentSnapshot.snapshot,originalText=el.textContent;el.disabled=true;el.textContent='正在准备Excel…';
+     try {
+-      const response=await fetch(`/api/snapshots/${encodeURIComponent(s.id)}/excel`);
++      const response=await serviceFetch(`/api/snapshots/${encodeURIComponent(s.id)}/excel`);
+       if(!response.ok){const failure=await response.json();throw new Error(failure.error||'Excel备份尚未生成，请稍后重试');}
+       const blob=await response.blob(),url=URL.createObjectURL(blob),link=document.createElement('a');
+       link.href=url;link.download=`SOP快照_${s.business_date}_${s.id}.xlsx`;document.body.append(link);link.click();link.remove();setTimeout(()=>URL.revokeObjectURL(url),10000);
+@@ -912,12 +1002,12 @@
+     if(gridLocked()&&['expand-all','toggle-locks'].includes(el.dataset.action))return;
+     if(el.dataset.hideLevel){hideRow(el.dataset.hideLevel,el.dataset.hideId,el.dataset.hideLabel);return;}
+     if(el.dataset.restoreRow){delete hiddenRows[el.dataset.restoreRow];refreshHiddenRows();return;}
+-    if(el.dataset.catalogBind){bindProductSource(el.dataset.catalogBind);return;}
+-    if(el.dataset.catalogEdit){editProduct(el.dataset.catalogEdit);return;}
++    if(el.dataset.catalogBind){requireWrite();bindProductSource(el.dataset.catalogBind);return;}
++    if(el.dataset.catalogEdit){requireWrite();editProduct(el.dataset.catalogEdit);return;}
+     if(el.dataset.page){page=el.dataset.page;if(page==='matching')query='';await renderPage();return;}
+     if('brand' in el.dataset){brand=el.dataset.brand;model='';matchProduct='';query='';selected=null;await renderPage();return;}
+     if(el.dataset.range){range=el.dataset.range;planning();return;}
+-    if(el.dataset.edit){await editInGrid(el.dataset.edit,el.dataset.month);return;}
++    if(el.dataset.edit){requireWrite();await editInGrid(el.dataset.edit,el.dataset.month);return;}
+     if(el.dataset.detail){await showDetail(el.dataset.detail);return;}
+     if(el.dataset.snapshot){currentSnapshot=await api(`/api/snapshots/${encodeURIComponent(el.dataset.snapshot)}`);renderSnapshot(currentSnapshot);return;}
+     if(el.dataset.matchSnapshot){currentSnapshot=await api(`/api/snapshots/${encodeURIComponent(el.dataset.matchSnapshot)}`);page='history';await renderPage();return;}
+@@ -942,12 +1032,14 @@
+     if(e.target.id==='match-product'){matchProduct=e.target.value;await matchingPage();}
+   }catch(err){toast(err.message,true);}
+ });
++if(typeof MutationObserver!=='undefined'){const accessObserver=new MutationObserver(()=>applyAccessControls());for(const selector of ['#app','#dialog-content']){const region=$(selector);if(region)accessObserver.observe(region,{childList:true,subtree:true});}}
+ let searchTimer;
+ document.addEventListener('input',e=>{
+-  if(gridDraft){if(gridLocked())return;if(e.target.dataset.gridGroup){gridChangeModel(e.target.dataset.gridGroup,e.target.dataset.gridGroupField,e.target.value);return;}const row=gridRow(e.target.dataset.gridId);if(row){if(e.target.dataset.gridMonth)row.values[e.target.dataset.gridMonth]=e.target.value;else if(e.target.dataset.gridField)row[e.target.dataset.gridField]=e.target.value;e.target.removeAttribute('aria-invalid');e.target.classList.add('changed');gridDraft.request=null;return;}if(e.target.id==='grid-owner'){gridDraft.owner=e.target.value;return;}if(e.target.id==='grid-reason'){gridDraft.reason=e.target.value;return;}return;}
++  if(gridDraft){if(gridLocked())return;if(e.target.dataset.gridGroup){gridChangeModel(e.target.dataset.gridGroup,e.target.dataset.gridGroupField,e.target.value);return;}const row=gridRow(e.target.dataset.gridId);if(row){if(e.target.dataset.gridMonth)row.values[e.target.dataset.gridMonth]=e.target.value;else if(e.target.dataset.gridField)row[e.target.dataset.gridField]=e.target.value;e.target.removeAttribute('aria-invalid');e.target.classList.add('changed');gridDraft.request=null;return;}if(e.target.id==='grid-owner'){if(!access.gateway)gridDraft.owner=e.target.value;return;}if(e.target.id==='grid-reason'){gridDraft.reason=e.target.value;return;}return;}
+   if(e.target.id==='table-view-name'){viewNameDraft=e.target.value;return;}
+   if(e.target.id==='version-search'){clearTimeout(searchTimer);query=e.target.value;searchTimer=setTimeout(async()=>{const pos=e.target.selectionStart;await renderPage();const inp=$('#version-search');if(inp){inp.focus();inp.setSelectionRange(pos,pos)}},300);}});
+ $('#owner-btn')?.addEventListener('click',()=>{
++  if(access.gateway)return;
+   if(gridDraft)return toast('请在表内维护条填写维护人',true);
+   openDialog(`<form id="owner-form"><h2>设置维护人</h2><p class="subtitle">姓名将记录在之后保存的计划中。</p><label class="field">姓名<input id="owner-name" value="${esc(owner)}" required maxlength="60"></label><div class="dialog-actions">${button('取消','close-dialog')}<button class="button primary" type="submit">保存</button></div></form>`);
+   $('#owner-form').onsubmit=e=>{e.preventDefault();owner=$('#owner-name').value.trim();localStorage.setItem('sop-owner',owner);$('#owner-btn').textContent=owner;closeDialog();};
+@@ -955,7 +1047,7 @@
+ $('#refresh-btn')?.addEventListener('click',async()=>{try{await load();toast('已载入最新计划');}catch(err){toast(err.message,true);}});
+ window.addEventListener('beforeunload',e=>{if(gridDraft){e.preventDefault();e.returnValue='';}});
+ window.addEventListener('unhandledrejection',e=>toast(e.reason?.message||'加载失败，请重试',true));
+-load().catch(err=>{$('#app').innerHTML=`<div class="empty-state"><h1>暂时无法连接数据服务</h1><p>${esc(err.message)}</p><p>请使用项目中的启动脚本打开看板。</p></div>`;});
++initializeAccess().then(()=>load()).catch(err=>{$('#app').innerHTML=`<div class="empty-state"><h1>暂时无法连接数据服务</h1><p>${esc(err.message)}</p><p>${access.gateway?'请联系应用负责人检查内网业务服务，稍后刷新重试。':'请使用项目中的启动脚本打开看板。'}</p></div>`;});
+ 
+ // Rule changes also refresh an absent maintenance workbook's current view.
+ setInterval(pollWorkbookStatus,8000);
+diff --git a/web/index.html b/web/index.html
+--- a/web/index.html
++++ b/web/index.html
+@@ -28,6 +28,7 @@
+           <button class="button ghost small" id="owner-btn" type="button" aria-label="设置操作人">设置维护人</button>
+         </div>
+       </header>
++      <div id="access-status" class="access-status" role="status" aria-live="polite" hidden></div>
+       <main id="app" tabindex="-1" aria-label="SOP计划内容">
+         <div class="loading-state" role="status"><span class="loading-spinner" aria-hidden="true"></span><strong>正在读取计划数据</strong></div>
+       </main>
+diff --git a/web/styles.css b/web/styles.css
+--- a/web/styles.css
++++ b/web/styles.css
+@@ -886,3 +886,9 @@
+   .saved-view-strip #restore-hidden-row { max-width:200px; }
+ }
+ @media print { .plan-titlebar { display:block; min-height:0; margin:0 0 8px; } .plan-titlebar .plan-actions { display:none!important; } }
++/* Enterprise access status stays visible while navigating application sections. */
++.access-status{margin:14px 24px 0;padding:11px 15px;border:1px solid #bcd9cf;border-radius:8px;background:#eef8f3;color:#245f4c;font-size:13px;line-height:1.65}
++.access-status.read-only{border-color:#d2dfef;background:#f0f5fc;color:#365578}
++.access-status[hidden]{display:none}
++input[aria-readonly="true"]{background:#f1f4f8;color:#4c5e73}
++@media(max-width:600px){.access-status{margin:12px 14px 0;padding:10px 12px}}

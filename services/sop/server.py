@@ -1,0 +1,563 @@
+"""Run the SOP dashboard at http://127.0.0.1:8876 using Python 3.10+."""
+from __future__ import annotations
+
+import argparse
+import base64
+import binascii
+import importlib
+import json
+import logging
+import mimetypes
+import os
+import signal
+import socket
+import threading
+import webbrowser
+from http.client import HTTPConnection, HTTPException
+from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
+from pathlib import Path
+from urllib.parse import parse_qs, quote, unquote, urlparse
+
+from sop_paths import plan_workbook_path
+from sop_store import ConflictError, SOPStore, ValidationError
+from sop_workbook import WorkbookSync
+from sop_backup import SnapshotBackup
+from sop_export import ExportError, MAX_REQUEST_BYTES, PlanExport
+from sop_refresh import SalesRefresh
+from sop_source_rules import MergeRuleError
+from sop_gateway import GatewayConfig, GatewayError, attributed_body
+
+ROOT = Path(__file__).resolve().parent
+LOGGER = logging.getLogger("sop")
+
+
+class WorkbenchHTTPServer(ThreadingHTTPServer):
+    launch_mode = "console"
+    daemon_threads = True
+
+    def server_bind(self):
+        if hasattr(socket, "SO_EXCLUSIVEADDRUSE"):
+            # A second Windows console must not bind the same port and start
+            # another writer for the same database and maintenance workbook.
+            self.allow_reuse_address = False
+            self.socket.setsockopt(socket.SOL_SOCKET, socket.SO_EXCLUSIVEADDRUSE, 1)
+        super().server_bind()
+
+
+def workbench_running(host, port):
+    connection = HTTPConnection(host, port, timeout=2)
+    try:
+        connection.request("GET", "/api/health")
+        response = connection.getresponse()
+        health = json.loads(response.read(16384))
+        return (response.status == 200 and isinstance(health, dict)
+                and health.get("app_id") == "hima-sop"
+                and health.get("workspace") == str(ROOT)
+                and health.get("launch_mode") == "console")
+    except (OSError, HTTPException, ValueError):
+        return False
+    finally:
+        connection.close()
+
+
+def open_workbench(url):
+    try:
+        if webbrowser.open(url, new=2):
+            return
+    except (OSError, webbrowser.Error):
+        pass
+    print(f"未能自动打开浏览器，请手动访问：{url}", flush=True)
+
+
+def make_handler(store, web_root, port, workbook_sync=None, snapshot_backup=None, plan_export=None, source_refresh=None, plan_roundtrip=None, gateway=None):
+    plan_export = plan_export or PlanExport(root=ROOT)
+    roundtrip_lock = threading.Lock()
+
+    def roundtrip_service():
+        nonlocal plan_roundtrip
+        with roundtrip_lock:
+            if plan_roundtrip is None:
+                from sop_roundtrip import PlanRoundtrip
+                plan_roundtrip = PlanRoundtrip(store, workbook_sync)
+            return plan_roundtrip
+    source_refresh = source_refresh or SalesRefresh(store, workbook_sync, root=ROOT,
+        reader=lambda **kwargs: importlib.import_module("sop_data").refresh(**kwargs))
+    allowed_hosts = {f"127.0.0.1:{port}", f"localhost:{port}", f"[::1]:{port}"}
+    if port == 80:
+        allowed_hosts.update({"127.0.0.1", "localhost", "[::1]"})
+
+    class Handler(BaseHTTPRequestHandler):
+        server_version = "SOPLocal/1.0"
+
+        def send_response(self, code, message=None):
+            super().send_response(code, message)
+            if gateway and self.command not in {"GET", "HEAD"}:
+                # JSON escaping prevents usernames/paths becoming log directives;
+                # never log the proxy key, request body, or client-claimed owner.
+                LOGGER.info("sop_audit %s", json.dumps({
+                    "principal": getattr(self, "gateway_user", None),
+                    "method": self.command, "path": self.path.split("?", 1)[0], "status": code,
+                }, ensure_ascii=True))
+
+        def end_headers(self):
+            if gateway:
+                self.send_header("X-Frame-Options", "SAMEORIGIN")
+                self.send_header("Content-Security-Policy", "frame-ancestors 'self'")
+            super().end_headers()
+
+        def log_message(self, format, *args):
+            LOGGER.info("%s %s", self.client_address[0], format % args)
+
+        def _headers(self, code, content_type, length):
+            self.send_response(code)
+            self.send_header("Content-Type", content_type)
+            self.send_header("Content-Length", str(length))
+            self.send_header("Cache-Control", "no-store")
+            self.send_header("X-Content-Type-Options", "nosniff")
+            if not gateway:
+                self.send_header("X-Frame-Options", "DENY")
+            self.send_header("Referrer-Policy", "same-origin")
+            self.end_headers()
+
+        def _json(self, body, status=200):
+            if status >= 400:
+                self._discard_rejected_body()
+            encoded = json.dumps(body, ensure_ascii=False, allow_nan=False).encode("utf-8")
+            self._headers(status, "application/json; charset=utf-8", len(encoded))
+            if self.command != "HEAD":
+                self.wfile.write(encoded)
+
+        def _discard_rejected_body(self):
+            """Keep a small rejected POST from resetting its own HTTP error.
+
+            Closing a Windows socket with unread request bytes can discard the
+            403 response via TCP RST. Drain only unambiguous small bodies, with
+            a short timeout; never parse or execute the rejected operation.
+            """
+            if self.command != "POST" or getattr(self, "request_body_consumed", False):
+                return
+            self.request_body_consumed = True
+            self.close_connection = True
+            lengths = self.headers.get_all("Content-Length", [])
+            if self.headers.get_all("Transfer-Encoding", []) or len(lengths) != 1:
+                return
+            raw_length = lengths[0]
+            if (not raw_length.isascii() or not raw_length.isdigit() or len(raw_length) > 6
+                    or not 0 < int(raw_length) <= 64 * 1024):
+                return
+            previous_timeout = self.connection.gettimeout()
+            try:
+                self.connection.settimeout(.25)
+                self.rfile.read(int(raw_length))
+            except (OSError, ValueError):
+                # Missing/slow bodies are still denied, without an unbounded wait.
+                pass
+            finally:
+                self.connection.settimeout(previous_timeout)
+
+        def _local_request(self):
+            if gateway:
+                try:
+                    self.gateway_user = gateway.authorize(self.headers, self.client_address[0], port, self.command)
+                    self.application_path = gateway.route(self.path)
+                    if self.application_path is None:
+                        if self.command not in {"GET", "HEAD"}:
+                            raise GatewayError("应用路径不存在。", 404)
+                        self.send_response(308)
+                        self.send_header("Location", gateway.base_path + "/")
+                        self.send_header("Content-Length", "0")
+                        self.end_headers()
+                        return False
+                    if self.command == "POST" and not gateway.allow_writes:
+                        raise GatewayError("写入尚未开放，请联系管理员配置允许写入的域用户组。")
+                    return True
+                except GatewayError as error:
+                    self._json({"error": str(error)}, error.status)
+                    return False
+            host = self.headers.get("Host", "").lower()
+            if host not in allowed_hosts:
+                self._json({"error": "仅允许本机访问。"}, 403)
+                return False
+            origin = self.headers.get("Origin")
+            if origin:
+                parsed = urlparse(origin)
+                if parsed.scheme != "http" or parsed.netloc.lower() != host or parsed.path not in {"", "/"}:
+                    self._json({"error": "请求来源不允许。"}, 403)
+                    return False
+            return True
+
+        def _body(self, max_bytes=8 * 1024 * 1024):
+            if self.headers.get_content_type() != "application/json":
+                raise ValidationError("请使用 application/json 请求。")
+            try:
+                length = int(self.headers.get("Content-Length", "0"))
+            except ValueError:
+                raise ValidationError("请求长度无效。")
+            if length <= 0 or length > max_bytes:
+                raise ValidationError(f"请求为空或超过 {max_bytes // (1024 * 1024)} MB。")
+            try:
+                encoded = self.rfile.read(length)
+                self.request_body_consumed = True
+                value = json.loads(encoded.decode("utf-8"))
+            except (UnicodeDecodeError, json.JSONDecodeError):
+                raise ValidationError("JSON 格式无效。")
+            if not isinstance(value, dict):
+                raise ValidationError("请求内容必须为对象。")
+            return value
+
+        def _handle_error(self, error):
+            if isinstance(error, ConflictError):
+                self._json({"error": str(error), "conflicts": error.conflicts,
+                            **({"source": error.source} if getattr(error, "source", None) else {})}, 409)
+            elif isinstance(error, (ValidationError, MergeRuleError)):
+                self._json({"error": str(error)}, 400)
+            elif isinstance(error, ExportError):
+                self._json({"error": str(error)}, error.status)
+            else:
+                LOGGER.exception("Request failed")
+                self._json({"error": "操作未完成，原有数据已保留。请查看本地服务日志。"}, 500)
+
+        def do_HEAD(self):
+            self.do_GET()
+
+        def do_GET(self):
+            if not self._local_request():
+                return
+            parsed = urlparse(self.path)
+            path = self.application_path if gateway else unquote(parsed.path)
+            query = {key: values[-1] for key, values in parse_qs(parsed.query).items()}
+            try:
+                if path == "/api/session":
+                    self._json({"mode": "gateway" if gateway else "console",
+                                "user": self.gateway_user if gateway else None,
+                                "canWrite": gateway.allow_writes if gateway else True})
+                elif path == "/api/health":
+                    health = {"app_id": "hima-sop", "launch_mode": "gateway" if gateway else getattr(self.server, "launch_mode", None)}
+                    if not gateway:
+                        health.update(workspace=str(ROOT), port=port, pid=os.getpid())
+                    self._json(health)
+                elif path == "/api/state":
+                    state = store.state()
+                    state["source_refresh"] = source_refresh.status()
+                    if workbook_sync:
+                        state["workbook_sync"] = workbook_sync.status()
+                    self._json(state)
+                elif path == "/api/products":
+                    self._json(store.list_products())
+                elif path == "/api/plan-workbook/status" and workbook_sync:
+                    try:
+                        generation_view = store.generation_view()
+                    except (ValidationError, MergeRuleError) as error:
+                        generation_view = {"error": str(error)}
+                    self._json({**workbook_sync.status(), "source_refresh": source_refresh.status(),
+                                "generation_view": generation_view})
+                elif path == "/api/plan-workbook/download" and workbook_sync:
+                    # Public GET must not import workbook edits into business data.
+                    if gateway and not workbook_sync.path.is_file():
+                        self._json({"error": "维护表尚未生成，请联系维护人员。"}, 404)
+                        return
+                    result = ({"status": "ready"} if gateway else
+                              workbook_sync.sync(force_export=not workbook_sync.path.is_file()))
+                    if result["status"] in {"conflict", "error", "pending"}:
+                        self._json({"error": result["message"], "workbook_sync": result}, 409)
+                        return
+                    encoded = workbook_sync.path.read_bytes()
+                    self.send_response(200)
+                    self.send_header("Content-Type", "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
+                    self.send_header("Content-Disposition", "attachment; filename=SOP-plan-copy.xlsx")
+                    self.send_header("Content-Length", str(len(encoded)))
+                    self.send_header("Cache-Control", "no-store")
+                    self.send_header("X-Content-Type-Options", "nosniff")
+                    self.end_headers()
+                    if self.command != "HEAD":
+                        self.wfile.write(encoded)
+                elif path == "/api/history":
+                    self._json(store.history(query.get("product_id"), query.get("month")))
+                elif path == "/api/backups/status" and snapshot_backup:
+                    self._json(snapshot_backup.status())
+                elif path == "/api/snapshots":
+                    self._json(snapshot_backup.snapshot_list() if snapshot_backup else store.snapshots())
+                elif path.startswith("/api/snapshots/") and path.endswith("/excel") and snapshot_backup:
+                    parts = path.strip("/").split("/")
+                    if len(parts) != 4:
+                        raise ValidationError("快照下载地址无效。")
+                    backup = snapshot_backup.ensure(parts[2])
+                    if backup["status"] != "ready":
+                        self._json({"error": "快照已保留，Excel 备份暂未生成，请稍后重试。", "excel_backup": backup}, 503)
+                        return
+                    encoded = Path(backup["path"]).read_bytes()
+                    self.send_response(200)
+                    self.send_header("Content-Type", "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
+                    self.send_header("Content-Disposition", f"attachment; filename=SOP-snapshot-{int(parts[2])}.xlsx")
+                    self.send_header("Content-Length", str(len(encoded)))
+                    self.send_header("Cache-Control", "no-store")
+                    self.send_header("X-Content-Type-Options", "nosniff")
+                    self.end_headers()
+                    if self.command != "HEAD":
+                        self.wfile.write(encoded)
+                elif path.startswith("/api/snapshots/"):
+                    snapshot_id = path.rsplit("/", 1)[-1]
+                    self._json(snapshot_backup.get_snapshot(snapshot_id) if snapshot_backup else store.get_snapshot(snapshot_id))
+                elif path == "/api/compare":
+                    self._json(store.compare(query.get("left"), query.get("right")))
+                elif path == "/api/matching":
+                    self._json(store.matching(query.get("month", ""), query.get("brand", ""), query.get("model", ""),
+                                              query.get("product_id", ""), query.get("zero_week_date", "")))
+                elif path.startswith("/api/"):
+                    self._json({"error": "接口不存在。"}, 404)
+                else:
+                    relative = "index.html" if path == "/" else path.lstrip("/")
+                    target = (web_root / relative).resolve()
+                    if not target.is_relative_to(web_root.resolve()) or any(part.startswith(".") for part in Path(relative).parts) or not target.is_file():
+                        self._json({"error": "页面不存在。"}, 404)
+                        return
+                    encoded = target.read_bytes()
+                    content_type = mimetypes.guess_type(target.name)[0] or "application/octet-stream"
+                    if content_type.startswith("text/") or content_type in {"application/javascript", "application/json"}:
+                        content_type += "; charset=utf-8"
+                    self._headers(200, content_type, len(encoded))
+                    if self.command != "HEAD":
+                        self.wfile.write(encoded)
+            except (BrokenPipeError, ConnectionResetError, ConnectionAbortedError):
+                pass
+            except Exception as error:
+                self._handle_error(error)
+
+        def do_POST(self):
+            if not self._local_request():
+                return
+            try:
+                path = self.application_path if gateway else urlparse(self.path).path
+                if gateway and path == "/api/plan-workbook/open":
+                    self._json({"error": "服务端不支持从浏览器打开服务器桌面文件，请下载副本。"}, 403)
+                    return
+                limit = 17 * 1024 * 1024 if path == "/api/plans/import-xlsx" else MAX_REQUEST_BYTES
+                body = self._body(limit)
+                if gateway:
+                    body = attributed_body(body, self.gateway_user)
+                    if path in {"/api/plans", "/api/plans/batch-edit", "/api/products", "/api/shipments"}:
+                        body["owner"] = self.gateway_user
+                if path == "/api/write-access":
+                    self._json({"canWrite": True})
+                    return
+                elif path == "/api/plans/export-xlsx":
+                    context = None
+                    if "row_product_ids" in body:
+                        body, context = roundtrip_service().prepare(body)
+                    with plan_export.generate(body, **({"roundtrip": context} if context is not None else {})) as exported:
+                        if context is not None:
+                            roundtrip_service().register(exported.path, context)
+                        encoded = exported.path.read_bytes()
+                    self.send_response(200)
+                    self.send_header("Content-Type", "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
+                    self.send_header("Content-Disposition", f"attachment; filename=SOP-plan-export.xlsx; filename*=UTF-8''{quote(exported.filename, safe='')}")
+                    self.send_header("Content-Length", str(len(encoded)))
+                    self.send_header("Cache-Control", "no-store")
+                    self.send_header("X-Content-Type-Options", "nosniff")
+                    self.end_headers()
+                    self.wfile.write(encoded)
+                    return
+                elif path == "/api/plans/import-xlsx":
+                    if not {"filename", "content_base64"}.issubset(body) or set(body) - {"filename", "content_base64", "choice"}:
+                        raise ValidationError("请选择从本看板导出的 Excel 文件。")
+                    filename, content = body["filename"], body["content_base64"]
+                    if not isinstance(filename, str) or len(filename) > 255 or not filename.lower().endswith(".xlsx"):
+                        raise ValidationError("仅支持 .xlsx 格式的计划表。")
+                    if not isinstance(content, str) or len(content) > 16 * 1024 * 1024:
+                        raise ValidationError("Excel 文件不能超过 12 MB。")
+                    if body.get("choice") not in (None, "db", "workbook"):
+                        raise ValidationError("请选择保留网页计划或使用表格计划。")
+                    try:
+                        decoded = base64.b64decode(content, validate=True)
+                    except (ValueError, binascii.Error):
+                        raise ValidationError("Excel 文件内容无效，请重新选择文件。")
+                    if not decoded or len(decoded) > 12 * 1024 * 1024:
+                        raise ValidationError("Excel 文件为空或超过 12 MB。")
+                    result = roundtrip_service().import_content(decoded, choice=body.get("choice"),
+                        **({"actor": self.gateway_user} if gateway else {}))
+                    if not result.get("ok", False):
+                        self._json(result, 409 if result.get("status") == "conflict" else 400)
+                        return
+                elif path == "/api/plans":
+                    result = workbook_sync.save_web_plans(body) if workbook_sync else store.save_plans(body)
+                elif path == "/api/plans/batch-edit":
+                    if workbook_sync:
+                        with workbook_sync.lock:
+                            status = workbook_sync.sync()
+                            if status["status"] in {"error", "conflict"} or not workbook_sync._input_checked:
+                                self._json({"error": status["message"], "workbook_sync": status}, 409)
+                                return
+                            result = store.save_grid_batch(body)
+                            result["workbook_sync"] = workbook_sync.sync()
+                    else:
+                        result = store.save_grid_batch(body)
+                elif path == "/api/products":
+                    # Preserve saved Excel edits before changing its row directory.
+                    if workbook_sync:
+                        with workbook_sync.lock:
+                            status = workbook_sync.sync()
+                            if status["status"] in {"error", "conflict"} or not workbook_sync._input_checked:
+                                self._json({"error": status["message"], "workbook_sync": status}, 409)
+                                return
+                            result = store.save_products(body)
+                            result["workbook_sync"] = workbook_sync.sync()
+                    else:
+                        result = store.save_products(body)
+                elif path in {"/api/plan-workbook/sync", "/api/plan-workbook/export"} and workbook_sync:
+                    status = workbook_sync.sync(force_export=path.endswith("/export"), choice=body.get("choice"))
+                    result = {"ok": status["status"] not in {"conflict", "error"}, **status}
+                elif path == "/api/plan-workbook/open" and workbook_sync:
+                    status = workbook_sync.sync(force_export=not workbook_sync.path.is_file())
+                    if not workbook_sync.path.is_file():
+                        raise ValidationError(status["message"])
+                    if os.name != "nt":
+                        raise ValidationError("请手动打开计划表：" + str(workbook_sync.path))
+                    os.startfile(workbook_sync.path)
+                    result = {"ok": True, "path": str(workbook_sync.path), "workbook_sync": status}
+                elif path == "/api/shipments":
+                    result = store.save_shipments(body)
+                elif path == "/api/settings":
+                    if "generation_mode" in body and workbook_sync:
+                        # Accept saved edits using the old view before replacing
+                        # its rows. A conflict must leave the selected mode intact.
+                        with workbook_sync.lock:
+                            before = workbook_sync.sync()
+                            if before["status"] in {"error", "conflict"} or not workbook_sync._input_checked:
+                                self._json({"error": before["message"], "workbook_sync": before}, 409)
+                                return
+                            result = store.update_settings(body)
+                            result["workbook_sync"] = workbook_sync.sync()
+                    else:
+                        result = store.update_settings(body)
+                        if workbook_sync:
+                            result["workbook_sync"] = workbook_sync.sync()
+                elif path == "/api/snapshots":
+                    if workbook_sync:
+                        sync_state = workbook_sync.sync()
+                        if sync_state["status"] in {"conflict", "error"} or not getattr(workbook_sync, "_input_checked", True):
+                            self._json({"error": sync_state["message"], "workbook_sync": sync_state,
+                                        "conflicts": sync_state.get("conflicts", [])},
+                                       409 if sync_state["status"] == "conflict" else 400)
+                            return
+                    result = store.manual_snapshot(body.get("label", ""))
+                    if snapshot_backup:
+                        result["excel_backup"] = snapshot_backup.ensure(result["snapshot"]["id"])
+                elif path == "/api/refresh":
+                    result = source_refresh.refresh()
+                else:
+                    self._json({"error": "接口不存在。"}, 404)
+                    return
+                self._json(result)
+            except (BrokenPipeError, ConnectionResetError, ConnectionAbortedError):
+                pass
+            except Exception as error:
+                self._handle_error(error)
+
+    return Handler
+
+
+def main():
+    parser = argparse.ArgumentParser(description="SOP计划工作台：保持窗口运行，关闭窗口即停止")
+    parser.add_argument("--host", default="127.0.0.1", choices=["127.0.0.1", "localhost"])
+    parser.add_argument("--port", type=int, default=8876)
+    parser.add_argument("--data-dir", type=Path, default=ROOT / "data")
+    parser.add_argument("--web-dir", type=Path, default=ROOT / "web")
+    parser.add_argument("--plan-file", type=Path, default=plan_workbook_path(ROOT))
+    parser.add_argument("--open-browser", action="store_true", help="就绪后自动打开工作台网页")
+    parser.add_argument("--gateway-config", type=Path, help="IIS代理配置，显式启用子路径和可信身份模式")
+    args = parser.parse_args()
+    if not 1 <= args.port <= 65535:
+        parser.error("端口必须为 1 至 65535。")
+    gateway = None
+    if args.gateway_config:
+        try:
+            gateway = GatewayConfig.load(args.gateway_config)
+            gateway.configure_environment()
+            if "data_dir" in gateway.paths:
+                args.data_dir = gateway.paths["data_dir"]
+            if "plan_file" in gateway.paths:
+                args.plan_file = gateway.paths["plan_file"]
+            # Validate a moved deployment's rules before creating or changing data.
+            importlib.import_module("sop_source_rules").load_merge_rules()
+        except (ValueError, OSError) as error:
+            parser.error(f"代理配置无效：{error}")
+        if args.open_browser:
+            parser.error("代理服务不支持 --open-browser，请通过 IIS 入口访问。")
+    url = f"http://{args.host}:{args.port}"
+    # Bind before touching persistent data, so a busy port cannot start a second writer.
+    try:
+        server = WorkbenchHTTPServer((args.host, args.port), BaseHTTPRequestHandler)
+    except OSError as error:
+        if not gateway and workbench_running(args.host, args.port):
+            print("工作台已在另一个窗口运行；请保留原窗口，关闭原窗口即可停止。", flush=True)
+            if args.open_browser:
+                open_workbench(url)
+            return 0
+        print(f"无法启动工作台：端口 {args.port} 不可用（{error}）。其他服务未受影响。", flush=True)
+        return 1
+
+    # Ctrl+C and Ctrl+Break both follow the ordinary foreground shutdown path.
+    if hasattr(signal, "SIGBREAK"):
+        signal.signal(signal.SIGBREAK, signal.default_int_handler)
+    stop, workers, store = threading.Event(), [], None
+    try:
+        args.data_dir.mkdir(parents=True, exist_ok=True)
+        logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s",
+                            handlers=[logging.StreamHandler(), logging.FileHandler(
+                                args.data_dir / "service.err.log", encoding="utf-8")], force=True)
+        if not (args.data_dir / "sales.json").exists():
+            importlib.import_module("sop_data").refresh(output_path=args.data_dir / "sales.json")
+        store = SOPStore(args.data_dir / "sop.sqlite3", args.data_dir / "sales.json")
+        store.ensure_daily_snapshots()
+        workbook_sync = WorkbookSync(store, args.plan_file, auto_create=False)
+        workbook_sync.sync()
+        source_refresh = SalesRefresh(store, workbook_sync, root=ROOT)
+        snapshot_backup = SnapshotBackup(store)
+
+        def daily_worker():
+            while not stop.wait(8):
+                try:
+                    store.ensure_daily_snapshots()
+                    workbook_sync.sync()
+                    source_refresh.poll()
+                except Exception:
+                    LOGGER.exception("Daily snapshot failed; will retry")
+
+        def backup_worker():
+            while not stop.is_set():
+                try:
+                    attempted = snapshot_backup.export_pending(limit=1)
+                except Exception:
+                    LOGGER.exception("Excel snapshot backup failed; will retry")
+                    attempted = 0
+                stop.wait(1 if attempted else 8)
+
+        for name, target in (("daily-snapshot", daily_worker), ("snapshot-excel-backup", backup_worker)):
+            worker = threading.Thread(target=target, name=name, daemon=True)
+            worker.start()
+            workers.append(worker)
+        server.launch_mode = "gateway" if gateway else "console"
+        server.RequestHandlerClass = make_handler(store, args.web_dir, args.port, workbook_sync,
+                                                  snapshot_backup, source_refresh=source_refresh, gateway=gateway)
+        print(f"\nSOP计划工作台已就绪：{url}\n保持此窗口打开；关闭窗口或按 Ctrl+C 即停止。\n关闭浏览器页面不会停止工作台。\n", flush=True)
+        if args.open_browser:
+            threading.Thread(target=open_workbench, args=(url,), name="open-browser", daemon=True).start()
+        server.serve_forever(poll_interval=0.5)
+    except KeyboardInterrupt:
+        pass
+    except Exception:
+        LOGGER.exception("SOP服务启动或运行失败；请检查数据目录、原始锁单文件、共享规则及运行日志。")
+        return 1
+    finally:
+        stop.set()
+        server.server_close()
+        for worker in workers:
+            worker.join(timeout=2)
+        if store is not None:
+            store.close()
+        print("SOP计划工作台已停止。", flush=True)
+    return 0
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())
