@@ -15,31 +15,28 @@ from PIL import Image, ImageDraw
 
 ROOT = Path(__file__).resolve().parents[1]
 OUTPUT = ROOT / "portal" / "assets"
-BLUE = "#245CDD"
+BLUE = "#174A80"
 WHITE = "#FFFFFF"
-MINT = "#67E8D3"
+GOLD = "#E6BD74"
 
-# Coordinates use a 64 px viewBox. A wide calendar frame gives the mark its
-# silhouette; two schedule slots and one advancing route remain clear at 16 px.
+# Original geometric "计" monogram: the speech radical and a strong cross
+# express planning-department identity without relying on installed fonts.
+# The short gold baseline gives the mark a quiet departmental-seal character.
 SHAPES = [
-    {"kind": "rect", "x": 0, "y": 0, "w": 64, "h": 64, "r": 15, "fill": BLUE},
-    {"kind": "rect", "x": 14, "y": 17, "w": 36, "h": 35, "r": 6,
-     "fill": None, "stroke": WHITE, "width": 4},
-    {"kind": "line", "points": [(24, 12), (24, 21)], "stroke": WHITE, "width": 4.5},
-    {"kind": "line", "points": [(40, 12), (40, 21)], "stroke": WHITE, "width": 4.5},
-    {"kind": "line", "points": [(15, 28), (49, 28)], "stroke": WHITE, "width": 3.5},
-    {"kind": "rect", "x": 21, "y": 34, "w": 5.5, "h": 5.5, "r": 1.5, "fill": WHITE},
-    {"kind": "rect", "x": 21, "y": 43, "w": 5.5, "h": 5.5, "r": 1.5, "fill": WHITE},
-    {"kind": "line", "points": [(32, 45), (43, 34)], "stroke": MINT, "width": 4},
-    {"kind": "line", "points": [(34, 34), (43, 34), (43, 43)], "stroke": MINT, "width": 4},
+    {"kind": "rect", "x": 0, "y": 0, "w": 64, "h": 64, "r": 12, "fill": BLUE},
+    {"kind": "line", "points": [(17, 12.5), (22, 17.5)], "stroke": WHITE, "width": 5},
+    {"kind": "line", "points": [(12.5, 26), (20, 26), (20, 46.5), (27, 40.5)], "stroke": WHITE, "width": 5},
+    {"kind": "line", "points": [(29.5, 26), (51.5, 26)], "stroke": WHITE, "width": 5},
+    {"kind": "line", "points": [(40.5, 12.5), (40.5, 47.5)], "stroke": WHITE, "width": 5},
+    {"kind": "rect", "x": 14, "y": 54, "w": 36, "h": 2.5, "r": 1.25, "fill": GOLD},
 ]
 
 
 def svg_source() -> str:
     result = [
         '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" width="512" height="512" role="img" aria-labelledby="planning-title planning-description">',
-        '  <title id="planning-title">计划部工作台</title>',
-        '  <desc id="planning-description">蓝色圆角方形内，白色日历与计划节点结合青绿色向前箭头，表示有序计划、协同推进。</desc>',
+        '  <title id="planning-title">计划部字形徽记</title>',
+        '  <desc id="planning-description">深蓝方章中，以白色几何汉字“计”直观代表计划部，金色基线表达有序统筹。</desc>',
     ]
     for shape in SHAPES:
         if shape["kind"] == "rect":

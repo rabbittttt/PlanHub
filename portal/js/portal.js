@@ -225,7 +225,8 @@ async function boot() {
     if (!response.ok) throw new Error(`配置请求失败（HTTP ${response.status}）`);
     config = validateConfig(await response.json());
     $('platform-name').textContent = config.platform.name;
-    $('brand-name').textContent = config.platform.shortName || '智选车';
+    $('brand-organization').textContent = config.platform.organization || '智选车';
+    $('brand-name').textContent = config.platform.shortName || config.platform.name || '计划管理平台';
     $('sidebar-version').textContent = config.platform.version || '—';
     $('footer-version').textContent = `v${config.platform.version || '—'}`;
     $('today').textContent = new Intl.DateTimeFormat('zh-CN', { year: 'numeric', month: 'long', day: 'numeric', weekday: 'long', timeZone: 'Asia/Shanghai' }).format(new Date());
