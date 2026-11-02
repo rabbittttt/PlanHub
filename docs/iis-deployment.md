@@ -33,7 +33,7 @@ Copy-Item -LiteralPath '.\deploy\config.example.json' -Destination '.\deploy\con
 
 发布包包含 `portal/` 和本仓库 `apps/<name>/` 中已启用静态应用的发布文件。启用的静态应用必须有 `index.html`。脚本拒绝源目录、父目录和目标父目录中的重解析点，避免目录联接意外入包，还拒绝常见非公开条目。这里仅放已审核发布产物，不放业务应用完整源码、数据库、导入 Excel、密钥或备份。
 
-新版本打包加 `-IncludeSop` 时，还包含受控 SOP 发布源码和离线 Python wheel；发布包现附带 deploy 工具与 docs。SOP 的业务数据、Excel 和身份秘密仍不入包。
+使用 `-IncludeSop -SopReleasePath <原项目构建的发布目录>` 才加入 SOP 运行产物。门户不维护或复制内部业务源码；源提交及每个文件均由产物 manifest 校验。包内可附带离线 wheel、通用工具与文档，业务数据、Excel 和秘密不入包。
 
 ```text
 DataPlatform-001/

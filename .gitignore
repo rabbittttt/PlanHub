@@ -15,9 +15,8 @@ __pycache__/
 *.pyc
 offline/
 config.local/
-services/sop/data/
-services/sop/input_file/
-services/sop/scripts/node_modules/
+# SOP business source belongs to its independent repository; never re-vendor it.
+/services/sop/
 /config/
 /runtime/
 /proxy/

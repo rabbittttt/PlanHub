@@ -44,7 +44,7 @@ OrderIQ 是资源内联的单 HTML，可复制为 `apps/orderiq/index.html`。�
 
 Streamlit 等使用 WebSocket 的应用还需安装/启用 IIS WebSocket 并专项验证，不能仅凭首页 HTTP 200 即认定接入完成。
 
-现有 SOP 已提供专用适配方案，见 [SOP 内网部署](sop-intranet.md)。SOP 代理保留 `/sop/` 前缀，并由后端剥离；与通用 leads 示例的剥离策略不同。SOP 使用认证后 IIS 模块注入身份，不能用 BeginRequest 阶段的 URL Rewrite `{LOGON_USER}` 直接替代该模块。
+SOP 唯一源码为 `D:\05 AI脚本\PythonProject\计划看板`；门户接入原项目服务或其发布产物。具体适配见 [SOP 内网部署](sop-intranet.md)。SOP 代理保留 `/sop/` 前缀，并由后端剥离；与通用 leads 示例的剥离策略不同。SOP 使用认证后 IIS 模块注入身份，不能用 BeginRequest 阶段的 URL Rewrite `{LOGON_USER}` 直接替代该模块。
 
 ## iframe 兼容性和加载反馈
 

@@ -6,6 +6,6 @@
 
 主资产为 `portal/assets/planning-icon.svg`；PNG、ICO 和移动收藏图标随源码提供，不需要用户浏览时生成。SOP 保留自己的本地资源路径，独立部署时也能显示相同图标。
 
-修改图形时编辑 `scripts/export-planning-icon.py`，再执行 `python scripts/export-planning-icon.py --sync-sop`，同时生成两处使用的矢量与位图文件。SVG 内使用字形轮廓，不依赖浏览器安装字体。Pillow 只在开发导出时使用，不是门户或 SOP 的运行依赖。
+修改图形时编辑 `scripts/export-planning-icon.py`，再执行 `python scripts/export-planning-icon.py`，仅生成门户的矢量与位图文件。SOP 图标在唯一原项目中维护并随其产物发布，门户导出器不会写入业务源码目录。SVG 内使用字形轮廓，不依赖浏览器安装字体。Pillow 只在开发导出时使用，不是门户或 SOP 的运行依赖。
 
 图标是带有旁侧文字的装饰性标识，页面内使用空 alt，避免读屏重复播报。浏览器 favicon 不包含小字号文字。

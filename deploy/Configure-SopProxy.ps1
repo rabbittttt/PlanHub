@@ -10,6 +10,7 @@ $ErrorActionPreference = 'Stop'
 if (-not $ConfigPath) { $ConfigPath = Join-Path $PSScriptRoot 'sop-iis.example.json' }
 . (Join-Path $PSScriptRoot 'Deployment.Common.ps1')
 . (Join-Path $PSScriptRoot 'Sop.Common.ps1')
+. (Join-Path $PSScriptRoot 'Sop.Release.ps1')
 if ($PlanOnly -and $Apply) { throw 'PlanOnly and Apply cannot be combined.' }
 $config = Read-SopIisConfig -Path $ConfigPath
 $proxyRoot = Join-Path $config.DeploymentRoot 'proxy\sop'
@@ -39,7 +40,7 @@ try {
         if ($name -notin $modules) { throw "Required IIS module missing: $name. Install IIS ASP.NET 4.x, Windows Authentication, Rewrite and ARR first." }
     }
     if (-not [bool]$appHost.GetSection('system.webServer/proxy').GetAttributeValue('enabled')) { throw 'Server ARR proxy is disabled. Review and enable it separately; this script does not change global ARR settings.' }
-    if (-not (Test-Path -LiteralPath (Join-Path $config.DeploymentRoot 'services\sop\sop_gateway.py'))) { throw 'The adapted SOP service release is missing.' }
+    $release = Assert-SopRelease -Path (Join-Path $config.DeploymentRoot 'services\sop')
     if (Test-Path -LiteralPath $config.ProxySecretPath) {
         $existingSecret = [IO.File]::ReadAllText($config.ProxySecretPath).Trim()
         if ($existingSecret -cnotmatch '^[A-Za-z0-9_-]{32,256}$') { throw 'The existing proxy secret has an invalid format. Do not silently rotate a live key.' }
@@ -110,7 +111,7 @@ try {
     Write-SopJson -Path $authPath -Value $auth
     Set-SopRestrictedAcl -Path $authPath -ReadAccounts @($poolIdentity, $ServiceAccount)
     Set-SopRestrictedAcl -Path $gatewayPath -ReadAccounts @($ServiceAccount)
-    & (Join-Path $PSScriptRoot 'Build-SopIdentityBridge.ps1') -OutputDirectory (Join-Path $proxyRoot 'bin')
+    & (Join-Path $PSScriptRoot 'Build-SopIdentityBridge.ps1') -OutputDirectory (Join-Path $proxyRoot 'bin') -SourcePath (Join-Path $release.Root 'integration\iis\SopIdentityBridge.cs')
     $escapedAuth = [Security.SecurityElement]::Escape($authPath)
     $backend = 'http://127.0.0.1:' + $config.BackendPort + '/sop/{R:1}'
     $xml = @"

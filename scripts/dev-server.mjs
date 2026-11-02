@@ -32,7 +32,7 @@ export function parseRequestPath(rawUrl) {
   return { pathname: decoded, parts };
 }
 
-/** Local-only preview. This intentionally has no authentication or dynamic proxy. */
+/** Local-only preview; the optional loopback SOP bridge does not provide Windows authentication. */
 export function createServer({ root = PROJECT_ROOT, sopProxy = null } = {}) {
   if (sopProxy && (!Number.isInteger(sopProxy.port) || sopProxy.port < 1 || sopProxy.port > 65535 || typeof sopProxy.secret !== 'string' || sopProxy.secret.length < 32 || typeof sopProxy.user !== 'string' || /[\r\n]/.test(sopProxy.user))) throw new Error('Invalid local SOP preview configuration');
   return http.createServer(async (request, response) => {

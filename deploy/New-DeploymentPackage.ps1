@@ -3,11 +3,13 @@
 param(
     [Parameter(Mandatory = $true)][string]$Destination,
     [string]$ConfigPath = '',
-    [switch]$IncludeSop
+    [switch]$IncludeSop,
+    [string]$SopReleasePath = ''
 )
 $ErrorActionPreference = 'Stop'
 if (-not $ConfigPath) { $ConfigPath = Join-Path $PSScriptRoot 'config.example.json' }
 . (Join-Path $PSScriptRoot 'Deployment.Common.ps1')
+. (Join-Path $PSScriptRoot 'Sop.Release.ps1')
 $config = Read-DeploymentConfig -Path $ConfigPath
 $source = [IO.Path]::GetFullPath((Join-Path $PSScriptRoot '..\portal'))
 $target = [IO.Path]::GetFullPath($Destination)
@@ -21,18 +23,12 @@ while (-not (Test-Path -LiteralPath $ancestor)) { $ancestor = Split-Path -Parent
 Assert-NoReparsePoint -Path $ancestor
 $entries = @(Get-ChildItem -LiteralPath $source -Recurse -Force)
 $appSources = @{}
-$sopSource = [IO.Path]::GetFullPath((Join-Path $PSScriptRoot '..\services\sop'))
-$sopFiles = @()
+$sopRelease = $null
 if ($IncludeSop) {
-    foreach ($required in @('server.py', 'sop_gateway.py', 'requirements.txt', 'web\index.html')) {
-        if (-not (Test-Path -LiteralPath (Join-Path $sopSource $required) -PathType Leaf)) { throw "SOP source is incomplete: $required" }
-    }
-    Assert-NoReparsePoint -Path $sopSource
-    $sopFiles = @(Get-ChildItem -LiteralPath $sopSource -File | Where-Object { $_.Extension -eq '.py' -or $_.Name -in @('requirements.txt', 'requirements-intranet.txt') })
-    $sopFiles += @(Get-ChildItem -LiteralPath (Join-Path $sopSource 'web') -Recurse -File)
-    $sopFiles += @(Get-ChildItem -LiteralPath (Join-Path $sopSource 'scripts') -File | Where-Object { $_.Extension -eq '.mjs' })
-    $entries += $sopFiles
-}
+    if (-not $SopReleasePath) { throw 'IncludeSop requires an explicit SopReleasePath built by the authoritative SOP project.' }
+    $sopRelease = Assert-SopRelease -Path $SopReleasePath
+    if ($target -eq $sopRelease.Root -or $target.StartsWith($sopRelease.Root + '\', [StringComparison]::OrdinalIgnoreCase)) { throw 'Destination must not be inside the input SOP release.' }
+} elseif ($SopReleasePath) { throw 'SopReleasePath requires IncludeSop.' }
 foreach ($app in $config.StaticApplications | Where-Object { $_.Enabled }) {
     $appSource = [IO.Path]::GetFullPath((Join-Path $PSScriptRoot ('..\apps\' + $app.Name)))
     if (-not (Test-Path -LiteralPath (Join-Path $appSource 'index.html') -PathType Leaf)) { throw "Enabled app release is missing index.html: $appSource" }
@@ -53,7 +49,7 @@ if ($PSCmdlet.ShouldProcess($target, 'Create new portal deployment package')) {
     }
     Copy-Item -LiteralPath (Join-Path $PSScriptRoot 'portal.web.config') -Destination (Join-Path $target 'portal\web.config') -Force
     Copy-Item -LiteralPath $ConfigPath -Destination (Join-Path $target 'config\iis.json')
-    Get-ChildItem -LiteralPath $PSScriptRoot -File | Where-Object { $_.Extension -in @('.ps1', '.xml', '.config', '.json', '.cs', '.patch') -and $_.Name -notlike '*.local.*' } | ForEach-Object {
+    Get-ChildItem -LiteralPath $PSScriptRoot -File | Where-Object { $_.Extension -in @('.ps1', '.xml', '.config', '.json') -and $_.Name -notlike '*.local.*' } | ForEach-Object {
         Copy-Item -LiteralPath $_.FullName -Destination (Join-Path $target 'deploy')
     }
     Get-ChildItem -LiteralPath (Join-Path $PSScriptRoot '..\docs') -File -Filter '*.md' | ForEach-Object {
@@ -68,12 +64,15 @@ if ($PSCmdlet.ShouldProcess($target, 'Create new portal deployment package')) {
         }
     }
     if ($IncludeSop) {
-        foreach ($file in $sopFiles) {
-            $relative = $file.FullName.Substring($sopSource.Length + 1)
-            $destinationFile = Join-Path $target ('services\sop\' + $relative)
+        # This directory is an immutable deployment artifact, not portal-owned
+        # business source. Its provenance and exact contents come from SOP.
+        foreach ($relative in $sopRelease.Files.Keys) {
+            $destinationFile = Join-Path $target ('services\sop\' + $relative.Replace('/', '\'))
             New-Item -ItemType Directory -Force -Path (Split-Path -Parent $destinationFile) | Out-Null
-            Copy-Item -LiteralPath $file.FullName -Destination $destinationFile
+            Copy-Item -LiteralPath $sopRelease.Files[$relative] -Destination $destinationFile
         }
+        Copy-Item -LiteralPath (Join-Path $sopRelease.Root 'sop-release.json') -Destination (Join-Path $target 'services\sop\sop-release.json')
+        $null = Assert-SopRelease -Path (Join-Path $target 'services\sop')
         Copy-Item -LiteralPath (Join-Path $PSScriptRoot 'sop.example.json') -Destination (Join-Path $target 'config\sop.example.json')
         $wheelSource = Join-Path $PSScriptRoot '..\offline\wheels'
         if (Test-Path -LiteralPath $wheelSource) {
@@ -86,6 +85,7 @@ if ($PSCmdlet.ShouldProcess($target, 'Create new portal deployment package')) {
         }
     }
     Write-Output "Package created: $target"
-    Write-Output "Enabled static artifacts copied. SOP source included: $IncludeSop. Business runtime data and credentials are not copied."
+    Write-Output "Enabled static artifacts copied. External SOP release included: $IncludeSop. Business data and credentials are not copied."
+    if ($IncludeSop) { Write-Output "SOP release source commit: $($sopRelease.Manifest.sourceCommit); source dirty: $($sopRelease.Manifest.sourceDirty)" }
     Write-Output "Configured server destination: $($config.DeploymentRoot)"
 }

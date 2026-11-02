@@ -6,10 +6,12 @@ param(
 )
 $ErrorActionPreference = 'Stop'
 . (Join-Path $PSScriptRoot 'Deployment.Common.ps1')
+. (Join-Path $PSScriptRoot 'Sop.Release.ps1')
 $root = [IO.Path]::GetFullPath($DeploymentRoot)
 Assert-NoReparsePoint -Path $root
+$release = Assert-SopRelease -Path (Join-Path $root 'services\sop')
 $wheelRoot = Join-Path $root 'offline\wheels'
-$requirements = Join-Path $root 'services\sop\requirements-intranet.txt'
+$requirements = Join-Path $release.Root 'requirements-intranet.txt'
 $venv = Join-Path $root 'runtime\sop-venv'
 foreach ($required in @($requirements, (Join-Path $wheelRoot 'SHA256SUMS'))) {
     if (-not (Test-Path -LiteralPath $required -PathType Leaf)) { throw "Missing offline dependency input: $required" }
@@ -20,7 +22,10 @@ foreach ($line in Get-Content -LiteralPath (Join-Path $wheelRoot 'SHA256SUMS') -
     if ($expected.ContainsKey($matches[2])) { throw 'Duplicate wheel checksum entry.' }
     $expected[$matches[2]] = $matches[1].ToLowerInvariant()
 }
-if ($expected.Count -ne 2 -or -not ($expected.Keys | Where-Object { $_ -like 'openpyxl-3.1.5-*' }) -or -not ($expected.Keys | Where-Object { $_ -like 'et_xmlfile-2.0.0-*' })) { throw 'Expected only the pinned openpyxl 3.1.5 and et_xmlfile 2.0.0 wheels.' }
+if ($expected.Count -lt 1) { throw 'The offline wheel checksum manifest is empty.' }
+foreach ($wheel in Get-ChildItem -LiteralPath $wheelRoot -File -Filter '*.whl') {
+    if (-not $expected.ContainsKey($wheel.Name)) { throw "Undeclared offline wheel: $($wheel.Name)" }
+}
 foreach ($name in $expected.Keys) {
     $wheel = Join-Path $wheelRoot $name
     $stream = [IO.File]::OpenRead($wheel)
@@ -29,7 +34,7 @@ foreach ($name in $expected.Keys) {
     finally { $stream.Dispose(); $hash.Dispose() }
     if ($actual -ne $expected[$name]) { throw "Offline wheel checksum mismatch: $name" }
 }
-Write-Output 'Pinned offline wheel checksums passed. No package index will be contacted.'
+Write-Output 'Offline wheel checksums passed. Dependency versions come from the SOP release requirements; no package index will be contacted.'
 if ($PSCmdlet.ShouldProcess($venv, 'Create SOP virtual environment and install pinned offline requirements')) {
     & $PythonPath '-c' 'import sys; sys.exit(sys.version_info < (3, 10))'
     if ($LASTEXITCODE -ne 0) { throw 'A working Python 3.10+ installation is required.' }

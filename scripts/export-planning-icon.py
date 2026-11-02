@@ -8,7 +8,6 @@ from __future__ import annotations
 
 import argparse
 from pathlib import Path
-import shutil
 
 from PIL import Image, ImageDraw
 
@@ -86,8 +85,7 @@ def render_png(size: int) -> Image.Image:
 
 def main() -> None:
     parser = argparse.ArgumentParser(description="Export the Planning Workspace SVG, PNG and ICO assets.")
-    parser.add_argument("--sync-sop", action="store_true", help="Copy the same icon into the SOP web application.")
-    args = parser.parse_args()
+    parser.parse_args()
     OUTPUT.mkdir(parents=True, exist_ok=True)
     (OUTPUT / "planning-icon.svg").write_text(svg_source(), encoding="utf-8", newline="\n")
     master = render_png(512)
@@ -95,16 +93,6 @@ def main() -> None:
     render_png(180).save(OUTPUT / "apple-touch-icon.png", optimize=True)
     render_png(32).save(OUTPUT / "favicon-32.png", optimize=True)
     render_png(64).save(OUTPUT / "favicon.ico", format="ICO", sizes=[(16, 16), (32, 32), (48, 48), (64, 64)])
-    if args.sync_sop:
-        sop = ROOT / "services" / "sop" / "web"
-        if not sop.is_dir():
-            raise SystemExit("SOP web directory is missing; portal assets were exported but not synchronized.")
-        for source, destination in {
-            "planning-icon.svg": "sop-icon.svg", "planning-icon.png": "sop-icon.png",
-            "favicon-32.png": "sop-icon-32.png", "favicon.ico": "favicon.ico",
-            "apple-touch-icon.png": "apple-touch-icon.png",
-        }.items():
-            shutil.copyfile(OUTPUT / source, sop / destination)
     print("Exported planning icon: SVG, 512/180/32 PNG, 16/32/48/64 ICO.")
 
 

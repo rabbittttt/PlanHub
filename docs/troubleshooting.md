@@ -1,28 +1,19 @@
-# 本地看板打不开的排查
+# 本地看板排查
 
-使用根目录 `启动本地门户.cmd` 或运行 `npm start`，它会同时启动门户、静态应用映射和 SOP 服务代理。打开终端实际打印的地址，保持该窗口运行。`npm run dev` 也使用相同入口。
+入口是门户根目录的 `启动本地门户.cmd` 或 `npm start`。它直接启动原 SOP 的服务代码并代理 `/sop/`，不从门户的业务源码副本运行。
 
-旧版 `npm run dev` 只启动了静态门户；`/orderiq/` 可以正常响应，而 `/sop/` 返回 404。该静态模式现改为明确的 `npm run dev:static`。如果旧进程仍在 4173 上运行，新启动命令会报告端口占用；在旧终端按 Ctrl+C 后再启动。也可为新入口指定独立端口：
-
-```powershell
-npm start -- --port 4176 --backend-port 8879
-```
-
-将 `/orderiq/` 和 `/sop/` 分别接在当前门户域名和端口后直接访问。如果直达也返回 404，问题在应用发布、映射或启动方式；直达可看、门户不可看时，再检查嵌入策略、缓存及加载报错。
-
-常见情况：
-
-- “尚未找到应用页面”：应用请求为 404。SOP 优先检查是否误用了静态服务器；订单优先检查 `apps/orderiq/index.html` 是否已导入。
-- 端口占用：退出旧窗口后重启，或明确换端口。
-- 从 Git 新克隆：业务 HTML 和数据库不上传仓库，需要先导入订单发布文件，为 SOP 指定真实源项目。
-- 缺少 Python/openpyxl：按 README 安装依赖；启动失败时终端保留具体错误。
-- `file:///` 或普通 Live Server：缺少应用映射和动态代理，改用统一启动入口。
-- 旧标题或旧错误：确认地址与终端一致，Ctrl+F5 刷新。
-
-原项目目录不同于默认布局时：
+本机已核对的唯一 SOP 路径为 `D:\05 AI脚本\PythonProject\计划看板`。检查该项目是否含 `server.py`、`sop_gateway.py`、`web` 和真实数据。需要改目录时使用 `--sop-source`；`--seed-from` 仅指定数据来源。
 
 ```powershell
-npm start -- --seed-from 'D:\Projects\SOP' --shared-config 'D:\Projects\OrderIQ\scripts\config\shared_config.py'
+npm start -- --sop-source 'D:\05 AI脚本\PythonProject\计划看板' --shared-config 'D:\05 AI脚本\PythonProject\订单分析\scripts\config\shared_config.py' --port 4176 --backend-port 8879
 ```
 
-内网 IIS 使用部署说明中的独立 Application 和反向代理，不运行此开发启动器。
+- `/sop/` 返回 404：检查是否误用了 `npm run dev:static`、Live Server 或未配置代理的 IIS。
+- `/orderiq/` 返回 404：检查独立发布文件 `apps/orderiq/index.html` 是否已导入。业务 HTML 被 Git 忽略。
+- 提示旧 SOP 未适配：在原项目完成 gateway 合并，不能改回门户副本路径或盲套历史补丁。
+- 提示端口占用：停止旧预览窗口后重启，或指定两个不同的空闲端口；脚本不会停止未知进程。
+- 源码与数据不在同一目录：用 `--sop-source` 选代码，用 `--seed-from` 选数据，并明确共享规则。
+- 配置无效：核对忽略的 `config.local/sop.json` 中 `sourceRoot`、`dataRoot`、`sharedConfig`，或环境变量 `SOP_SOURCE_ROOT`。
+- 原始文件缺失或缺依赖：按原项目 requirements 安装，提供真实数据或显式选择演示；不要拿空业务规则充当生产规则。
+
+确认终端实际打印的地址，再直达同源 `/orderiq/`、`/sop/`。直达成功但 iframe 失败时检查同源嵌入头与缓存，Ctrl+F5 刷新。内网认证问题必须在目标 IIS 由管理员检查。
