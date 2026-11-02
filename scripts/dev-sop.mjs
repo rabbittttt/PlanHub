@@ -3,13 +3,34 @@ import {mkdir,mkdtemp,writeFile,copyFile,readdir,stat} from 'node:fs/promises';
 import {spawn,spawnSync} from 'node:child_process';
 import crypto from 'node:crypto';
 import path from 'node:path';
-import {fileURLToPath} from 'node:url';
+import net from 'node:net';
+import {fileURLToPath,pathToFileURL} from 'node:url';
 import {createServer} from './dev-server.mjs';
 
 const root=path.resolve(path.dirname(fileURLToPath(import.meta.url)),'..');
-function option(name,fallback){const i=process.argv.indexOf(name);return i<0?fallback:process.argv[i+1];}
+
+export async function assertPreviewPortsAvailable(port,backendPort) {
+  for(const [label,value] of [['门户',port],['SOP服务',backendPort]]) {
+    await new Promise((resolve,reject)=>{
+      const probe=net.createServer();
+      probe.once('error',error=>{
+        const hint=error.code==='EADDRINUSE'
+          ? `${label}端口 ${value} 已被占用。请先在旧的 npm run dev / npm start 窗口按 Ctrl+C 停止服务，或改用 npm start -- --port 4176 --backend-port 8879。`
+          : `无法使用${label}端口 ${value}（${error.code||error.message}）。请检查端口权限或指定其他端口。`;
+        reject(new Error(hint));
+      });
+      probe.listen(value,'127.0.0.1',()=>probe.close(error=>error?reject(error):resolve()));
+    });
+  }
+}
+
+export async function runPreview(args=process.argv.slice(2)) {
+function option(name,fallback){const i=args.indexOf(name);return i<0?fallback:args[i+1];}
 const port=Number(option('--port','4173')),backendPort=Number(option('--backend-port','8877'));
-if(![port,backendPort].every(p=>Number.isInteger(p)&&p>0&&p<65536)||port===backendPort)throw new Error('Invalid preview ports');
+if(![port,backendPort].every(p=>Number.isInteger(p)&&p>0&&p<65536)||port===backendPort)throw new Error('门户和 SOP 端口必须为两个不同的 1–65535 整数。');
+// Check both listeners before creating a snapshot or starting the Python writer.
+// Never stop or reuse a process merely because it already occupies a port.
+await assertPreviewPortsAvailable(port,backendPort);
 await mkdir(path.join(root,'artifacts'),{recursive:true});
 const preview=await mkdtemp(path.join(root,'artifacts','sop-preview-'));
 const data=path.join(preview,'data'),source=path.join(preview,'input'),config=path.join(preview,'config');
@@ -44,7 +65,7 @@ const env={...process.env,SOP_DEV_PROXY_SECRET:secret,SOP_EXCEL_ENGINE:'python',
 const child=spawn(python,['server.py','--port',String(backendPort),'--gateway-config',gatewayFile],{cwd:path.join(root,'services','sop'),env,stdio:['ignore','inherit','inherit'],windowsHide:true});
 let failed=false;
 child.on('error',e=>{console.error(e.message);failed=true;});
-child.on('exit',code=>{if(code)failed=true;});
+child.on('exit',()=>{failed=true;});
 let ready=false;
 for(let i=0;i<100&&!failed;i++){
   try{const res=await fetch(`http://127.0.0.1:${backendPort}/sop/api/session`,{headers:{'X-SOP-Proxy-Key':secret,'X-SOP-User':'DEV\\local-preview'},signal:AbortSignal.timeout(1500)});if(res.ok){await res.arrayBuffer();ready=true;break;}}catch{}
@@ -60,3 +81,10 @@ server.listen(port,'127.0.0.1',()=>{
 });
 function stop(){child.kill();server.close(()=>process.exit());setTimeout(()=>process.exit(),1000).unref();}
 process.once('SIGINT',stop);process.once('SIGTERM',stop);
+return server;
+}
+
+if(process.argv[1]&&import.meta.url===pathToFileURL(path.resolve(process.argv[1])).href) {
+  try {await runPreview();}
+  catch(error){console.error(`本地门户未启动：${error.message}`);process.exitCode=1;}
+}

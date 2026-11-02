@@ -14,15 +14,19 @@
 
 ## 本地运行
 
-要求 Node.js 20+（开发机实际使用 22.23.2）。在项目根目录运行：
+要求 Node.js 20+、Python 3.10+ 及 SOP 依赖。开发机可双击根目录的 `启动本地门户.cmd`，或在项目根目录运行：
 
 ```powershell
 npm run check
 npm test
-npm run dev
+npm start
 ```
 
-打开 `http://127.0.0.1:4173/`。`npm run dev` 仅预览静态门户与 OrderIQ；SOP 联调使用下面命令。本地预览仅监听回环地址，没有 Windows 认证，不能用它代替生产 IIS。停止时按 Ctrl+C。
+打开终端打印的地址，默认 `http://127.0.0.1:4173/`。`npm start` 和 `npm run dev` 都启动门户、OrderIQ 与 SOP 代理；默认从同级 `PythonProject/计划看板` 获取真实业务数据的隔离快照。其他目录布局可显式传入 `--seed-from` 和 `--shared-config`。原业务库不被预览写入，全部写入关闭。
+
+若已开着旧的静态预览，先在它的终端按 Ctrl+C 再重新启动。只启动静态页面请显式使用 `npm run dev:static`；该模式不提供 SOP，访问 `/sop/` 返回 404。启动器会在复制数据和启动 Python 前检查端口占用，并给出明确提示。
+
+本地预览仅监听回环地址，没有 Windows 认证，不能用它代替生产 IIS。停止时按 Ctrl+C。不要双击 `portal/index.html` 或用普通 Live Server 代替统一启动入口。
 
 ## 一并预览 SOP
 
