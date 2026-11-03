@@ -65,4 +65,4 @@ powershell -NoProfile -ExecutionPolicy RemoteSigned -File .\deploy\New-Deploymen
 - [可直接转给其他 AI 的接入任务模板](docs/ai-app-integration-prompt.md)
 - [本地排查](docs/troubleshooting.md)
 
-本轮不推送、不部署，不修改仓库可见性或 IIS/安全设置。旧版本发布包保留为历史回滚产物，不作为新构建的源码输入。
+后续修改通过必要检查后，默认提交并推送到当前分支已配置的上游；不自动部署，不修改仓库可见性或 IIS/安全设置。旧版本发布包保留为历史回滚产物，不作为新构建的源码输入。
