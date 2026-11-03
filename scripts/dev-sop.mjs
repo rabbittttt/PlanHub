@@ -63,15 +63,30 @@ export async function resolvePreviewSettings(args=process.argv.slice(2),{root=RO
     await requirePath(path.join(sourceRoot,'web','index.html'),'SOP 页面入口');
   } catch(error) {throw new Error(`${error.message}\n请先把必要的 gateway 适配合入独立 SOP 项目；启动器不会回退到另一套业务源码。`);}
   const dataRoot=values['seed-from']?path.resolve(values['seed-from']):configured(local.dataRoot)||(requireData?sourceRoot:null);
+  const dataRootExplicit=Boolean(values['seed-from']||local.dataRoot);
   const sharedConfig=values['shared-config']?path.resolve(values['shared-config']):configured(env.SOP_SHARED_CONFIG||local.sharedConfig)||path.resolve(sourceRoot,'..','订单分析','scripts','config','shared_config.py');
+  let salesSourceDir=dataRoot?path.join(dataRoot,'input_file'):null;
+  let planSourceFile=dataRoot?path.join(dataRoot,'input_file','SOP计划维护.xlsx'):null;
   if(dataRoot) {
+    const sharedRoot=configured(env.SHARED_DATA_ROOT)||path.resolve(resolvedSource,'..','共享数据');
+    let useShared=Boolean(env.SHARED_DATA_ROOT);
+    if(!useShared&&!dataRootExplicit&&(!env.SOP_SOURCE_DIR||!env.SOP_PLAN_DIR)) {
+      try {
+        if(!(await stat(sharedRoot)).isDirectory())throw new Error(`共享数据根路径不是目录：${sharedRoot}`);
+        useShared=true;
+      }
+      catch(error) {if(error.code!=='ENOENT')throw error;}
+    }
+    salesSourceDir=configured(env.SOP_SOURCE_DIR)||(useShared?path.join(sharedRoot,'订单汇总'):salesSourceDir);
+    const planDirectory=configured(env.SOP_PLAN_DIR)||(!dataRootExplicit&&useShared?path.join(sharedRoot,'SOP计划'):null);
+    if(planDirectory)planSourceFile=path.join(planDirectory,'SOP计划维护.xlsx');
     try {
       await requirePath(path.join(dataRoot,'data','sales.json'),'SOP 数据快照');
-      await requirePath(path.join(dataRoot,'input_file'),'SOP 原始文件目录',true);
+      await requirePath(salesSourceDir,'SOP 销售来源目录',true);
       await requirePath(sharedConfig,'共享业务规则');
     } catch(error) {throw new Error(`${error.message}\n--sop-source 选择运行代码，--seed-from 仅选择数据来源；请核对实际路径。不会自动改用演示数据。`);}
   }
-  return {root,sourceRoot:resolvedSource,dataRoot,sharedConfig,port:values.port,backendPort:values.backendPort};
+  return {root,sourceRoot:resolvedSource,dataRoot,dataRootExplicit,salesSourceDir,planSourceFile,sharedConfig,port:values.port,backendPort:values.backendPort};
 }
 
 export async function assertPreviewPortsAvailable(port,backendPort) {
@@ -95,7 +110,7 @@ export async function runPreview(args=process.argv.slice(2),options={}) {
   // Never inspect/copy business data or launch a process when either listener is busy.
   await assertPreviewPortsAvailable(values.port,values.backendPort);
   const settings=await resolvePreviewSettings(args,options);
-  const {root,sourceRoot,dataRoot,sharedConfig,port,backendPort}=settings;
+  const {root,sourceRoot,dataRoot,salesSourceDir,planSourceFile,sharedConfig,port,backendPort}=settings;
   await mkdir(path.join(root,'artifacts'),{recursive:true});
   const preview=await mkdtemp(path.join(root,'artifacts','sop-preview-'));
   const data=path.join(preview,'data'),source=path.join(preview,'input'),config=path.join(preview,'config');
@@ -106,9 +121,13 @@ export async function runPreview(args=process.argv.slice(2),options={}) {
     await copyFile(path.join(dataRoot,'data','sales.json'),path.join(data,'sales.json'));
     try {await copyFile(path.join(dataRoot,'data','source_settings.json'),path.join(data,'source_settings.json'));}
     catch(error) {if(error.code!=='ENOENT')throw error;}
-    for(const entry of await readdir(path.join(dataRoot,'input_file'),{withFileTypes:true})) {
-      if(entry.isFile()&&entry.name.endsWith('.xlsx')&&!entry.name.startsWith('~$'))await copyFile(path.join(dataRoot,'input_file',entry.name),path.join(source,entry.name));
+    for(const entry of await readdir(salesSourceDir,{withFileTypes:true})) {
+      const name=entry.name.toLowerCase();
+      if(entry.isFile()&&name.endsWith('.xlsx')&&!entry.name.startsWith('~$')&&!name.endsWith('.pending.xlsx')&&name!=='sop计划维护.xlsx')await copyFile(path.join(salesSourceDir,entry.name),path.join(source,entry.name));
     }
+    // The source plan may be shared; the gateway always receives the isolated copy.
+    try {await copyFile(planSourceFile,path.join(source,'SOP计划维护.xlsx'));}
+    catch(error) {if(error.code!=='ENOENT')throw error;}
     await copyFile(sharedConfig,rules);
     const originalDb=path.join(dataRoot,'data','sop.sqlite3');
     try {
@@ -154,6 +173,7 @@ export async function runPreview(args=process.argv.slice(2),options={}) {
   console.log(`SOP 门户预览：http://127.0.0.1:${port}/#/app/sop`);
   console.log(`SOP 唯一源码：${sourceRoot}`);
   console.log(dataRoot?`使用隔离业务快照，数据来源：${dataRoot}`:'使用演示数据，仅供界面验收。');
+  if(dataRoot)console.log(`销售来源已复制到隔离快照：${salesSourceDir}`);
   console.log(`本地预览身份不代表 Windows 域认证；操作仅保存到隔离快照：${preview}，不会回写原项目。重新启动会创建新快照。Ctrl+C 停止。`);
   process.once('SIGINT',stop);process.once('SIGTERM',stop);
   return server;

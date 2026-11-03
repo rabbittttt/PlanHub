@@ -81,6 +81,57 @@ test('missing gateway and the removed portal copy are rejected instead of silent
   await assert.rejects(resolvePreviewSettings(['--sop-source',legacy],{root,env:{}}),/不再支持门户 services\/sop/);
 });
 
+test('shared sales inputs are selected independently from project state without stale fallback',async t=>{
+  const {base,root}=await fixture(t);
+  const original=await source(path.join(base,'SOP看板'));
+  await data(original);
+  const rules=path.join(base,'rules.py');await writeFile(rules,'MERGE_GROUPS = {}\n');
+  const args=['--shared-config',rules];
+  const resolve=env=>resolvePreviewSettings(args,{root,env,requireData:true});
+  assert.equal((await resolve({})).salesSourceDir,path.join(original,'input_file'));
+  const shared=path.join(base,'共享数据');await mkdir(shared);
+  await assert.rejects(resolve({}),/SOP 销售来源目录不存在/);
+  const orders=path.join(shared,'订单汇总');await mkdir(orders);
+  assert.equal((await resolve({})).salesSourceDir,orders);
+  const customShared=path.join(base,'custom-shared');
+  await assert.rejects(resolve({SHARED_DATA_ROOT:customShared}),/SOP 销售来源目录不存在/);
+  await mkdir(path.join(customShared,'订单汇总'),{recursive:true});
+  assert.equal((await resolve({SHARED_DATA_ROOT:customShared})).salesSourceDir,path.join(customShared,'订单汇总'));
+  const explicit=path.join(base,'explicit-sales');await mkdir(explicit);
+  assert.equal((await resolve({SHARED_DATA_ROOT:customShared,SOP_SOURCE_DIR:explicit})).salesSourceDir,explicit);
+});
+
+test('explicit seed and local dataRoot keep their sales inputs when default shared inputs coexist',async t=>{
+  const {base,root}=await fixture(t);
+  const original=await source(path.join(base,'SOP看板'));await data(original);
+  const seed=await data(path.join(base,'historical-data'));
+  const shared=path.join(base,'共享数据');const orders=path.join(shared,'订单汇总');
+  await mkdir(orders,{recursive:true});
+  const rules=path.join(base,'rules.py');await writeFile(rules,'MERGE_GROUPS = {}\n');
+  const args=['--shared-config',rules];
+  const resolve=(values,env={})=>resolvePreviewSettings(values,{root,env,requireData:true});
+  const defaultArgs=await localPreviewArgs(args,root,{});
+  assert.equal(defaultArgs.includes('--seed-from'),false);
+  assert.equal((await resolve(defaultArgs)).salesSourceDir,orders);
+  assert.equal((await resolve(defaultArgs)).planSourceFile,path.join(shared,'SOP计划','SOP计划维护.xlsx'));
+  const seedArgs=[...args,'--seed-from',seed];
+  assert.equal((await resolve(seedArgs)).salesSourceDir,path.join(seed,'input_file'));
+  assert.equal((await resolve(seedArgs)).planSourceFile,path.join(seed,'input_file','SOP计划维护.xlsx'));
+  const forwarded=await localPreviewArgs(seedArgs,root,{});
+  assert.equal((await resolve(forwarded)).salesSourceDir,path.join(seed,'input_file'));
+  assert.equal((await resolve(seedArgs,{SHARED_DATA_ROOT:shared})).salesSourceDir,orders);
+  assert.equal((await resolve(seedArgs,{SHARED_DATA_ROOT:shared})).planSourceFile,path.join(seed,'input_file','SOP计划维护.xlsx'));
+  const explicit=path.join(base,'explicit-input');await mkdir(explicit);
+  assert.equal((await resolve(seedArgs,{SHARED_DATA_ROOT:shared,SOP_SOURCE_DIR:explicit})).salesSourceDir,explicit);
+  assert.equal((await resolve(seedArgs,{SOP_PLAN_DIR:explicit})).planSourceFile,path.join(explicit,'SOP计划维护.xlsx'));
+  await mkdir(path.join(root,'config.local'));
+  await writeFile(path.join(root,'config.local','sop.json'),JSON.stringify({dataRoot:seed}));
+  assert.equal((await resolve(args)).salesSourceDir,path.join(seed,'input_file'));
+  const configuredArgs=await localPreviewArgs(args,root,{});
+  assert.equal((await resolve(configuredArgs)).salesSourceDir,path.join(seed,'input_file'));
+  assert.equal((await resolve(configuredArgs)).planSourceFile,path.join(seed,'input_file','SOP计划维护.xlsx'));
+});
+
 async function freePort() {
   const server=net.createServer();
   await new Promise(resolve=>server.listen(0,'127.0.0.1',resolve));
@@ -96,6 +147,13 @@ test('preview executes independent source with a separate writable snapshot with
   const original=await source(path.join(base,'original-source'));
   await data(original,'code-project-data-must-not-be-used');
   const seed=await data(path.join(base,'seed-only-project'),'selected-seed');
+  const shared=path.join(base,'共享数据','订单汇总');await mkdir(shared,{recursive:true});
+  const sharedPlan=path.join(base,'共享数据','SOP计划','SOP计划维护.xlsx');
+  await mkdir(path.dirname(sharedPlan));await writeFile(sharedPlan,'formal shared plan');
+  await writeFile(path.join(shared,'current-sales.xlsx'),'shared sales');
+  await writeFile(path.join(shared,'SOP计划维护.xlsx'),'shared plan must not be used');
+  await writeFile(path.join(seed,'input_file','old-sales.xlsx'),'stale local sales');
+  await writeFile(path.join(seed,'input_file','SOP计划维护.xlsx'),'selected project plan');
   const rules=path.join(base,'business-rules.py');await writeFile(rules,'MERGE_GROUPS = {}\n');
   const serverFile=path.join(original,'server.py');
   await writeFile(serverFile,`import argparse,json,os
@@ -110,7 +168,7 @@ class Handler(BaseHTTPRequestHandler):
  def do_GET(self):
   if self.headers.get('X-SOP-Proxy-Key')!=os.environ[config['proxy_secret_env']]:return self.send(403,{'error':'key'})
   if self.path=='/sop/api/session':return self.send(200,{'mode':'gateway','user':self.headers.get('X-SOP-User'),'canWrite':config['allow_writes']})
-  return self.send(200,{'codeRoot':str(Path(__file__).parent),'cwd':os.getcwd(),'sourceData':json.loads((Path(config['data_dir'])/'sales.json').read_text()),'dataPath':config['data_dir'],'readonly':not config['allow_writes'],'bytecodeDisabled':os.environ.get('PYTHONDONTWRITEBYTECODE')=='1'})
+  return self.send(200,{'codeRoot':str(Path(__file__).parent),'cwd':os.getcwd(),'sourceData':json.loads((Path(config['data_dir'])/'sales.json').read_text()),'dataPath':config['data_dir'],'inputPath':config['source_dir'],'planPath':config['plan_file'],'readonly':not config['allow_writes'],'bytecodeDisabled':os.environ.get('PYTHONDONTWRITEBYTECODE')=='1'})
  def do_POST(self):
   if not config['allow_writes']:return self.send(403,{'error':'paused'})
   (Path(config['data_dir'])/'sales.json').write_text(json.dumps({'marker':'preview-edit'}))
@@ -120,17 +178,35 @@ HTTPServer(('127.0.0.1',a.port),Handler).serve_forever()
   const sourceBefore=await readFile(serverFile);
   const seedBefore=await readFile(path.join(seed,'data','sales.json'));
   const port=await freePort();let backendPort=await freePort();while(backendPort===port)backendPort=await freePort();
-  const server=await runPreview(['--sop-source',original,'--seed-from',seed,'--shared-config',rules,'--port',String(port),'--backend-port',String(backendPort)],{root,env:{SOP_PYTHON:python}});
+  const server=await runPreview(['--sop-source',original,'--seed-from',seed,'--shared-config',rules,'--port',String(port),'--backend-port',String(backendPort)],{root,env:{SOP_PYTHON:python,SHARED_DATA_ROOT:path.dirname(shared)}});
   try {
     const result=await fetch(`http://127.0.0.1:${port}/sop/api/provenance`).then(r=>r.json());
     assert.equal(result.codeRoot,original);assert.equal(result.cwd,original);
     assert.equal(result.sourceData.marker,'selected-seed');
     assert.ok(result.dataPath.startsWith(path.join(root,'artifacts')));
+    assert.ok(result.inputPath.startsWith(path.join(root,'artifacts')));
+    assert.equal(await readFile(path.join(result.inputPath,'current-sales.xlsx'),'utf8'),'shared sales');
+    await assert.rejects(readFile(path.join(result.inputPath,'old-sales.xlsx')),error=>error.code==='ENOENT');
+    assert.equal(await readFile(result.planPath,'utf8'),'selected project plan');
+    await writeFile(path.join(result.inputPath,'current-sales.xlsx'),'snapshot sales edit');
+    await writeFile(result.planPath,'snapshot plan edit');
     assert.equal(result.readonly,false);assert.equal(result.bytecodeDisabled,true);
     const saved=await fetch(`http://127.0.0.1:${port}/sop/api/plans`,{method:'POST',headers:{'Content-Type':'application/json',Origin:`http://127.0.0.1:${port}`},body:'{}'});
     assert.equal(saved.status,200);await saved.text();
     assert.equal(JSON.parse(await readFile(path.join(result.dataPath,'sales.json'),'utf8')).marker,'preview-edit');
   } finally {await new Promise(resolve=>server.close(resolve));}
+  const defaultPort=await freePort();let defaultBackend=await freePort();while(defaultBackend===defaultPort)defaultBackend=await freePort();
+  const defaultServer=await runPreview(['--sop-source',original,'--shared-config',rules,'--port',String(defaultPort),'--backend-port',String(defaultBackend)],{root,env:{SOP_PYTHON:python},requireData:true});
+  try {
+    const result=await fetch(`http://127.0.0.1:${defaultPort}/sop/api/provenance`).then(r=>r.json());
+    assert.ok(result.planPath.startsWith(path.join(root,'artifacts')));
+    assert.equal(await readFile(result.planPath,'utf8'),'formal shared plan');
+    await writeFile(result.planPath,'edit only the default preview snapshot');
+  } finally {await new Promise(resolve=>defaultServer.close(resolve));}
   assert.deepEqual(await readFile(serverFile),sourceBefore);
   assert.deepEqual(await readFile(path.join(seed,'data','sales.json')),seedBefore);
+  assert.equal(await readFile(path.join(shared,'current-sales.xlsx'),'utf8'),'shared sales');
+  assert.equal(await readFile(path.join(shared,'SOP计划维护.xlsx'),'utf8'),'shared plan must not be used');
+  assert.equal(await readFile(path.join(seed,'input_file','SOP计划维护.xlsx'),'utf8'),'selected project plan');
+  assert.equal(await readFile(sharedPlan,'utf8'),'formal shared plan');
 });
