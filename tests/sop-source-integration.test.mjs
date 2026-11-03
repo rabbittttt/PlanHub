@@ -39,9 +39,9 @@ async function fixture(t) {
 
 test('the original sibling project is the default source and seed-from changes only data',async t=>{
   const {base,root}=await fixture(t);
-  const original=await source(path.join(base,'PythonProject','计划看板'));
+  const original=await source(path.join(base,'计划看板'));
   await data(original,'original');
-  const rules=path.join(base,'PythonProject','订单分析','scripts','config','shared_config.py');
+  const rules=path.join(base,'订单分析','scripts','config','shared_config.py');
   await mkdir(path.dirname(rules),{recursive:true});await writeFile(rules,'MERGE_GROUPS = {}\n');
   const seed=await data(path.join(base,'separate-data'),'seed');
   const settings=await resolvePreviewSettings(['--seed-from',seed],{root,env:{},requireData:true});

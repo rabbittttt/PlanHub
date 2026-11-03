@@ -1,5 +1,5 @@
 {
-  "sourceRoot": "../PythonProject/计划看板",
-  "dataRoot": "../PythonProject/计划看板",
-  "sharedConfig": "../PythonProject/订单分析/scripts/config/shared_config.py"
+  "sourceRoot": "../计划看板",
+  "dataRoot": "../计划看板",
+  "sharedConfig": "../订单分析/scripts/config/shared_config.py"
 }

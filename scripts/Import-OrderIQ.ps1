@@ -11,7 +11,7 @@ $source = Get-Item -LiteralPath $SourceHtml
 if ($source.PSIsContainer -or $source.Extension -notin @('.html', '.htm') -or $source.Length -eq 0) {
     throw 'SourceHtml 必须是非空的发布 HTML 文件。'
 }
-$project = (Resolve-Path -LiteralPath $ProjectRoot).Path
+$project = [IO.Path]::GetFullPath((Resolve-Path -LiteralPath $ProjectRoot).Path).TrimEnd("\")
 $registryPath = Join-Path $project 'portal\config\apps.json'
 $registry = Get-Content -LiteralPath $registryPath -Raw -Encoding UTF8 | ConvertFrom-Json
 $orderApps = @($registry.groups | ForEach-Object { $_.apps } | Where-Object { $_.id -eq 'orderiq' })

@@ -2,7 +2,7 @@
 
 > 当前边界：用户确认保留既有改动，今后门户只做集成，不修改任何子应用源码、UI 或业务行为。下文原项目适配内容描述已有实现或历史记录，不构成继续修改原项目的授权；详见[集成边界](integration-boundary.md)。
 
-门户架构保持不变：IIS 统一入口、静态门户、独立 SOP 服务和同源 `/sop/` 代理。唯一业务源码在 `../PythonProject/计划看板`。门户 Git 不保留 `services/sop` 业务源码；部署目录中同名路径只存放原项目构建的运行产物。
+门户架构保持不变：IIS 统一入口、静态门户、独立 SOP 服务和同源 `/sop/` 代理。唯一业务源码在 `../计划看板`。门户 Git 不保留 `services/sop` 业务源码；部署目录中同名路径只存放原项目构建的运行产物。
 
 文档中的开发路径以门户根目录为基准；以下命令从门户根目录执行。原项目不在默认相对位置时，先定位并调整本地配置。
 
@@ -12,7 +12,7 @@
 
 ```powershell
 $sopRelease = [IO.Path]::GetFullPath((Join-Path (Get-Location) 'staging/sop-release-new'))
-python '../PythonProject/计划看板/scripts/build_release.py' --destination $sopRelease
+python '../计划看板/scripts/build_release.py' --destination $sopRelease
 powershell -NoProfile -ExecutionPolicy RemoteSigned -File .\deploy\New-DeploymentPackage.ps1 -Destination .\staging\DataPlatform-new -IncludeSop -SopReleasePath $sopRelease
 ```
 
