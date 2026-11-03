@@ -8,14 +8,14 @@
 
 文档中的文件系统路径以门户根目录为基准，命令也从该目录运行。先定位包含 `package.json`、`portal/`、`deploy/` 的目录，再核对兄弟项目位置；不同电脑调整相对位置，不绑定盘符或用户名。
 
-门户保留 HTML/CSS/JavaScript 外壳、配置菜单、iframe 与 IIS 接入架构。SOP 的唯一业务源码默认在 `../计划看板`；门户仓库不维护第二份 SOP 业务源码或回合并补丁。
+门户保留 HTML/CSS/JavaScript 外壳、配置菜单、iframe 与 IIS 接入架构。SOP 的唯一业务源码默认在 `../SOP看板`；门户仓库不维护第二份 SOP 业务源码或回合并补丁。
 
 ## 默认相对目录布局
 
 | 用途 | 相对门户根目录的路径 |
 | --- | --- |
 | 门户源码 | `.` |
-| SOP 唯一源码 | `../计划看板` |
+| SOP 唯一源码 | `../SOP看板` |
 | OrderIQ 共享规则 | `../订单分析/scripts/config/shared_config.py` |
 
 历史公开化示例目录并非实际原项目位置。此前已直接核对文件与 Git 提交，没有盲套历史补丁；后续也应先核对相对位置再操作。
@@ -35,7 +35,7 @@ npm start
 路径可以通过参数或忽略的 `config.local/sop.json` 配置：
 
 ```powershell
-npm start -- --sop-source '../计划看板' --shared-config '../订单分析/scripts/config/shared_config.py' --port 4176 --backend-port 8879
+npm start -- --sop-source '../SOP看板' --shared-config '../订单分析/scripts/config/shared_config.py' --port 4176 --backend-port 8879
 ```
 
 本地配置字段为 `sourceRoot`、`dataRoot`、`sharedConfig`，模板见 `integration/sop.example.json`。相对字段按门户根目录解析，不按 `config.local/` 解析。`dataRoot` 是包含 `data/` 和 `input_file/` 的数据源项目目录，不等同于后端配置中的 `data_dir`。源码选择优先级为 `--sop-source`、`SOP_SOURCE_ROOT`、本地配置、实际兄弟目录。`--seed-from` 只选择数据来源，不选择运行代码。原项目未完成 gateway 适配时明确报错，不回退副本。
@@ -50,7 +50,7 @@ npm start -- --sop-source '../计划看板' --shared-config '../订单分析/scr
 
 ```powershell
 $sopRelease = [IO.Path]::GetFullPath((Join-Path (Get-Location) 'staging/sop-release-new'))
-python '../计划看板/scripts/build_release.py' --destination $sopRelease
+python '../SOP看板/scripts/build_release.py' --destination $sopRelease
 powershell -NoProfile -ExecutionPolicy RemoteSigned -File .\deploy\New-DeploymentPackage.ps1 -Destination .\staging\DataPlatform-new -IncludeSop -SopReleasePath $sopRelease
 ```
 
@@ -71,6 +71,6 @@ powershell -NoProfile -ExecutionPolicy RemoteSigned -File .\deploy\New-Deploymen
 
 ## 工作区位置
 
-门户目录为 `计划部工作台/`，与 `计划看板/`、`订单分析/` 并列放在同一父目录。默认 SOP 使用 `../计划看板`，共享规则使用 `../订单分析/scripts/config/shared_config.py`；双击当前目录的 `启动本地门户.cmd` 或在此目录运行 `npm start`。部署配置中的服务器路径独立于开发工作区位置。已有历史发布包与恢复备份保留原样，不自动改写其中的绝对路径；更新发布需从当前源码重新构建。
+门户目录为 `计划部工作台/`，与 `SOP看板/`、`订单分析/` 并列放在同一父目录。默认 SOP 使用 `../SOP看板`，共享规则使用 `../订单分析/scripts/config/shared_config.py`；双击当前目录的 `启动本地门户.cmd` 或在此目录运行 `npm start`。部署配置中的服务器路径独立于开发工作区位置。已有历史发布包与恢复备份保留原样，不自动改写其中的绝对路径；更新发布需从当前源码重新构建。
 
 2026-11-03 迁移验收：2,732 个原文件的 SHA256 与目录链接核对一致；Git、忽略的发布文件及恢复备份随项目保留。原本运行的隔离预览已备份并停止；迁移后的默认启动、门户/OrderIQ/SOP 资源和 SOP 会话接口返回 200，17 项 Node 测试与 PowerShell 离线构建/打包检查通过。门户导入器同时统一了 Windows 长短路径归一化，保留目录越界检查。旧位置 `../../统一门户` 仅余被当前会话占用的空目录，关闭占用后可删除，不再从那里启动。
