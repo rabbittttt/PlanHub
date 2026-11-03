@@ -28,7 +28,7 @@ function Assert-Rejected {
 try {
     $example = Join-Path $deploy 'sop-iis.example.json'
     $valid = Read-SopIisConfig -Path $example
-    Assert-True ($valid.WriteGroups.Count -eq 0) 'Default write groups must be empty.'
+    Assert-True ($valid.AllowWrites -eq $true) 'Department members must share enabled business writes by default.'
     for ($i = 0; $i -lt 16; $i++) {
         $secret = New-SopProxySecret
         Assert-True ($secret -cmatch '^[A-Za-z0-9_-]{32,256}$') 'Generated secret is incompatible with the Python gateway.'
@@ -43,11 +43,22 @@ try {
         if ($LASTEXITCODE -ne 0) { throw 'Generated proxy secret was rejected by the Python gateway.' }
     }
     finally { [Environment]::SetEnvironmentVariable('SOP_PROXY_SECRET', $previousSecret, 'Process'); $secret = $null }
-    foreach ($value in @('Editors', '*', 'DOMAIN\*', 'DOMAIN\Editors,Everyone', ' DOMAIN\Editors')) {
+    foreach ($value in @('true', 'false', 1, 0, @(), $null)) {
         $invalid = Get-Content -LiteralPath $example -Raw -Encoding UTF8 | ConvertFrom-Json
-        $invalid.WriteGroups = @($value)
+        $invalid.AllowWrites = $value
         Assert-Rejected $invalid
     }
+    $invalid = Get-Content -LiteralPath $example -Raw -Encoding UTF8 | ConvertFrom-Json
+    $invalid.PSObject.Properties.Remove('AllowWrites')
+    Assert-Rejected $invalid
+    $invalid = Get-Content -LiteralPath $example -Raw -Encoding UTF8 | ConvertFrom-Json
+    $invalid | Add-Member -NotePropertyName WriteGroups -NotePropertyValue @('DOMAIN\Editors')
+    Assert-Rejected $invalid
+    $paused = Get-Content -LiteralPath $example -Raw -Encoding UTF8 | ConvertFrom-Json
+    $paused.AllowWrites = $false
+    $pausedPath = Join-Path $scratch 'paused.json'
+    Write-SopJson -Path $pausedPath -Value $paused
+    Assert-True (-not (Read-SopIisConfig -Path $pausedPath).AllowWrites) 'Global maintenance pause must remain available.'
     foreach ($value in @('https://data.internal/path', 'https://user:password@data.internal', 'https://data.internal/', 'ftp://data.internal')) {
         $invalid = Get-Content -LiteralPath $example -Raw -Encoding UTF8 | ConvertFrom-Json
         $invalid.PublicOrigin = $value

@@ -1,6 +1,6 @@
 # IIS 部署与验收
 
-使用一个新的 IIS 站点作为入口，`portal/` 原样发布；OrderIQ 作为独立 IIS Application 挂载到 `/orderiq/`。基础配置示例默认只创建静态应用。SOP 的子路径、同源嵌入和身份协议已合入其独立原项目；其独立代理应用、可信 Windows 身份桥接、后台任务及离线依赖按照 [SOP 内网部署](sop-intranet.md) 配置，默认只读。
+使用一个新的 IIS 站点作为入口，`portal/` 原样发布；OrderIQ 作为独立 IIS Application 挂载到 `/orderiq/`。基础配置示例默认只创建静态应用。SOP 的子路径、同源嵌入和身份协议已合入其独立原项目；其独立代理应用、可信 Windows 身份桥接、后台任务及离线依赖按照 [SOP 内网部署](sop-intranet.md) 配置，部门成员使用相同业务功能；模板中的全局写入开关默认为开启。
 
 工作机已发现运行中的 IIS，但当前进程读取配置时因 `redirection.config` 权限不足失败。本次只生成可审核的文件和脚本，没有创建、修改或启动 IIS 站点，也没有验证 Windows 域登录和 ARR。
 
@@ -91,7 +91,7 @@ ARR 响应属于门户根应用，所以根配置只发送 `frame-ancestors 'sel
 3. 按实际应用修改示例规则，将 `<rewrite>` 合入门户 `web.config` 的 `<system.webServer>`。这是片段，不能直接替换整个配置。将 `RequireReverseProxy` 改为 `true`，使预检检查 ARR。
 4. 示例把 `/leads/item?q=1` 转发为 `http://127.0.0.1:8501/item?q=1`，剥离 `/leads/` 前缀。后端仍必须生成 `/leads/` 开头的资源、跳转、表单、Cookie Path、WebSocket 地址，不能让 `/static`、`/api` 落到门户根。也可让后端原生挂载 `/leads/` 并保留前缀，但代理规则须同步修改，二者择一。
 5. Vue 等前端按公共前缀构建；history 路由回退只配置在对应业务应用内。门户不需要全站 SPA fallback，也不应依靠通用 HTML 替换掩盖资源路径错误。
-6. 核对后端 Host/Origin/代理信任与重定向设置。示例不注入或信任用户身份头；Windows 认证代理不自动赋予后端逐用户授权。需要身份桥接时，另行设计 IIS 覆盖写入、后端只信任受控代理的方案，防止请求头伪造。
+6. 核对后端 Host/Origin/代理信任与重定向设置。示例不注入或信任用户身份头；部门成员不分业务角色；Windows 身份仅用于可信操作留痕。需要身份桥接时，另行设计 IIS 覆盖写入、后端只信任受控代理的方案，防止请求头伪造。
 
 先从门户同域地址完成接口读写、权限验收，再启用动态应用菜单；`apps.json` 不登记回环端口 URL。
 

@@ -17,7 +17,8 @@ $gateway = Get-Content -LiteralPath $gatewayPath -Raw -Encoding UTF8 | ConvertFr
 if ($Port -eq 0) { $Port = [int]$auth.BackendPort }
 if ($Port -lt 1 -or $Port -gt 65535) { throw 'The configured SOP backend port is invalid.' }
 if ($gateway.proxy_secret_env -ne 'SOP_PROXY_SECRET') { throw 'Gateway secret environment variable must be SOP_PROXY_SECRET.' }
-if ([bool]$gateway.allow_writes -ne (@($auth.WriteGroups).Count -gt 0)) { throw 'Gateway write switch and IIS write group configuration disagree.' }
+if ($null -ne $auth.PSObject.Properties['WriteGroups'] -or $auth.AllowWrites -isnot [bool]) { throw 'Rebuild the SOP bridge and regenerate auth configuration with explicit AllowWrites; legacy WriteGroups is not supported.' }
+if ($gateway.allow_writes -isnot [bool] -or $gateway.allow_writes -ne $auth.AllowWrites) { throw 'Gateway and IIS global write switches disagree.' }
 if ($gateway.public_origin -ne $auth.PublicOrigin) { throw 'Gateway and IIS bridge public origins disagree.' }
 $secret = [IO.File]::ReadAllText([string]$auth.ProxySecretPath).Trim()
 if ($secret -cnotmatch '^[A-Za-z0-9_-]{32,256}$') { throw 'Gateway secret file is invalid.' }

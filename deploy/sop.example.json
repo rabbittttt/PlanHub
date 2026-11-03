@@ -2,7 +2,7 @@
   "base_path": "/sop",
   "public_origin": "http://data.example.internal:8080",
   "proxy_secret_env": "SOP_PROXY_SECRET",
-  "allow_writes": false,
+  "allow_writes": true,
   "data_dir": "D:\\DataPlatform\\data\\sop",
   "source_dir": "D:\\DataPlatform\\data\\sop\\input_file",
   "shared_config": "D:\\DataPlatform\\config\\shared_config.py",

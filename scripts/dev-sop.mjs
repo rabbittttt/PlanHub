@@ -119,10 +119,10 @@ export async function runPreview(args=process.argv.slice(2),options={}) {
     } catch(error) {if(error.code!=='ENOENT')throw error;}
   } else {
     await writeFile(rules,'MERGE_GROUPS = {}\n');
-    await writeFile(path.join(data,'sales.json'),JSON.stringify({meta:{notes:['仅供本地界面验收的演示数据，不代表业务数据。']},products:[{id:'preview',brand:'演示',model:'本地验收',version:'示例版本'}],sales:[]}));
+    await writeFile(path.join(data,'sales.json'),JSON.stringify({meta:{notes:['仅供本地界面验收的演示数据，不代表业务数据。']},products:[{id:'preview',brand:'演示',model:'本地验收 2026款',version:'示例版本'}],sales:[]}));
   }
   const secret=crypto.randomBytes(32).toString('hex');
-  const gateway={base_path:'/sop',public_origin:`http://127.0.0.1:${port}`,proxy_secret_env:'SOP_DEV_PROXY_SECRET',allow_writes:false,data_dir:data,source_dir:source,shared_config:rules,plan_file:path.join(source,'SOP计划维护.xlsx')};
+  const gateway={base_path:'/sop',public_origin:`http://127.0.0.1:${port}`,proxy_secret_env:'SOP_DEV_PROXY_SECRET',allow_writes:true,data_dir:data,source_dir:source,shared_config:rules,plan_file:path.join(source,'SOP计划维护.xlsx')};
   const gatewayFile=path.join(config,'gateway.json');
   await writeFile(gatewayFile,JSON.stringify(gateway,null,2));
   const env={...process.env,...(options.env||{}),SOP_DEV_PROXY_SECRET:secret,SOP_EXCEL_ENGINE:'python',PYTHONUNBUFFERED:'1',PYTHONIOENCODING:'utf-8',PYTHONDONTWRITEBYTECODE:'1'};
@@ -154,7 +154,7 @@ export async function runPreview(args=process.argv.slice(2),options={}) {
   console.log(`SOP 门户预览：http://127.0.0.1:${port}/#/app/sop`);
   console.log(`SOP 唯一源码：${sourceRoot}`);
   console.log(dataRoot?`使用隔离业务快照，数据来源：${dataRoot}`:'使用演示数据，仅供界面验收。');
-  console.log('本地预览身份不代表 Windows 域认证；全部写入关闭。Ctrl+C 停止。');
+  console.log(`本地预览身份不代表 Windows 域认证；操作仅保存到隔离快照：${preview}，不会回写原项目。重新启动会创建新快照。Ctrl+C 停止。`);
   process.once('SIGINT',stop);process.once('SIGTERM',stop);
   return server;
 }

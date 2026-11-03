@@ -3,7 +3,7 @@
 function Read-SopIisConfig {
     param([string]$Path)
     $config = Get-Content -LiteralPath $Path -Raw -Encoding UTF8 | ConvertFrom-Json
-    foreach ($name in @('SiteName', 'DeploymentRoot', 'ApplicationPool', 'BackendPort', 'PublicOrigin', 'WriteGroups', 'ProxySecretPath')) {
+    foreach ($name in @('SiteName', 'DeploymentRoot', 'ApplicationPool', 'BackendPort', 'PublicOrigin', 'AllowWrites', 'ProxySecretPath')) {
         if ($null -eq $config.PSObject.Properties[$name]) { throw "Missing SOP IIS configuration property: $name" }
     }
     foreach ($name in @('SiteName', 'ApplicationPool')) {
@@ -19,13 +19,8 @@ function Read-SopIisConfig {
     $uri = $null
     if (-not [Uri]::TryCreate([string]$config.PublicOrigin, [UriKind]::Absolute, [ref]$uri) -or $uri.Scheme -notin @('http', 'https') -or $uri.AbsolutePath -ne '/' -or $uri.Query -or $uri.Fragment -or $uri.UserInfo) { throw 'PublicOrigin must be a canonical HTTP(S) origin, without a path.' }
     if ([string]$config.PublicOrigin -cne $uri.GetLeftPart([UriPartial]::Authority)) { throw 'PublicOrigin must use the canonical origin form, without trailing slash or default port.' }
-    if ($config.WriteGroups -isnot [Array]) { throw 'WriteGroups must be an array; leave it empty to deny all POST requests.' }
-    $seen = @{}
-    foreach ($group in $config.WriteGroups) {
-        if ($group -isnot [string] -or $group -notmatch '^[^\\\x00-\x1f,;*?]{1,80}\\[^\\\x00-\x1f,;*?]{1,160}$' -or $group.Trim() -ne $group) { throw 'Each WriteGroups entry must be an explicit DOMAIN\Group name.' }
-        if ($seen.ContainsKey($group)) { throw 'WriteGroups contains a duplicate group.' }
-        $seen[$group] = $true
-    }
+    if ($null -ne $config.PSObject.Properties['WriteGroups']) { throw 'WriteGroups is obsolete. Review the department access boundary, remove WriteGroups and explicitly set AllowWrites for all members.' }
+    if ($config.AllowWrites -isnot [bool]) { throw 'AllowWrites must be a boolean global switch, not a per-user role.' }
     return $config
 }
 

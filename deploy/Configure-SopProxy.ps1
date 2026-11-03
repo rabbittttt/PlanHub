@@ -17,10 +17,10 @@ $proxyRoot = Join-Path $config.DeploymentRoot 'proxy\sop'
 $configRoot = Join-Path $config.DeploymentRoot 'config'
 $gatewayPath = Join-Path $configRoot 'sop.json'
 $authPath = Join-Path $configRoot 'sop-auth.json'
-$allowWrites = $config.WriteGroups.Count -gt 0
+$allowWrites = $config.AllowWrites
 Write-Output "SOP proxy: $($config.SiteName)/sop -> http://127.0.0.1:$($config.BackendPort)/sop/ (prefix preserved)"
 Write-Output "Dedicated .NET v4 Integrated pool: $($config.ApplicationPool)"
-Write-Output "Public origin: $($config.PublicOrigin); write group count: $($config.WriteGroups.Count); writes enabled: $allowWrites"
+Write-Output "Public origin: $($config.PublicOrigin); uniform department access; global writes enabled: $allowWrites"
 Write-Output 'Identity is stamped after Windows Authentication. No LOGON_USER rewrite variable is used.'
 Write-Output 'Secrets are generated only by Apply, never printed, and shared via an ACL-protected file outside web roots.'
 if ($PlanOnly) { Write-Output 'Offline plan validated; IIS and domain accounts were not contacted.'; return }
@@ -107,7 +107,7 @@ try {
         $newSecret = $null
     }
     Set-SopRestrictedAcl -Path $config.ProxySecretPath -ReadAccounts @($poolIdentity, $ServiceAccount)
-    $auth = [ordered]@{ WriteGroups = @($config.WriteGroups); ProxySecretPath = $config.ProxySecretPath; PublicOrigin = $config.PublicOrigin; BackendPort = $config.BackendPort }
+    $auth = [ordered]@{ AllowWrites = $allowWrites; ProxySecretPath = $config.ProxySecretPath; PublicOrigin = $config.PublicOrigin; BackendPort = $config.BackendPort }
     Write-SopJson -Path $authPath -Value $auth
     Set-SopRestrictedAcl -Path $authPath -ReadAccounts @($poolIdentity, $ServiceAccount)
     Set-SopRestrictedAcl -Path $gatewayPath -ReadAccounts @($ServiceAccount)
@@ -147,6 +147,6 @@ try {
     Write-SopJson -Path $gatewayPath -Value $gateway
     Set-SopRestrictedAcl -Path $gatewayPath -ReadAccounts @($ServiceAccount)
     Write-Output 'Owned SOP proxy configured. Secret values were not printed or placed in command arguments.'
-    Write-Output 'Restart the Python task after configuration changes. Keep writes closed until domain group acceptance succeeds.'
+    Write-Output 'Restart the Python task after configuration changes. Verify department-only access and equal read/write behavior for members.'
 }
 finally { $manager.Dispose() }

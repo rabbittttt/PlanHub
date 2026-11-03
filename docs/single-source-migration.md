@@ -48,7 +48,7 @@
 
 1. 审核两个仓库的本地提交后，再按自己的流程决定是否推送；本轮未执行任何推送。
 2. 如已有旧本地预览进程，退出后用新 `npm start` 重启；源位置不同时编辑 `config.local/sop.json` 或传 `--sop-source`。
-3. 目标内网的域名、HTTPS、服务账号、写入域组、IIS/ARR、ACL 和真实身份授权必须由管理员配置并验收。本轮不部署或修改这些设置。
+3. 目标内网的域名、HTTPS、服务账号、部门访问边界、IIS/ARR、ACL 和可信身份留痕必须由管理员配置并验收。本轮不部署或修改这些设置。
 4. Windows 可见控制台的关闭行为未在本轮自动化中运行；原启动器代码未变，可人工检查。独立 CLI 和 HTTP 已用隔离进程验证。
 
 首次宽范围测试误全局强制 Python 引擎，导致一个 Node mock 用例走错分支；清除后该用例通过。另一次 artifact 原生回算进程出现 Windows fast-fail（0xC0000409），定点隔离验收通过；保留证据 `artifacts/single-source-node-validation.json`，不把该现象宣称为已由业务代码修复。

@@ -6,7 +6,7 @@
 
 ## 开发与构建
 
-原项目保留独立本机运行方式；显式 `--gateway-config` 才开启前缀、同源嵌入、可信身份与默认只读。业务测试和导入导出测试在原 SOP 运行。门户测试只验证接入、参数、代理和发布清单。
+原项目保留独立本机运行方式；显式 `--gateway-config` 才开启前缀、同源嵌入、可信身份与服务级写入开关。业务测试和导入导出测试在原 SOP 运行。门户测试只验证接入、参数、代理和发布清单。
 
 ```powershell
 $sopRelease = [IO.Path]::GetFullPath((Join-Path (Get-Location) 'staging/sop-release-new'))
@@ -18,9 +18,9 @@ powershell -NoProfile -ExecutionPolicy RemoteSigned -File .\deploy\New-Deploymen
 
 ## 身份与权限
 
-IIS 的 `/sop` 独立 Application 使用 .NET4 Integrated、Windows Authentication 和 ARR。原 SOP 产物中的 `integration/iis/SopIdentityBridge.cs` 在认证后确认 Windows 用户、检查写入域组和 Origin，再覆盖代理 key 与身份头。后端再次校验回环代理、key、用户、路径前缀和 Origin，并记录可信操作人。
+IIS 的 `/sop` 独立 Application 使用 .NET4 Integrated、Windows Authentication 和 ARR。原 SOP 产物中的 `integration/iis/SopIdentityBridge.cs` 在认证后确认 Windows 用户、检查 Origin，再覆盖代理 key 与身份头。后端再次校验回环代理、key、用户、路径前缀和 Origin，并记录可信操作人。
 
-默认 `WriteGroups` 为空、`allow_writes` 为 false；前端只读不是权限边界。用户组后填，所有 POST（包括导入及 POST 导出）受限。独立模式不启用该代理协议。代码与离线编译测试不能代替真实域认证及 IsInRole 验收。
+部门成员拥有相同业务功能，不再检查写入域组。部署模板使用 `AllowWrites: true`，与后端 `allow_writes: true` 配对，统一允许计划维护、导入及导出。将两者同时改为 false 仅用于暂停全服务写入；不是成员角色。仍保留 Windows 登录、可信操作人、Origin、代理 key 与回环校验。独立模式不启用该代理协议。部门入口只允许内部成员访问的条件仍需在内网验收，不能把 Windows 登录本身当作部门成员筛选。
 
 ## 目标服务器手工工作
 
@@ -32,7 +32,7 @@ IIS 的 `/sop` 独立 Application 使用 .NET4 Integrated、Windows Authenticati
 4. 使用包内 `Install-SopDependencies.ps1` 按 SOP 产物的 requirements 和校验过的离线 wheel 安装运行环境。
 5. 通过通用配置脚本的只读预检/PlanOnly 检查；由管理员审阅后再手工决定 Apply。身份桥接编译器只接受显式的 SOP 产物源文件。
 6. 明确 Python 服务账号及读取/写入目录；若使用提供的后台任务方案，S4U 不保存密码且不能访问网络共享。
-7. 默认只读验收后，再由管理员配置写入域组，重启相关服务并用组内、组外用户验证接口、导入导出和审计。
+7. 确认入口仅供部门访问后，使用不同部门成员验证相同的接口、维护、导入导出能力和各自的操作记录；额外验证入口外用户无法访问。
 
 部署脚本消费 `services/sop/sop-release.json` 并验证运行产物。代码更新由原 SOP 重建新产物，不在部署目录直接维护业务源码。
 
@@ -42,4 +42,19 @@ IIS 的 `/sop` 独立 Application 使用 .NET4 Integrated、Windows Authenticati
 
 ## 验收
 
-验证门户 iframe、直接 `/sop/`、资源和 API 前缀；只读用户/授权用户、伪造身份、缺失及跨源 Origin；真实计划导入导出及可信操作人；数据/输入/维护表外置路径；服务重启和回退。域组、证书、ACL 和 IIS 管线仍需要目标内网环境人工完成。
+验证门户 iframe、直接 `/sop/`、资源和 API 前缀；不同部门成员相同业务能力、未获准进入部门入口的访问、伪造身份、缺失及跨源 Origin；真实计划导入导出及可信操作人；数据/输入/维护表外置路径；服务重启和回退。部门入口、证书、ACL 和 IIS 管线仍需要目标内网环境人工完成。
+
+## 从旧写入域组配置迁移
+
+本次仅更新源码、模板和本地预览，没有执行 IIS Apply。已有服务器必须先保留配置与发布物备份，由管理员重新构建唯一 SOP 原项目发布物及其身份桥接模块，并审阅新配置。将旧 `WriteGroups` 字段移除，显式配置服务级 `AllowWrites: true`；重新生成匹配的 `sop-auth.json` 与 `sop.json` 后再重启服务。不能只改一个开关或继续使用旧 DLL。旧字段、缺失开关或两端开关不一致会被拒绝，不会静默扩大旧配置的写入范围。
+
+本地 `npm start` 与 `npm run dev:sop` 使用可写的隔离快照；修改不会回写原 SOP 数据，重启创建新快照。预览身份只用于本机验收，不能作为真实 Windows 登录证明。
+
+## 部门统一功能验收（2026-11-03）
+
+- 门户 `npm run check`、17 项 Node 测试通过；预览测试实际写入隔离文件并确认源数据不变。
+- SOP 16 项网关接口测试、5 项 Excel 上传下载 HTTP 测试及前端网关测试通过；覆盖不同成员相同写入能力、独立操作人留痕、伪造身份/错误 Origin 拒绝、服务暂停与独立运行。
+- Windows PowerShell 5.1 部署测试通过：布尔开关校验、旧字段拒绝、C# 编译、原项目构建、发布清单与打包核验、仅计划/WhatIf 检查；未执行 IIS 或任务变更。
+- 浏览器使用隔离演示数据验证计划保存（123）、导出接口 200 与页面成功提示，桌面/375px 手机无门户横向溢出，导航、Escape 焦点、搜索与分组正常，无控制台错误。浏览器自动化的下载事件回调超时，未取得浏览器下载文件路径；Excel 文件内容与上传下载协议由上述 HTTP 测试验证。
+- 本地截图位于忽略目录 `artifacts/department-access-desktop.jpg`、`artifacts/department-access-mobile.jpg`；原 SOP 改动前备份位于 `artifacts/uniform-access-before-20261103/`，不提交业务数据或备份。
+- 真实 Windows 部门入口、不同域账号访问、目标服务器导入导出和重启仍需在内网人工验收。

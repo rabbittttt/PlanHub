@@ -89,7 +89,7 @@ async function freePort() {
   return port;
 }
 
-test('preview executes independent source with a separate isolated data snapshot and readonly gateway',async t=>{
+test('preview executes independent source with a separate writable snapshot without mutating source data',async t=>{
   const python=process.env.SOP_PYTHON||'python';
   if(spawnSync(python,['--version'],{encoding:'utf8'}).status!==0){t.skip('Python is required for the external-service integration test');return;}
   const {base,root}=await fixture(t);
@@ -109,9 +109,12 @@ class Handler(BaseHTTPRequestHandler):
   raw=json.dumps(body).encode();self.send_response(status);self.send_header('Content-Type','application/json');self.send_header('Content-Length',str(len(raw)));self.end_headers();self.wfile.write(raw)
  def do_GET(self):
   if self.headers.get('X-SOP-Proxy-Key')!=os.environ[config['proxy_secret_env']]:return self.send(403,{'error':'key'})
-  if self.path=='/sop/api/session':return self.send(200,{'mode':'gateway','user':self.headers.get('X-SOP-User'),'canWrite':False})
+  if self.path=='/sop/api/session':return self.send(200,{'mode':'gateway','user':self.headers.get('X-SOP-User'),'canWrite':config['allow_writes']})
   return self.send(200,{'codeRoot':str(Path(__file__).parent),'cwd':os.getcwd(),'sourceData':json.loads((Path(config['data_dir'])/'sales.json').read_text()),'dataPath':config['data_dir'],'readonly':not config['allow_writes'],'bytecodeDisabled':os.environ.get('PYTHONDONTWRITEBYTECODE')=='1'})
- def do_POST(self):self.send(403,{'error':'readonly'})
+ def do_POST(self):
+  if not config['allow_writes']:return self.send(403,{'error':'paused'})
+  (Path(config['data_dir'])/'sales.json').write_text(json.dumps({'marker':'preview-edit'}))
+  self.send(200,{'ok':True})
 HTTPServer(('127.0.0.1',a.port),Handler).serve_forever()
 `);
   const sourceBefore=await readFile(serverFile);
@@ -123,9 +126,10 @@ HTTPServer(('127.0.0.1',a.port),Handler).serve_forever()
     assert.equal(result.codeRoot,original);assert.equal(result.cwd,original);
     assert.equal(result.sourceData.marker,'selected-seed');
     assert.ok(result.dataPath.startsWith(path.join(root,'artifacts')));
-    assert.equal(result.readonly,true);assert.equal(result.bytecodeDisabled,true);
-    const denied=await fetch(`http://127.0.0.1:${port}/sop/api/plans`,{method:'POST',headers:{'Content-Type':'application/json'},body:'{}'});
-    assert.equal(denied.status,403);await denied.text();
+    assert.equal(result.readonly,false);assert.equal(result.bytecodeDisabled,true);
+    const saved=await fetch(`http://127.0.0.1:${port}/sop/api/plans`,{method:'POST',headers:{'Content-Type':'application/json',Origin:`http://127.0.0.1:${port}`},body:'{}'});
+    assert.equal(saved.status,200);await saved.text();
+    assert.equal(JSON.parse(await readFile(path.join(result.dataPath,'sales.json'),'utf8')).marker,'preview-edit');
   } finally {await new Promise(resolve=>server.close(resolve));}
   assert.deepEqual(await readFile(serverFile),sourceBefore);
   assert.deepEqual(await readFile(path.join(seed,'data','sales.json')),seedBefore);

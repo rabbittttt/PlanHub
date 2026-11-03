@@ -4,6 +4,6 @@
   "ApplicationPool": "DataPlatform-SopProxy",
   "BackendPort": 8876,
   "PublicOrigin": "http://data.example.internal:8080",
-  "WriteGroups": [],
+  "AllowWrites": true,
   "ProxySecretPath": "D:\\DataPlatform\\config\\sop-proxy.secret"
 }
