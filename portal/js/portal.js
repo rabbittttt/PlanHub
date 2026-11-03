@@ -26,7 +26,7 @@ document.querySelector('.skip-link').addEventListener('click', event => {
   event.preventDefault();
   $('main').focus();
 });
-const labels = { ready: '已接入', pending: '待接入', maintenance: '维护中' };
+const labels = { ready: '可用', pending: '待接入', maintenance: '维护中' };
 let config, current = 'home', filter = 'all', sequence = 0, controller, timer, frame;
 
 function element(tag, className, text) {
@@ -35,36 +35,46 @@ function element(tag, className, text) {
   if (text !== undefined) node.textContent = text;
   return node;
 }
-function setMenu(open) {
-  $('sidebar').classList.toggle('open', open);
-  $('menu-toggle').setAttribute('aria-expanded', String(open));
-  $('menu-toggle').setAttribute('aria-label', open ? '收起导航' : '展开导航');
+function setNavigationOpen(open) {
+  $('primary-navigation').classList.toggle('open', open);
+  $('nav-toggle').setAttribute('aria-expanded', String(open));
+  $('nav-toggle').setAttribute('aria-label', open ? '收起应用导航' : '展开应用导航');
 }
-$('menu-toggle').addEventListener('click', () => setMenu(!$('sidebar').classList.contains('open')));
+$('nav-toggle').addEventListener('click', () => setNavigationOpen($('nav-toggle').getAttribute('aria-expanded') !== 'true'));
+$('primary-navigation').addEventListener('click', e => {
+  if (!e.target.closest('a')) return;
+  const wasOpen = $('nav-toggle').getAttribute('aria-expanded') === 'true';
+  setNavigationOpen(false);
+  if (wasOpen && $('nav-toggle').getClientRects().length) $('nav-toggle').focus();
+});
 document.addEventListener('click', e => {
-  if (!$('sidebar').contains(e.target) && !$('menu-toggle').contains(e.target)) setMenu(false);
+  if (!$('primary-navigation').contains(e.target) && !$('nav-toggle').contains(e.target)) setNavigationOpen(false);
 });
 document.addEventListener('keydown', e => {
-  if (e.key === 'Escape') { setMenu(false); return; }
+  if (e.key === 'Escape' && $('nav-toggle').getAttribute('aria-expanded') === 'true') {
+    const restoreFocus = $('primary-navigation').contains(document.activeElement);
+    setNavigationOpen(false);
+    if (restoreFocus && $('nav-toggle').getClientRects().length) $('nav-toggle').focus();
+    return;
+  }
   if (e.key === '/' && current === 'home' && !['INPUT','TEXTAREA','SELECT'].includes(e.target.tagName) && !e.target.isContentEditable) {
     e.preventDefault(); $('app-search').focus();
   }
 });
 
+function prioritizedApps(apps) {
+  const priority = app => app.status === 'ready' ? (app.id === 'sop' ? 0 : 1) : 2;
+  return [...apps].sort((a, b) => priority(a) - priority(b));
+}
 function renderNavigation() {
   $('app-nav').replaceChildren();
-  for (const group of config.groups) {
-    const apps = group.apps.filter(app => app.enabled);
-    if (!apps.length) continue;
-    $('app-nav').append(element('p', 'nav-group-label', group.name));
-    for (const app of apps) {
-      const link = element('a', 'nav-item');
-      link.href = `#/app/${app.id}`;
-      link.dataset.app = app.id;
-      link.append(icon(app.icon), element('span', '', app.name));
-      if (app.status !== 'ready') link.append(element('span', 'nav-pending', labels[app.status]));
-      $('app-nav').append(link);
-    }
+  for (const app of prioritizedApps(config.apps)) {
+    const link = element('a', 'nav-item');
+    link.href = `#/app/${app.id}`;
+    link.dataset.app = app.id;
+    link.append(icon(app.icon), element('span', '', app.name));
+    if (app.status !== 'ready') link.append(element('span', 'nav-pending', labels[app.status]));
+    $('app-nav').append(link);
   }
   const groups = [{ id: 'all', name: '全部应用', apps: config.apps }, ...config.groups];
   $('group-filters').replaceChildren();
@@ -82,30 +92,49 @@ function renderNavigation() {
 function renderCards() {
   const query = $('app-search').value.trim().toLocaleLowerCase();
   const group = config.groups.find(g => g.id === filter);
-  const apps = (group ? group.apps.filter(a => a.enabled) : config.apps).filter(app =>
-    [app.name, app.description, app.subtitle, app.groupName, group?.name].filter(Boolean).join(' ').toLocaleLowerCase().includes(query));
+  const apps = prioritizedApps((group ? group.apps.filter(a => a.enabled) : config.apps).filter(app =>
+    [app.name, app.description, app.subtitle, app.groupName, group?.name].filter(Boolean).join(' ').toLocaleLowerCase().includes(query)));
+  const ready = apps.filter(app => app.status === 'ready');
+  const pending = apps.filter(app => app.status !== 'ready');
   $('app-grid').replaceChildren();
+  $('pending-grid').replaceChildren();
   document.querySelectorAll('[data-group]').forEach(button => button.setAttribute('aria-pressed', String(button.dataset.group === filter)));
   for (const app of apps) {
-    const card = element('article', 'app-card');
-    const top = element('div', 'card-top');
-    const iconBox = element('span', `app-icon ${Object.hasOwn(paths, app.icon) ? app.icon : 'grid'}`);
-    iconBox.append(icon(app.icon));
+    const card = element('article', `app-card app-card-${app.status === 'ready' ? 'ready' : 'pending'}`);
+    card.dataset.app = app.id;
     const badge = element('span', `status-badge ${app.status}`);
     badge.append(element('span', 'status-dot'), document.createTextNode(labels[app.status]));
-    top.append(iconBox, badge);
-    const bottom = element('div', 'card-bottom');
-    bottom.append(element('span', 'card-group', app.groupName || group?.name));
     if (app.status === 'ready') {
-      const link = element('a', 'card-link', '进入应用');
+      const top = element('div', 'card-top');
+      const iconBox = element('span', `app-icon ${Object.hasOwn(paths, app.icon) ? app.icon : 'grid'}`);
+      iconBox.append(icon(app.icon));
+      top.append(iconBox, badge);
+      const bottom = element('div', 'card-bottom');
+      bottom.append(element('span', 'card-group', app.groupName || group?.name));
+      const link = element('a', 'card-link', app.id === 'sop' ? '打开计划看板' : '进入应用');
       link.href = `#/app/${app.id}`;
       link.setAttribute('aria-label', `进入${app.name}`);
       link.append(icon('arrow'));
       bottom.append(link);
-    } else bottom.append(element('span', 'card-disabled', app.status === 'maintenance' ? '维护完成后开放' : '接入后开放'));
-    card.append(top, element('h3', '', app.name), element('p', 'card-subtitle', app.subtitle || ''), element('p', 'card-description', app.description || ''), bottom);
-    $('app-grid').append(card);
+      card.append(top, element('h3', '', app.name), element('p', 'card-subtitle', app.subtitle || ''), element('p', 'card-description', app.description || ''), bottom);
+      $('app-grid').append(card);
+    } else {
+      const iconBox = element('span', 'pending-icon');
+      iconBox.append(icon(app.icon));
+      const copy = element('div', 'pending-copy');
+      copy.append(element('h3', '', app.name), element('p', 'card-description', app.description || ''));
+      card.append(iconBox, copy, badge);
+      $('pending-grid').append(card);
+    }
   }
+  $('ready-section').hidden = ready.length === 0;
+  $('pending-section').hidden = pending.length === 0;
+  const counts = [`${ready.length} 个可用`];
+  for (const status of ['pending', 'maintenance']) {
+    const count = apps.filter(app => app.status === status).length;
+    if (count) counts.push(`${count} 个${labels[status]}`);
+  }
+  $('apps-summary').textContent = counts.join(' · ');
   $('no-results').hidden = apps.length > 0;
 }
 function stopLoading() {
@@ -118,21 +147,14 @@ function stopLoading() {
 function overlay(title, detail, loading = false) {
   $('frame-overlay').hidden = false;
   $('frame-spinner').hidden = !loading;
+  $('retry-app').hidden = loading || config.apps.find(app => app.id === current)?.status !== 'ready';
   $('frame-message').textContent = title;
   $('frame-detail').textContent = detail;
-  $('app-state').textContent = loading ? '正在加载' : '尚未打开';
-}
-function readableDate(value) {
-  if (!value || Number.isNaN(Date.parse(value))) return '由业务应用提供';
-  return new Intl.DateTimeFormat('zh-CN', { dateStyle: 'medium', timeStyle: 'short', timeZone: 'Asia/Shanghai' }).format(new Date(value));
 }
 async function openApp(app) {
   stopLoading();
   const ownSequence = sequence;
   $('app-title').textContent = app.name;
-  $('app-group').textContent = app.groupName;
-  $('app-version').textContent = `${app.name} · ${app.version || '版本由应用维护'}`;
-  $('app-updated').textContent = `数据更新时间：${readableDate(app.dataUpdatedAt)}`;
   $('retry-app').hidden = app.status !== 'ready';
   if (app.status !== 'ready') {
     overlay(app.status === 'maintenance' ? '应用正在维护' : '应用尚未接入', app.status === 'maintenance' ? '请稍后重试，或先返回工作台使用其他应用。' : '该应用接入完成后将在这里开放，请先使用工作台中已接入的应用。');
@@ -171,7 +193,6 @@ async function openApp(app) {
         if (!doc || url.origin !== location.origin || !url.pathname.startsWith(app.url) || !doc.body) throw new Error('未能显示应用页面，请检查同源嵌入策略与应用路由。');
         clearTimeout(timer);
         $('frame-overlay').hidden = true;
-        $('app-state').textContent = '页面已载入';
       } catch {
         clearTimeout(timer);
         overlay('应用未能显示', '请联系应用负责人检查页面错误、同源地址和 iframe 嵌入设置，再重新加载。');
@@ -205,7 +226,7 @@ function navigate() {
     link.classList.toggle('active', active);
     if (active) link.setAttribute('aria-current', 'page'); else link.removeAttribute('aria-current');
   });
-  setMenu(false);
+  setNavigationOpen(false);
   if (app) openApp(app); else stopLoading();
 }
 async function loadIdentity() {
@@ -224,15 +245,9 @@ async function boot() {
     const response = await fetch('./config/apps.json', { cache: 'no-store', signal: AbortSignal.timeout(10000) });
     if (!response.ok) throw new Error(`配置请求失败（HTTP ${response.status}）`);
     config = validateConfig(await response.json());
-    $('platform-name').textContent = config.platform.name;
     $('brand-organization').textContent = config.platform.organization || '智选车';
     $('brand-name').textContent = config.platform.shortName || config.platform.name || '计划管理平台';
-    $('sidebar-version').textContent = config.platform.version || '—';
-    $('footer-version').textContent = `v${config.platform.version || '—'}`;
     $('today').textContent = new Intl.DateTimeFormat('zh-CN', { year: 'numeric', month: 'long', day: 'numeric', weekday: 'long', timeZone: 'Asia/Shanghai' }).format(new Date());
-    $('ready-count').textContent = config.apps.filter(a => a.status === 'ready').length;
-    $('pending-count').textContent = config.apps.filter(a => a.status === 'pending').length;
-    $('group-count').textContent = config.groups.filter(g => g.apps.some(a => a.enabled)).length;
     renderNavigation(); renderCards();
     $('boot-state').hidden = true;
     navigate(); loadIdentity();

@@ -2,10 +2,10 @@
 
 入口是门户根目录的 `启动本地门户.cmd` 或 `npm start`。它直接启动原 SOP 的服务代码并代理 `/sop/`，不从门户的业务源码副本运行。
 
-本机已核对的唯一 SOP 路径为 `D:\05 AI脚本\PythonProject\计划看板`。检查该项目是否含 `server.py`、`sop_gateway.py`、`web` 和真实数据。需要改目录时使用 `--sop-source`；`--seed-from` 仅指定数据来源。
+先以门户根目录为当前目录，默认 SOP 原项目相对位置为 `../PythonProject/计划看板`。不同机器先核对相对位置；`config.local/sop.json` 中的相对路径按门户根目录解析，不按配置文件目录解析。检查原项目是否含 `server.py`、`sop_gateway.py`、`web` 和真实数据。需要改位置时使用 `--sop-source`；`--seed-from` 仅指定数据来源。
 
 ```powershell
-npm start -- --sop-source 'D:\05 AI脚本\PythonProject\计划看板' --shared-config 'D:\05 AI脚本\PythonProject\订单分析\scripts\config\shared_config.py' --port 4176 --backend-port 8879
+npm start -- --sop-source '../PythonProject/计划看板' --shared-config '../PythonProject/订单分析/scripts/config/shared_config.py' --port 4176 --backend-port 8879
 ```
 
 - `/sop/` 返回 404：检查是否误用了 `npm run dev:static`、Live Server 或未配置代理的 IIS。

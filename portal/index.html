@@ -5,50 +5,77 @@
   <meta name="viewport" content="width=device-width,initial-scale=1">
   <meta name="color-scheme" content="light">
   <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self'; style-src 'self'; img-src 'self' data:; connect-src 'self'; frame-src 'self'; object-src 'none'; base-uri 'none'; form-action 'self'">
-  <meta name="description" content="智选车计划部数据平台，统一访问订单分析、SOP计划与业务协同应用。">
-  <meta name="theme-color" content="#142039">
+  <meta name="description" content="智选车计划部数据平台，查看销售需求、制定未来入库计划，统一访问 SOP 计划看板与订单分析。">
+  <meta name="theme-color" content="#061A67">
   <title>智选车计划部数据平台</title>
-  <link rel="icon" href="./assets/favicon.ico?v=planning-2" sizes="any">
-  <link rel="icon" href="./assets/planning-icon.svg?v=planning-2" type="image/svg+xml">
-  <link rel="apple-touch-icon" href="./assets/apple-touch-icon.png?v=planning-2">
-  <link rel="stylesheet" href="./css/portal.css">
-  <script type="module" src="./js/portal.js"></script>
+  <link rel="icon" href="./assets/favicon.ico?v=soft-p-1" sizes="any">
+  <link rel="icon" href="./assets/planning-icon.svg?v=soft-p-1" type="image/svg+xml">
+  <link rel="apple-touch-icon" href="./assets/apple-touch-icon.png?v=soft-p-1">
+  <link rel="stylesheet" href="./css/portal.css?v=minimal-1">
+  <script type="module" src="./js/portal.js?v=minimal-1"></script>
 </head>
 <body>
   <a class="skip-link" href="#main">跳转到工作区</a>
   <div class="shell">
-    <aside class="sidebar" id="sidebar" aria-label="应用导航">
-      <a class="brand" href="#/home"><img class="brand-mark" src="./assets/planning-icon.svg?v=planning-2" width="44" height="44" alt="" aria-hidden="true"><span class="brand-copy"><span id="brand-organization" class="brand-organization">智选车</span><strong id="brand-name">计划部数据平台</strong><small>PLANNING DATA PLATFORM</small></span></a>
-      <div class="workspace-label">计划部工作空间 <span>WORKSPACE</span></div>
-      <a class="nav-item home-link" href="#/home" id="home-link"><span data-icon="grid"></span><span>工作台</span><span class="nav-arrow">↗</span></a>
-      <nav id="app-nav" aria-label="业务应用"></nav>
-      <div class="sidebar-bottom"><span class="sidebar-symbol" data-icon="layers"></span><strong>协同计划，有序推进</strong><p>计划部专属业务工作空间</p><span class="sidebar-version">PORTAL <span id="sidebar-version">0.2.2</span></span></div>
-    </aside>
-    <div class="main-shell">
-      <header class="topbar">
-        <button id="menu-toggle" class="icon-button menu-toggle" aria-label="展开导航" aria-expanded="false" aria-controls="sidebar"><span data-icon="menu"></span></button>
-        <div class="breadcrumb"><span id="platform-name">智选车计划部数据平台</span><span class="breadcrumb-separator">/</span><strong id="current-location">工作台</strong></div>
-        <div class="identity"><span class="avatar" data-icon="user"></span><span><strong id="identity-name">计划部工作空间</strong><small id="identity-detail">统一业务入口</small></span></div>
-      </header>
-      <main id="main" tabindex="-1">
-        <div id="boot-state" class="empty-state" role="status"><span class="spinner"></span><h1>正在准备工作空间</h1><p>加载应用配置…</p></div>
-        <section id="home-view" class="home-view" hidden aria-labelledby="home-title">
-          <div class="welcome-row"><div><p class="eyebrow">PLANNING, IN SYNC</p><h1 id="home-title">业务全景，从这里开始<span>。</span></h1><p class="intro">汇集分析与协同工具，让每一次决策更有依据。</p></div><div class="date-block"><span id="today"></span><small>计划部业务工作台</small></div></div>
-          <div class="overview-strip"><div class="overview-label"><span class="overview-icon" data-icon="layers"></span><span><strong>应用工作空间</strong><small>按业务场景快速进入</small></span></div><div class="metric"><strong id="ready-count">0</strong><span>已接入应用</span></div><div class="metric"><strong id="pending-count">0</strong><span>待接入应用</span></div><div class="metric"><strong id="group-count">0</strong><span>业务分组</span></div></div>
-          <div class="section-toolbar"><div><h2>业务应用</h2><p>选择应用，在当前工作区继续操作</p></div><label class="search"><span data-icon="search"></span><input id="app-search" type="search" placeholder="搜索应用名称或业务" aria-label="搜索业务应用" autocomplete="off"><kbd>/</kbd></label></div>
+    <header class="site-header">
+      <div class="header-main page-width">
+        <a class="brand" href="#/home">
+          <img class="brand-mark" src="./assets/planning-icon.svg?v=soft-p-1" width="42" height="42" alt="" aria-hidden="true">
+          <span class="brand-copy"><span id="brand-organization" class="brand-organization">智选车</span><strong id="brand-name">计划部数据平台</strong></span>
+        </a>
+          <div id="primary-navigation" class="primary-navigation">
+            <a class="nav-item home-link" href="#/home" id="home-link"><span data-icon="grid"></span><span>工作台</span></a>
+            <nav id="app-nav" aria-label="业务应用"></nav>
+          </div>
+        <div class="header-tools">
+          <span id="current-location" class="sr-only">工作台</span>
+          <div class="identity"><span class="avatar" data-icon="user"></span><span><strong id="identity-name">计划部工作空间</strong><small id="identity-detail">销售与运作计划</small></span></div>
+          <button id="nav-toggle" class="nav-toggle" aria-label="展开应用导航" aria-expanded="false" aria-controls="primary-navigation"><span data-icon="menu"></span><span>应用</span></button>
+        </div>
+      </div>
+
+    </header>
+
+    <main id="main" tabindex="-1">
+      <div id="boot-state" class="empty-state" role="status"><span class="spinner"></span><h1>正在准备工作空间</h1><p>加载应用配置…</p></div>
+      <section id="home-view" class="home-view page-width" hidden aria-labelledby="home-title">
+        <div class="page-heading"><span class="page-kicker">计划部工作台 <span>/ OVERVIEW</span></span><time id="today"></time></div>
+        <div class="workspace-hero">
+          <div class="hero-copy">
+            <p class="eyebrow"><span></span> SALES &amp; OPERATIONS PLANNING</p>
+            <h1 id="home-title">销售与运作计划<span>工作台</span></h1>
+            <p class="hero-description">看清销售需求，制定未来各期入库量。<br>把需求洞察、计划协同与经营分析连接起来。</p>
+          </div>
+          <div class="planning-flow" aria-label="计划协同路径：销售需求、销运平衡、入库计划">
+            <div class="flow-caption">从需求到计划 <span>THE PLANNING CYCLE</span></div>
+            <ol class="flow-steps">
+              <li><span class="step-number">01</span><span><strong>销售需求</strong><small>订单与需求洞察</small></span><span class="step-symbol" data-icon="chart"></span></li>
+              <li><span class="step-number">02</span><span><strong>销运平衡</strong><small>销售与运作协同</small></span><span class="step-symbol" data-icon="layers"></span></li>
+              <li><span class="step-number">03</span><span><strong>入库计划</strong><small>未来各期计划入库量</small></span><span class="step-symbol" data-icon="calendar"></span></li>
+            </ol>
+          </div>
+        </div>
+
+        <section class="applications" aria-labelledby="apps-title">
+          <div class="section-toolbar">
+            <div class="section-heading"><h2 id="apps-title">业务应用</h2><span id="apps-summary"></span></div>
+            <label class="search"><span data-icon="search"></span><input id="app-search" type="search" placeholder="搜索应用" aria-label="搜索业务应用" autocomplete="off"><kbd>/</kbd></label>
+          </div>
           <div class="filter-row" id="group-filters" role="group" aria-label="筛选业务分组"></div>
-          <div class="app-grid" id="app-grid"></div>
-          <p id="no-results" class="no-results" hidden>没有找到匹配的应用，请尝试其他关键词。</p>
-          <div class="workspace-note"><span data-icon="info"></span><p id="workspace-note">应用接入完成后，可直接在工作区打开。待接入应用暂不可用。</p></div>
+          <div id="ready-section"><div class="app-grid" id="app-grid"></div></div>
+          <section id="pending-section" class="pending-section" aria-labelledby="pending-title">
+            <div class="pending-heading"><h3 id="pending-title">更多业务应用</h3><p>接入后开放</p></div>
+            <div class="pending-grid" id="pending-grid"></div>
+          </section>
+          <p id="no-results" class="no-results" role="status" hidden>没有找到匹配的应用，请尝试其他关键词。</p>
         </section>
-        <section id="app-view" class="app-view" hidden aria-labelledby="app-title">
-          <div class="app-toolbar"><div><span class="eyebrow" id="app-group"></span><h1 id="app-title"></h1></div><div class="app-actions"><span id="app-state" role="status"></span><button id="retry-app" class="secondary-button"><span data-icon="refresh"></span>重新加载</button><a class="secondary-button" href="#/home"><span data-icon="grid"></span>工作台</a></div></div>
-          <div class="frame-container" id="frame-container"><div id="frame-overlay" class="frame-overlay" role="status"><span id="frame-spinner" class="spinner"></span><h2 id="frame-message"></h2><p id="frame-detail"></p></div></div>
-          <div class="app-meta"><span id="app-version"></span><span id="app-updated"></span></div>
-        </section>
-      </main>
-      <footer class="footer"><span>智选车 · 计划部数据平台</span><span>统一入口 · 独立应用 <span class="footer-divider">|</span> <span id="footer-version">v0.2.2</span></span></footer>
-    </div>
+      </section>
+
+      <section id="app-view" class="app-view" hidden aria-labelledby="app-title">
+        <h1 id="app-title" class="sr-only"></h1>
+        <div class="frame-container" id="frame-container"><div id="frame-overlay" class="frame-overlay" role="status"><span id="frame-spinner" class="spinner"></span><h2 id="frame-message"></h2><p id="frame-detail"></p><button id="retry-app" class="secondary-button" hidden><span data-icon="refresh"></span>重新加载</button></div></div>
+      </section>
+    </main>
   </div>
   <noscript><div class="noscript">请启用 JavaScript 以使用业务应用导航。</div></noscript>
 </body>

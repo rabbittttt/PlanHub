@@ -1,7 +1,7 @@
-"""Export the Planning Workspace icon from one shared geometric definition.
+"""Export the selected two-tone folded P from one shared vector definition.
 
-SVG is used by the app; PNG/ICO are compatibility assets. Pillow is only a
-development-time export dependency, never a front-end/runtime requirement.
+SVG is used by the portal; PNG/ICO are compatibility assets. Pillow is only
+a development-time export dependency, never a front-end/runtime requirement.
 Run: python scripts/export-planning-icon.py
 """
 from __future__ import annotations
@@ -14,86 +14,88 @@ from PIL import Image, ImageDraw
 
 ROOT = Path(__file__).resolve().parents[1]
 OUTPUT = ROOT / "portal" / "assets"
-BLUE = "#174A80"
-WHITE = "#FFFFFF"
-GOLD = "#E6BD74"
+BACKGROUND = "#F3EDFF"
+PRIMARY = "#6550B9"
+FOLD = "#8B75C9"
 
-# Original geometric "计" monogram: the speech radical and a strong cross
-# express planning-department identity without relying on installed fonts.
-# The short gold baseline gives the mark a quiet departmental-seal character.
-SHAPES = [
-    {"kind": "rect", "x": 0, "y": 0, "w": 64, "h": 64, "r": 12, "fill": BLUE},
-    {"kind": "line", "points": [(17, 12.5), (22, 17.5)], "stroke": WHITE, "width": 5},
-    {"kind": "line", "points": [(12.5, 26), (20, 26), (20, 46.5), (27, 40.5)], "stroke": WHITE, "width": 5},
-    {"kind": "line", "points": [(29.5, 26), (51.5, 26)], "stroke": WHITE, "width": 5},
-    {"kind": "line", "points": [(40.5, 12.5), (40.5, 47.5)], "stroke": WHITE, "width": 5},
-    {"kind": "rect", "x": 14, "y": 54, "w": 36, "h": 2.5, "r": 1.25, "fill": GOLD},
+# Vector reconstruction of the user-selected fourth P concept. Coordinates
+# describe the icon tile itself, without the image-generation preview margin.
+# SVG and raster exports consume these same paths, with no font dependency.
+P_OUTLINE = [
+    ("M", 14.8, 10.2), ("L", 39.4, 10.2),
+    ("C", 47.7, 10.2, 52.8, 16.2, 52.8, 24.6),
+    ("C", 52.8, 33.1, 47.5, 39.3, 39.4, 39.3),
+    ("L", 24.8, 39.3), ("L", 24.8, 56.3),
+    ("L", 14.8, 56.3), ("Z",),
 ]
+P_COUNTER = [
+    ("M", 24.8, 19.4), ("L", 38.9, 19.4),
+    ("C", 42.1, 19.4, 43.3, 21.8, 43.3, 24.7),
+    ("C", 43.3, 27.7, 41.5, 30.2, 38.9, 30.2),
+    ("L", 24.8, 30.2), ("Z",),
+]
+P_FOLD = [
+    ("M", 14.8, 20.2), ("L", 24.8, 30.2),
+    ("L", 24.8, 56.3), ("L", 14.8, 56.3), ("Z",),
+]
+PATHS = [(P_OUTLINE, PRIMARY), (P_COUNTER, BACKGROUND), (P_FOLD, FOLD)]
 
 
 def svg_source() -> str:
     result = [
         '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" width="512" height="512" role="img" aria-labelledby="planning-title planning-description">',
-        '  <title id="planning-title">计划部字形徽记</title>',
-        '  <desc id="planning-description">深蓝方章中，以白色几何汉字“计”直观代表计划部，金色基线表达有序统筹。</desc>',
+        '  <title id="planning-title">计划部双色折带 P 图标</title>',
+        '  <desc id="planning-description">浅紫圆角方形内，深紫色的 P 字上部与柔紫色竖笔以斜向折角相接。</desc>',
+        f'  <rect width="64" height="64" rx="10" fill="{BACKGROUND}"/>',
     ]
-    for shape in SHAPES:
-        if shape["kind"] == "rect":
-            attributes = ' '.join(f'{name}="{shape[key]}"' for name, key in
-                                  [("x", "x"), ("y", "y"), ("width", "w"), ("height", "h"), ("rx", "r")])
-            attributes += f' fill="{shape["fill"] or "none"}"'
-            if shape.get("stroke"):
-                attributes += f' stroke="{shape["stroke"]}" stroke-width="{shape["width"]}"'
-            result.append(f'  <rect {attributes}/>')
-        else:
-            points = ' '.join(f'{x},{y}' for x, y in shape["points"])
-            result.append(f'  <polyline points="{points}" fill="none" stroke="{shape["stroke"]}" stroke-width="{shape["width"]}" stroke-linecap="round" stroke-linejoin="round"/>')
+    for commands, fill in PATHS:
+        data = ' '.join(str(value) for command in commands for value in command)
+        result.append(f'  <path d="{data}" fill="{fill}"/>')
     return '\n'.join(result + ['</svg>', ''])
 
 
+def path_points(commands: list[tuple]) -> list[tuple[float, float]]:
+    """Flatten the shared cubic curves at master resolution for Pillow."""
+    points = []
+    current = (0.0, 0.0)
+    for command in commands:
+        if command[0] in {"M", "L"}:
+            current = (command[1], command[2])
+            points.append(current)
+        elif command[0] == "C":
+            start = current
+            control1, control2, end = command[1:3], command[3:5], command[5:7]
+            for step in range(1, 65):
+                t = step / 64
+                u = 1 - t
+                points.append(tuple(u**3 * start[axis] + 3 * u**2 * t * control1[axis]
+                                    + 3 * u * t**2 * control2[axis] + t**3 * end[axis]
+                                    for axis in (0, 1)))
+            current = end
+    return points
+
+
 def render_png(size: int) -> Image.Image:
-    # A common 2048 px master avoids size-specific pixel geometry and preserves
-    # the transparent outside corners when making the tiny browser tab icon.
     scale = 32
     image = Image.new("RGBA", (64 * scale, 64 * scale), (0, 0, 0, 0))
     drawing = ImageDraw.Draw(image)
-
-    def rounded_rect(x, y, w, h, r, fill):
-        drawing.rounded_rectangle((round(x * scale), round(y * scale), round((x + w) * scale), round((y + h) * scale)),
-                                  radius=round(r * scale), fill=fill)
-
-    for shape in SHAPES:
-        if shape["kind"] == "rect":
-            x, y, w, h, r = (shape[key] for key in ["x", "y", "w", "h", "r"])
-            if shape.get("stroke"):
-                half = shape["width"] / 2
-                rounded_rect(x - half, y - half, w + 2 * half, h + 2 * half, r + half, shape["stroke"])
-                # The frame interior exposes the same blue canvas beneath it.
-                rounded_rect(x + half, y + half, w - 2 * half, h - 2 * half, max(0, r - half), BLUE)
-            else:
-                rounded_rect(x, y, w, h, r, shape["fill"])
-        else:
-            points = [(round(x * scale), round(y * scale)) for x, y in shape["points"]]
-            width = round(shape["width"] * scale)
-            drawing.line(points, fill=shape["stroke"], width=width, joint="curve")
-            radius = shape["width"] * scale / 2
-            # Matching SVG round caps and joins, also on the route's elbow.
-            for x, y in points:
-                drawing.ellipse((round(x - radius), round(y - radius), round(x + radius), round(y + radius)), fill=shape["stroke"])
+    drawing.rounded_rectangle((0, 0, 64 * scale - 1, 64 * scale - 1),
+                              radius=10 * scale, fill=BACKGROUND)
+    for commands, fill in PATHS:
+        drawing.polygon([(round(x * scale), round(y * scale)) for x, y in path_points(commands)], fill=fill)
     return image.resize((size, size), Image.Resampling.LANCZOS)
 
 
 def main() -> None:
-    parser = argparse.ArgumentParser(description="Export the Planning Workspace SVG, PNG and ICO assets.")
+    parser = argparse.ArgumentParser(description="Export the selected folded-P SVG, PNG and ICO assets.")
     parser.parse_args()
     OUTPUT.mkdir(parents=True, exist_ok=True)
     (OUTPUT / "planning-icon.svg").write_text(svg_source(), encoding="utf-8", newline="\n")
-    master = render_png(512)
-    master.save(OUTPUT / "planning-icon.png", optimize=True)
+    render_png(512).save(OUTPUT / "planning-icon.png", optimize=True)
     render_png(180).save(OUTPUT / "apple-touch-icon.png", optimize=True)
     render_png(32).save(OUTPUT / "favicon-32.png", optimize=True)
     render_png(64).save(OUTPUT / "favicon.ico", format="ICO", sizes=[(16, 16), (32, 32), (48, 48), (64, 64)])
-    print("Exported planning icon: SVG, 512/180/32 PNG, 16/32/48/64 ICO.")
+    print("Exported folded P: SVG, 512/180/32 PNG, 16/32/48/64 ICO (portal assets only).")
 
 
 if __name__ == "__main__":

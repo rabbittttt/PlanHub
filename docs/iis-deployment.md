@@ -1,6 +1,6 @@
 # IIS 部署与验收
 
-使用一个新的 IIS 站点作为入口，`portal/` 原样发布；OrderIQ 作为独立 IIS Application 挂载到 `/orderiq/`。基础配置示例默认只创建静态应用。SOP 的子路径、同源嵌入和身份协议现已提供适配副本；其独立代理应用、可信 Windows 身份桥接、后台任务及离线依赖按照 [SOP 内网部署](sop-intranet.md) 配置，默认只读。
+使用一个新的 IIS 站点作为入口，`portal/` 原样发布；OrderIQ 作为独立 IIS Application 挂载到 `/orderiq/`。基础配置示例默认只创建静态应用。SOP 的子路径、同源嵌入和身份协议已合入其独立原项目；其独立代理应用、可信 Windows 身份桥接、后台任务及离线依赖按照 [SOP 内网部署](sop-intranet.md) 配置，默认只读。
 
 工作机已发现运行中的 IIS，但当前进程读取配置时因 `redirection.config` 权限不足失败。本次只生成可审核的文件和脚本，没有创建、修改或启动 IIS 站点，也没有验证 Windows 域登录和 ARR。
 
@@ -46,7 +46,7 @@ DataPlatform-001/
   config/iis.json         -> 服务器部署参数，不映射到 IIS 静态目录
 ```
 
-将发布包复制到目标服务器的新目录，例如 `D:\DataPlatform`。`config/iis.json` 的 `DeploymentRoot` 必须与最终位置相同。IIS 物理根目录只能设为其中的 `portal`，不要设为 `D:\DataPlatform`。公开的 `portal/config/apps.json` 是前端菜单配置，不存放凭据或授权规则；它与外部的服务器 `config/` 是两个目录。
+将发布包复制到目标服务器的新目录，以该目录作为发布根。`config/iis.json` 的 `DeploymentRoot` 必须从最终发布目录解析为绝对路径；此接口不接受相对值，但不能沿用模板中的固定盘符。IIS 物理根目录只指向相对发布根的 `portal/`，不能指向整个发布根。公开的 `portal/config/apps.json` 是前端菜单配置，不存放凭据或授权规则；它与外部的服务器 `config/` 是两个目录。
 
 本次 OrderIQ 静态 HTML 已嵌入业务数据快照，所有能访问 `/orderiq/` 的用户都能获得这些数据。发布前需确认允许访问人群；后续把 Excel/SQLite 放到 `data/` 不会撤回 HTML 内已有数据。
 
@@ -54,12 +54,12 @@ DataPlatform-001/
 
 服务器需要 IIS 静态内容、默认文档、Windows 身份验证及管理工具。仅静态门户与 OrderIQ 不要求 ARR。动态应用上线时才需 URL Rewrite、ARR；需要 WebSocket 的应用还需 IIS WebSocket 功能与单独验收。
 
-在目标服务器的管理员 PowerShell 中，使用本项目部署脚本：
+在目标服务器的管理员 PowerShell 中，先进入实际发布包根目录，核对 `DeploymentRoot` 与 `(Resolve-Path .).Path` 一致，再使用包内相对路径。以下仅为后续手工操作说明，不代表已授权或已执行部署：
 
 ```powershell
-.\deploy\Install-IisSite.ps1 -ConfigPath 'D:\DataPlatform\config\iis.json'
-.\deploy\Install-IisSite.ps1 -ConfigPath 'D:\DataPlatform\config\iis.json' -Apply -WhatIf
-.\deploy\Install-IisSite.ps1 -ConfigPath 'D:\DataPlatform\config\iis.json' -Apply
+.\deploy\Install-IisSite.ps1 -ConfigPath '.\config\iis.json'
+.\deploy\Install-IisSite.ps1 -ConfigPath '.\config\iis.json' -Apply -WhatIf
+.\deploy\Install-IisSite.ps1 -ConfigPath '.\config\iis.json' -Apply
 ```
 
 默认预检检查目标文件、模块、同名站点/应用池、HTTP 绑定冲突及可选 ARR 开关。`-PlanOnly` 仅检查 JSON 并打印计划，不能替代服务器预检。同名站点或应用池已存在时直接拒绝，本脚本不覆盖升级现有站点。
