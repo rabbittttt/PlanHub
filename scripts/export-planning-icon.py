@@ -14,9 +14,9 @@ from PIL import Image, ImageDraw
 
 ROOT = Path(__file__).resolve().parents[1]
 OUTPUT = ROOT / "portal" / "assets"
-BACKGROUND = "#F3EDFF"
-PRIMARY = "#6550B9"
-FOLD = "#8B75C9"
+BACKGROUND = "#329AF0"
+PRIMARY = "#FFFFFF"
+FOLD = "#D5EAFF"
 
 # Vector reconstruction of the user-selected fourth P concept. Coordinates
 # describe the icon tile itself, without the image-generation preview margin.
@@ -45,7 +45,7 @@ def svg_source() -> str:
     result = [
         '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" width="512" height="512" role="img" aria-labelledby="planning-title planning-description">',
         '  <title id="planning-title">计划部双色折带 P 图标</title>',
-        '  <desc id="planning-description">浅紫圆角方形内，深紫色的 P 字上部与柔紫色竖笔以斜向折角相接。</desc>',
+        '  <desc id="planning-description">蓝色圆角方形内，白色的 P 字上部与浅蓝色竖笔以斜向折角相接。</desc>',
         f'  <rect width="64" height="64" rx="10" fill="{BACKGROUND}"/>',
     ]
     for commands, fill in PATHS:

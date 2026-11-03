@@ -2,7 +2,7 @@
 
 **职责边界：门户只做集成，不修改子应用的逻辑、UI、权限或数据规则，不注入或改写子页面。已完成的改动保留；后续严格分开，详见[集成边界](docs/integration-boundary.md)。**
 
-界面维护请先阅读 [AI 协作约定](AGENTS.md) 与 [设计基准](design-system/planning-portal/MASTER.md)，沿用用户确认的浅色柔彩工作台风格及顶部导航。
+界面维护请先阅读 [AI 协作约定](AGENTS.md) 与 [设计基准](design-system/planning-portal/MASTER.md)，沿用用户确认的白底灰蓝简洁风格及顶部导航。
 
 <img src="portal/assets/planning-icon.svg" width="80" height="80" alt="计划部工作空间图标">
 

@@ -1,8 +1,8 @@
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" width="512" height="512" role="img" aria-labelledby="planning-title planning-description">
   <title id="planning-title">计划部双色折带 P 图标</title>
-  <desc id="planning-description">浅紫圆角方形内，深紫色的 P 字上部与柔紫色竖笔以斜向折角相接。</desc>
-  <rect width="64" height="64" rx="10" fill="#F3EDFF"/>
-  <path d="M 14.8 10.2 L 39.4 10.2 C 47.7 10.2 52.8 16.2 52.8 24.6 C 52.8 33.1 47.5 39.3 39.4 39.3 L 24.8 39.3 L 24.8 56.3 L 14.8 56.3 Z" fill="#6550B9"/>
-  <path d="M 24.8 19.4 L 38.9 19.4 C 42.1 19.4 43.3 21.8 43.3 24.7 C 43.3 27.7 41.5 30.2 38.9 30.2 L 24.8 30.2 Z" fill="#F3EDFF"/>
-  <path d="M 14.8 20.2 L 24.8 30.2 L 24.8 56.3 L 14.8 56.3 Z" fill="#8B75C9"/>
+  <desc id="planning-description">蓝色圆角方形内，白色的 P 字上部与浅蓝色竖笔以斜向折角相接。</desc>
+  <rect width="64" height="64" rx="10" fill="#329AF0"/>
+  <path d="M 14.8 10.2 L 39.4 10.2 C 47.7 10.2 52.8 16.2 52.8 24.6 C 52.8 33.1 47.5 39.3 39.4 39.3 L 24.8 39.3 L 24.8 56.3 L 14.8 56.3 Z" fill="#FFFFFF"/>
+  <path d="M 24.8 19.4 L 38.9 19.4 C 42.1 19.4 43.3 21.8 43.3 24.7 C 43.3 27.7 41.5 30.2 38.9 30.2 L 24.8 30.2 Z" fill="#329AF0"/>
+  <path d="M 14.8 20.2 L 24.8 30.2 L 24.8 56.3 L 14.8 56.3 Z" fill="#D5EAFF"/>
 </svg>
