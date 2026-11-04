@@ -21,6 +21,7 @@ function Test-SopReleaseRelativePath {
     }
     return (($parts[0] -ceq 'web' -and $extension.ToLowerInvariant() -in @('.html', '.css', '.js', '.mjs', '.json', '.svg', '.png', '.ico', '.jpg', '.jpeg', '.webp', '.gif', '.woff', '.woff2')) -or
         ($parts.Count -eq 2 -and $parts[0] -ceq 'scripts' -and $extension -ceq '.mjs') -or
+        ($parts.Count -eq 2 -and $parts[0] -ceq 'sop' -and $extension -ceq '.py') -or
         ($parts.Count -eq 3 -and $parts[0] -ceq 'integration' -and $parts[1] -ceq 'iis' -and $extension -ceq '.cs'))
 }
 
@@ -53,8 +54,13 @@ function Assert-SopRelease {
         if ((Get-Item -LiteralPath $file).Length -ne $entry.bytes -or (Get-SopFileSha256 -Path $file) -cne $entry.sha256) { throw "SOP release file differs from manifest: $($entry.path)" }
         $listed[$entry.path] = $file
     }
-    foreach ($required in @('server.py', 'sop_gateway.py', 'requirements.txt', 'requirements-intranet.txt', 'web/index.html', 'integration/iis/SopIdentityBridge.cs')) {
+    foreach ($required in @('server.py', 'requirements.txt', 'requirements-intranet.txt', 'web/index.html', 'integration/iis/SopIdentityBridge.cs')) {
         if (-not $listed.ContainsKey($required)) { throw "SOP runtime release is incomplete: $required" }
+    }
+    # Existing releases use a root module; current releases package Python modules.
+    if (-not $listed.ContainsKey('sop_gateway.py') -and
+        -not ($listed.ContainsKey('sop/__init__.py') -and $listed.ContainsKey('sop/gateway.py'))) {
+        throw 'SOP runtime release is incomplete: gateway module or package.'
     }
     # Check every entry, not only files listed by the manifest. A release cannot
     # carry undeclared data, secrets, runtimes or reparse directories.

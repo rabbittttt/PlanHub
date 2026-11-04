@@ -59,7 +59,7 @@ export async function resolvePreviewSettings(args=process.argv.slice(2),{root=RO
   const relativeToLegacy=path.relative(legacy,resolvedSource);
   if(relativeToLegacy===''||(!relativeToLegacy.startsWith('..'+path.sep)&&relativeToLegacy!=='..'&&!path.isAbsolute(relativeToLegacy)))throw new Error('不再支持门户 services/sop 业务源码副本；请指定独立 SOP 原项目。');
   try {
-    await requirePath(path.join(sourceRoot,'sop_gateway.py'),'SOP gateway 接入模块');
+    await requirePath(path.join(sourceRoot,'sop','gateway.py'),'SOP gateway 接入模块');
     await requirePath(path.join(sourceRoot,'web','index.html'),'SOP 页面入口');
   } catch(error) {throw new Error(`${error.message}\n请先把必要的 gateway 适配合入独立 SOP 项目；启动器不会回退到另一套业务源码。`);}
   const dataRoot=configured(values['seed-from']||local.dataRoot)||(requireData?sourceRoot:null);

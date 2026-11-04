@@ -10,7 +10,7 @@ $project = Split-Path -Parent $deploy
 if (-not $SopSourceRoot) { $SopSourceRoot = $env:SOP_SOURCE_ROOT }
 if (-not $SopSourceRoot) { $SopSourceRoot = Join-Path (Split-Path -Parent $project) 'SOP维护' }
 $SopSourceRoot = [IO.Path]::GetFullPath($SopSourceRoot)
-foreach ($required in @('sop_gateway.py', 'scripts\build_release.py', 'integration\iis\SopIdentityBridge.cs')) {
+foreach ($required in @('sop\gateway.py', 'scripts\build_release.py', 'integration\iis\SopIdentityBridge.cs')) {
     if (-not (Test-Path -LiteralPath (Join-Path $SopSourceRoot $required) -PathType Leaf)) { throw "Specify the authoritative integrated SOP project with SopSourceRoot. Missing: $required" }
 }
 Assert-NoReparsePoint -Path $SopSourceRoot
@@ -38,7 +38,7 @@ try {
     try {
         $env:SOP_PROXY_SECRET = $secret
         $pythonCheck = Join-Path $scratch 'check_generated_secret.py'
-        [IO.File]::WriteAllText($pythonCheck, 'import sys; sys.path.insert(0, sys.argv[1]); from sop_gateway import GatewayConfig; config = GatewayConfig.load(sys.argv[2]); assert len(config.proxy_secret) == 96; print("Generated deployment secret accepted by Python GatewayConfig.load")', (New-Object Text.UTF8Encoding($false)))
+        [IO.File]::WriteAllText($pythonCheck, 'import sys; sys.path.insert(0, sys.argv[1]); from sop.gateway import GatewayConfig; config = GatewayConfig.load(sys.argv[2]); assert len(config.proxy_secret) == 96; print("Generated deployment secret accepted by Python GatewayConfig.load")', (New-Object Text.UTF8Encoding($false)))
         & python '-B' $pythonCheck $SopSourceRoot (Join-Path $deploy 'sop.example.json')
         if ($LASTEXITCODE -ne 0) { throw 'Generated proxy secret was rejected by the Python gateway.' }
     }

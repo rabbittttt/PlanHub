@@ -12,7 +12,7 @@ $release = Join-Path $scratch 'release'
 New-Item -ItemType Directory -Force -Path $release | Out-Null
 $utf8 = New-Object Text.UTF8Encoding($false)
 $manifest = [ordered]@{ schemaVersion = 1; appId = 'hima-sop'; sourceCommit = ('0' * 40); sourceDirty = $false; files = @() }
-foreach ($name in @('server.py', 'sop_gateway.py', 'requirements.txt', 'requirements-intranet.txt', 'web/index.html', 'integration/iis/SopIdentityBridge.cs')) {
+foreach ($name in @('server.py', 'sop/__init__.py', 'sop/gateway.py', 'requirements.txt', 'requirements-intranet.txt', 'web/index.html', 'integration/iis/SopIdentityBridge.cs')) {
     $file = Join-Path $release ($name.Replace('/', '\'))
     New-Item -ItemType Directory -Force -Path (Split-Path -Parent $file) | Out-Null
     [IO.File]::WriteAllText($file, 'fixture ' + $name, $utf8)
@@ -28,7 +28,29 @@ function Expect-Rejected {
 try {
     Save-Manifest
     $valid = Assert-SopRelease -Path $release
-    if ($valid.Files.Count -ne 6) { throw 'Valid release was not loaded completely.' }
+    if ($valid.Files.Count -ne 7) { throw 'Valid release was not loaded completely.' }
+    foreach ($path in @('sop/data/cache.py', 'sop/tests/test.py', 'sop/__pycache__/cache.py', 'sop/private.secret', 'sop/nested/utils.py')) {
+        if (Test-SopReleaseRelativePath -Path $path) { throw "Unsafe SOP package path was accepted: $path" }
+    }
+    $savedFiles = $manifest.files
+    foreach ($required in @('sop/__init__.py', 'sop/gateway.py')) {
+        $manifest.files = @($savedFiles | Where-Object { $_.path -cne $required })
+        Save-Manifest
+        Expect-Rejected
+    }
+    $manifest.files = $savedFiles
+    Save-Manifest
+    $legacy = Join-Path $scratch 'legacy-release'
+    $legacyManifest = [ordered]@{ schemaVersion = 1; appId = 'hima-sop'; sourceCommit = ('0' * 40); sourceDirty = $false; files = @() }
+    foreach ($name in @('server.py', 'sop_gateway.py', 'requirements.txt', 'requirements-intranet.txt', 'web/index.html', 'integration/iis/SopIdentityBridge.cs')) {
+        $file = Join-Path $legacy ($name.Replace('/', '\'))
+        New-Item -ItemType Directory -Force -Path (Split-Path -Parent $file) | Out-Null
+        [IO.File]::WriteAllText($file, 'fixture ' + $name, $utf8)
+        $legacyManifest.files += [ordered]@{ path = $name; sha256 = (Get-SopFileSha256 -Path $file); bytes = (Get-Item -LiteralPath $file).Length }
+    }
+    Write-SopJson -Path (Join-Path $legacy 'sop-release.json') -Value $legacyManifest
+    $legacyValid = Assert-SopRelease -Path $legacy
+    if ($legacyValid.Files.Count -ne 6) { throw 'Existing root-module releases must remain supported.' }
     $extra = Join-Path $release 'private.secret'
     [IO.File]::WriteAllText($extra, 'fixture-not-a-real-secret', $utf8)
     Expect-Rejected
@@ -45,7 +67,7 @@ try {
     $manifest.files += $manifest.files[0]
     Save-Manifest
     Expect-Rejected
-    $manifest.files = @($manifest.files | Select-Object -First 6)
+    $manifest.files = @($manifest.files | Select-Object -First 7)
     Save-Manifest
     $runtime = Join-Path $release 'runtime'
     New-Item -ItemType Directory -Path $runtime | Out-Null

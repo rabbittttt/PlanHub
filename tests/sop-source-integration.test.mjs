@@ -11,7 +11,11 @@ import {resolvePreviewSettings,runPreview} from '../scripts/dev-sop.mjs';
 async function source(directory,{gateway=true}={}) {
   await mkdir(path.join(directory,'web'),{recursive:true});
   await writeFile(path.join(directory,'server.py'),'# independent SOP fixture\n');
-  if(gateway)await writeFile(path.join(directory,'sop_gateway.py'),'# gateway fixture\n');
+  if(gateway) {
+    await mkdir(path.join(directory,'sop'),{recursive:true});
+    await writeFile(path.join(directory,'sop','__init__.py'),'');
+    await writeFile(path.join(directory,'sop','gateway.py'),'# gateway fixture\n');
+  }
   await writeFile(path.join(directory,'web','index.html'),'external SOP');
   return directory;
 }
