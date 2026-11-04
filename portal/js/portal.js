@@ -1,4 +1,4 @@
-import { validateConfig, routeFromHash } from './config.js';
+import { validateConfig, routeFromHash, orderedApps } from './config.js';
 
 const $ = id => document.getElementById(id);
 const paths = {
@@ -63,8 +63,7 @@ document.addEventListener('keydown', e => {
 });
 
 function prioritizedApps(apps) {
-  const priority = app => app.status === 'ready' ? (app.id === 'sop' ? 0 : 1) : 2;
-  return [...apps].sort((a, b) => priority(a) - priority(b));
+  return orderedApps(apps);
 }
 function renderNavigation() {
   $('app-nav').replaceChildren();

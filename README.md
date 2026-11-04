@@ -48,7 +48,13 @@ npm start -- --sop-source '../SOP维护' --shared-config '../订单分析/script
 
 本地配置字段为 `sourceRoot`、`dataRoot`、`sharedConfig`，模板见 `integration/sop.example.json`。本地配置、路径环境变量及 CLI 的 `--sop-source`、`--seed-from`、`--shared-config` 相对值统一按门户根目录解析，不受启动时的当前目录或 `config.local/` 位置影响。默认模板省略 `dataRoot`，以采用共享销售和计划目录；仅需完整历史或测试种子时才配置 `dataRoot` 或 `--seed-from`。`dataRoot` 是包含 `data/` 和 `input_file/` 的数据源项目目录，不等同于后端配置中的 `data_dir`。源码选择优先级为 `--sop-source`、`SOP_SOURCE_ROOT`、本地配置、实际兄弟目录。`--seed-from` 只选择数据来源，不选择运行代码。原项目未完成 gateway 适配时明确报错，不回退副本。
 
-`npm run dev` 与 `npm start` 相同；`npm run dev:static` 只提供静态门户和 OrderIQ；`npm run dev:sop -- --sop-source <原项目路径>` 使用演示数据，但仍从原项目运行代码。本地预览不能替代内网 Windows 认证验收。
+`npm run dev` 与 `npm start` 相同；`npm run dev:static` 提供门户、OrderIQ、销量预测及数据速查代理（不启动后端）；`npm run dev:sop -- --sop-source <原项目路径>` 使用演示数据，但仍从原项目运行代码。本地预览不能替代内网 Windows 认证验收。
+
+## 销量预测与数据速查
+
+销量预测直接挂载原项目生成的 HTML 与资源；数据速查从独立项目启动或复用服务，放在导航最后。库存分析入口已移除。路径、服务及公共文件清单集中在 `integration/apps.json`，可用忽略的 `config.local/apps.json` 覆盖，相对路径统一按门户根目录解析。数据速查使用原项目自己的持久数据与自动同步；SOP 保持隔离预览。详见[接入与换电脑指南](docs/forecast-quicklook-integration.md)。
+
+打包销量预测前运行 `npm run prepare:apps -- forecast`，只收集原样发布物并备份旧产物，不复制业务源码。
 
 ## SOP 独立运行与发布
 

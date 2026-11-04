@@ -56,7 +56,7 @@
 
 建议统一采用同一个小写 ID，字母开头，只含小写字母、数字和连字符；静态部署名称最长 40 个字符。避免占用门户的 `assets`、`config`、`css`、`js`、`api`、`data`、`logs`、`services`、`deploy`、`scripts`、`tests` 等路径。`home` 是保留应用 ID，`all` 是保留分组 ID。
 
-现有“库存分析、销量预测、线索分析”已登记为 pending；接入这些项目时更新原条目，不再新增同名应用。
+库存分析已移除；销量预测与数据速查已完成本地接入，线索分析仍为 pending。接入已有项目时更新原条目，不再新增同名应用。参见[实际接入记录](forecast-quicklook-integration.md)。
 
 ## 3. 核对原业务页面的现有接入能力
 
@@ -101,17 +101,13 @@
 
 ### 4.2 增加本地预览映射
 
-当前 `scripts/dev-server.mjs` 的 `STATIC_APPS` 只有 orderiq 和 inventory。新增 capacity 时，在保留现有项的基础上加入：
+在 `integration/apps.json` 的 applications 中登记静态发布物，服务器与检查器共享这份配置，不再修改 JavaScript 映射表。例如：
 
-```js
-export const STATIC_APPS = Object.freeze({
-  orderiq: 'orderiq',
-  inventory: 'inventory',
-  capacity: 'capacity',
-});
+```json
+"capacity": { "type": "static", "root": "../产能分析/dist", "entry": "index.html", "publicPaths": ["index.html", "assets/"] }
 ```
 
-左边是 URL 第一段/应用 ID，右边是 apps 下的产物目录。本项目静态接入统一使用 `id = 目录名`、`url = /<id>/`。不能只改 apps.json 而不加映射。
+root 相对门户根目录解析；publicPaths 只列出可公开的文件或资源子目录，不挂载整个源码或混有 Excel/数据库的输出目录。本机可用 config.local/apps.json 覆盖 root。菜单中地址使用 /capacity/。
 
 从门户根目录启动：
 
@@ -129,12 +125,12 @@ npm run dev:static -- --port 4176
 { "Name": "capacity", "Enabled": true }
 ```
 
-打包器按此清单复制 `apps/capacity`，不会因为 apps.json 新增条目就自动包含文件。静态应用需要同时核对：
+先运行 `npm run prepare:apps -- capacity` 收集原样产物，再由打包器按此清单复制 `apps/capacity`，不会因为 apps.json 新增条目就自动包含文件。静态应用需要同时核对：
 
 | 文件 | 作用 |
 |---|---|
 | `portal/config/apps.json` | 菜单、名称、状态、公共地址 |
-| `scripts/dev-server.mjs` | 本地 URL 到发布目录的映射 |
+| `integration/apps.json`（可被 `config.local/apps.json` 覆盖） | 本地 URL 到发布目录/独立服务的映射 |
 | 实际使用的 IIS 配置 JSON 的 `StaticApplications` | 打包与服务器静态应用清单 |
 | `apps/<id>/` | 实际发布产物 |
 
@@ -167,9 +163,9 @@ powershell -NoProfile -ExecutionPolicy RemoteSigned -File .\deploy\New-Deploymen
 
 ### 当前动态预览的实际边界
 
-`npm start` / `npm run dev` 启动原 SOP 并使用可操作的隔离数据快照（不回写原项目，重启创建新快照）；`npm run dev:sop` 可使用演示数据。**它们都不是任意新后端的通用启动器。**
+`npm start` / `npm run dev` 启动原 SOP 并使用可操作的隔离数据快照（不回写原项目，重启创建新快照）；`npm run dev:sop` 可使用演示数据。同时按 `integration/apps.json` 启动或复用已登记的独立 HTTP 服务；这些服务的数据行为由原项目决定，不能假定都有隔离快照。
 
-当前 `createServer` 只提供 SOP 的专用本地桥接。新动态应用需另行实现受控的同源预览代理，或在获授权的 IIS 测试环境完成接入。新增代理时同步调整相应脚本、配置校验和测试；不要复用 SOP 的身份头、密钥或业务源码，也不要改成允许任意目标 URL 的开放代理。
+`createServer` 保留 SOP 专用桥接，并支持配置中的固定回环 HTTP 代理。使用 type=proxy、target、stripPrefix、rootRoutes、healthPath、healthKeys 及可选 start；可参照[数据速查接入](forecast-quicklook-integration.md)。没有登记的根 API 不转发，重复根路由和门户身份接口冲突会拒绝启动。不得复用 SOP 身份头或密钥。WebSocket 尚未实现，需要的应用另行实现并专项测试。
 
 如果尚无同源测试入口，先完成现有能力核对与门户接入计划；原项目缺失能力只列为待办，注册状态保持 pending，明确记录尚未验收；不能为“先看到页面”而放宽门户同源校验或 CSP。
 
@@ -221,7 +217,7 @@ powershell -NoProfile -ExecutionPolicy RemoteSigned -File .\deploy\New-Deploymen
 
 `status: ready` 是接入完成标记，不是实时健康检查。先通过验证再切 ready；有意在本地临时切 ready 验收时，未通过就恢复 pending，并明确本地与内网验收范围。不能仅因 npm run check 通过就宣称已经上线。
 
-`platform.defaultApp` 只能为 home 或已启用的 ready 应用 ID。`platform.loadTimeoutMs` 默认 20000，允许 1000–120000 毫秒。新增应用不需要手写顶部标签或复制首页卡片，门户会按配置生成；SOP 保持优先位置。应用增多时验证顶栏和窄屏展开菜单，必要时改进通用布局，不另加侧边栏。
+`platform.defaultApp` 只能为 home 或已启用的 ready 应用 ID。`platform.loadTimeoutMs` 默认 20000，允许 1000–120000 毫秒。新增应用不需要手写顶部标签或复制首页卡片，门户会按配置生成；通过数值 `order` 排序，较小的靠前；默认已有 SOP=10，数据速查=50 位于最后。新增应用须明确其顺序。应用增多时验证顶栏和窄屏展开菜单，必要时改进通用布局，不另加侧边栏。
 
 ## 7. 验证与排查
 
@@ -247,7 +243,7 @@ npm test
 
 常见问题：
 
-- 菜单有、页面 404：检查实际产物、本地 STATIC_APPS、IIS Application 或代理规则；只改注册表不会创建这些。
+- 菜单有、页面 404：检查实际产物、integration/apps.json 的映射、IIS Application 或代理规则；只改注册表不会创建这些。
 - 页面白屏/资源 404：检查构建 base、绝对资源路径和子路由回退；看控制台，不用全站 fallback 掩盖问题。
 - 无法嵌入：检查应用最终响应头及继承的 IIS 配置。
 - 页面能看但不能操作：检查接口前缀、全局维护开关、身份/Origin/代理校验与业务端错误，不再要求额外写入域组。

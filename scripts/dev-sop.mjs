@@ -9,6 +9,8 @@ import {parseArgs} from 'node:util';
 import {fileURLToPath,pathToFileURL} from 'node:url';
 import {createServer} from './dev-server.mjs';
 import {resolveSopPython} from './sop-python.mjs';
+import {loadAppIntegrations} from './app-integrations.mjs';
+import {startAppServices} from './app-services.mjs';
 
 const ROOT=path.resolve(path.dirname(fileURLToPath(import.meta.url)),'..');
 
@@ -114,6 +116,8 @@ export async function runPreview(args=process.argv.slice(2),options={}) {
   const settings=await resolvePreviewSettings(args,options);
   const {root,sourceRoot,dataRoot,salesSourceDir,planSourceFile,sharedConfig,port,backendPort}=settings;
   const runtimeEnv={...process.env,...(options.env||{})};
+  const applications=await loadAppIntegrations(root);
+  for(const [id,app] of Object.entries(applications))if(app.type==='proxy'&&[port,backendPort].includes(Number(new URL(app.target).port||80)))throw new Error(id+' 服务端口不能与门户或 SOP 端口相同');
   const python=resolveSopPython({root,sourceRoot,env:runtimeEnv});
   const pythonEnv={...runtimeEnv,SOP_PYTHON_PATH:python,PYTHONIOENCODING:'utf-8',PYTHONDONTWRITEBYTECODE:'1'};
   for(const key of Object.keys(pythonEnv))if(key.toLowerCase()==='path')delete pythonEnv[key];
@@ -168,9 +172,11 @@ export async function runPreview(args=process.argv.slice(2),options={}) {
     await new Promise(resolve=>setTimeout(resolve,250));
   }
   if(!ready){child.kill();throw new Error('独立 SOP 服务未启动；请检查上方 Python 日志及原项目 gateway 适配。');}
-  const server=createServer({root,sopProxy:{port:backendPort,secret,user:'DEV\\local-preview'}});
-  const closeChild=()=>{stopping=true;child.kill();process.removeListener('SIGINT',stop);process.removeListener('SIGTERM',stop);};
-  function stop(){stopping=true;child.kill();server.close();setTimeout(()=>server.closeAllConnections?.(),1000).unref();}
+  const stopApplications=await startAppServices(applications,{env:runtimeEnv});
+  if(failed){stopApplications();child.kill();throw new Error('SOP 在其他应用启动期间已退出，请检查原项目日志。');}
+  const server=createServer({root,applications,sopProxy:{port:backendPort,secret,user:'DEV\\local-preview'}});
+  const closeChild=()=>{stopping=true;child.kill();stopApplications();process.removeListener('SIGINT',stop);process.removeListener('SIGTERM',stop);};
+  function stop(){stopping=true;child.kill();stopApplications();server.close();setTimeout(()=>server.closeAllConnections?.(),1000).unref();}
   server.once('close',closeChild);
   child.on('exit',()=>{if(!stopping&&server.listening){console.error('独立 SOP 服务已退出，本地门户预览随之停止。');server.close();}});
   try {

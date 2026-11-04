@@ -1,0 +1,94 @@
+import test from 'node:test';
+import assert from 'node:assert/strict';
+import {mkdtemp,mkdir,writeFile,readFile,rename,rm,symlink} from 'node:fs/promises';
+import path from 'node:path';
+import os from 'node:os';
+import http from 'node:http';
+import {loadAppIntegrations} from '../scripts/app-integrations.mjs';
+import {createServer} from '../scripts/dev-server.mjs';
+import {prepareStaticApp} from '../scripts/prepare-apps.mjs';
+import {orderedApps,validateConfig} from '../portal/js/config.js';
+
+async function fixture(t){
+  const base=await mkdtemp(path.join(os.tmpdir(),'portal-integration-'));
+  t.after(()=>rm(base,{recursive:true,force:true}));
+  const root=path.join(base,'workspace','portal');
+  for(const dir of ['integration','config.local','portal/config'])await mkdir(path.join(root,dir),{recursive:true});
+  const release=path.join(root,'../forecast/output_file');
+  await mkdir(path.join(release,'forecast_assets'),{recursive:true});
+  await writeFile(path.join(release,'report.html'),'<script src="forecast_assets/chunk.js"></script>');
+  await writeFile(path.join(release,'forecast_assets/chunk.js'),'window.unchanged=true;');
+  await writeFile(path.join(release,'secret.json'),'not public');
+  const config={applications:{forecast:{type:'static',root:'../forecast/output_file',entry:'report.html',publicPaths:['report.html','forecast_assets/']}}};
+  await writeFile(path.join(root,'integration/apps.json'),JSON.stringify(config));
+  return {base,root,release,config};
+}
+async function listen(t,server){await new Promise(resolve=>server.listen(0,'127.0.0.1',resolve));t.after(()=>new Promise(resolve=>{server.closeAllConnections();server.close(resolve);}));return 'http://127.0.0.1:'+server.address().port;}
+
+test('relative mounts survive a complete workspace move and expose only release assets',async t=>{
+  const f=await fixture(t);
+  const newWorkspace=path.join(f.base,'moved workspace');
+  await rename(path.dirname(f.root),newWorkspace);
+  const root=path.join(newWorkspace,'portal'),applications=await loadAppIntegrations(root);
+  assert.equal(applications.forecast.root,path.join(newWorkspace,'forecast/output_file'));
+  const origin=await listen(t,createServer({root,applications}));
+  const page=await fetch(origin+'/forecast/');assert.equal(page.status,200);assert.equal(await page.text(),'<script src="forecast_assets/chunk.js"></script>');
+  assert.equal((await fetch(origin+'/forecast/',{method:'HEAD'})).status,200);
+  assert.equal(await (await fetch(origin+'/forecast/forecast_assets/chunk.js')).text(),'window.unchanged=true;');
+  assert.equal((await fetch(origin+'/forecast?x=1',{redirect:'manual'})).headers.get('location'),'/forecast/?x=1');
+  for(const url of ['/forecast/secret.json','/forecast/warehouse.db','/inventory/','/api/unknown'])assert.equal((await fetch(origin+url)).status,404,url);
+  try{await symlink(path.join(newWorkspace,'forecast/output_file/secret.json'),path.join(newWorkspace,'forecast/output_file/forecast_assets/leak.json'));}
+  catch(error){if(!['EPERM','EACCES'].includes(error.code))throw error;return;}
+  assert.equal((await fetch(origin+'/forecast/forecast_assets/leak.json')).status,403);
+});
+
+test('proxy preserves request body, public origin, status and security headers without sharing SOP identity',async t=>{
+  const f=await fixture(t);const received=[];
+  const upstream=http.createServer(async(req,res)=>{
+    const chunks=[];for await(const chunk of req)chunks.push(chunk);const body=Buffer.concat(chunks).toString('base64');
+    received.push({url:req.url,method:req.method,headers:req.headers,body});
+    const forbidden=req.headers.origin&&req.headers.origin!=='http://'+req.headers.host;
+    res.writeHead(forbidden?403:201,{'Content-Type':'application/json','X-Frame-Options':'SAMEORIGIN','Content-Security-Policy':"frame-ancestors 'self'"});res.end(JSON.stringify({body}));
+  });
+  const target=await listen(t,upstream);
+  f.config.applications.quicklook={type:'proxy',target,stripPrefix:true,rootRoutes:['/api/import'],healthPath:'/api/catalog',healthKeys:['tables']};
+  await writeFile(path.join(f.root,'integration/apps.json'),JSON.stringify(f.config));
+  const origin=await listen(t,createServer({root:f.root,applications:await loadAppIntegrations(f.root)}));
+  const res=await fetch(origin+'/api/import?filename=test.xlsx',{method:'POST',headers:{Origin:origin,'Content-Type':'application/octet-stream','X-SOP-User':'forged','X-SOP-Proxy-Key':'forged'},body:Buffer.from([0,1,2,10,255])});
+  assert.equal(res.status,201);assert.equal(res.headers.get('x-frame-options'),'SAMEORIGIN');assert.equal(res.headers.get('content-security-policy'),"frame-ancestors 'self'");
+  assert.equal(received[0].body,Buffer.from([0,1,2,10,255]).toString('base64'));assert.equal(received[0].url,'/api/import?filename=test.xlsx');assert.equal(received[0].headers.host,new URL(origin).host);assert.equal(received[0].headers.origin,origin);assert.equal(received[0].headers['x-sop-user'],undefined);
+  assert.equal((await fetch(origin+'/quicklook/app.js?v=abc')).status,201);assert.equal(received[1].url,'/app.js?v=abc');
+  assert.equal((await fetch(origin+'/api/import',{method:'POST',headers:{Origin:'http://elsewhere.invalid'}})).status,403);
+  assert.equal((await fetch(origin+'/api/unregistered')).status,404);
+  assert.equal((await fetch(origin+'/sop/api/catalog')).status,404);
+  await new Promise(resolve=>upstream.close(resolve));
+  assert.equal((await fetch(origin+'/quicklook/')).status,502);
+});
+
+test('configuration overrides stay portal-relative and reject route collisions or non-loopback targets',async t=>{
+  const f=await fixture(t);
+  await writeFile(path.join(f.root,'config.local/apps.json'),JSON.stringify({applications:{forecast:{root:'../other-output'}}}));
+  assert.equal((await loadAppIntegrations(f.root)).forecast.root,path.resolve(f.root,'../other-output'));
+  const proxy={type:'proxy',target:'http://127.0.0.1:8765',stripPrefix:true,rootRoutes:['/api/catalog'],healthPath:'/api/catalog',healthKeys:['tables'],start:null};
+  const save=()=>writeFile(path.join(f.root,'integration/apps.json'),JSON.stringify(f.config));
+  f.config.applications.one=proxy;f.config.applications.two=proxy;await save();await assert.rejects(loadAppIntegrations(f.root),/冲突/);
+  delete f.config.applications.two;f.config.applications.one={...proxy,target:'http://example.com'};await save();await assert.rejects(loadAppIntegrations(f.root),/回环/);
+  f.config.applications.one=proxy;await save();await writeFile(path.join(f.root,'portal/config/apps.json'),JSON.stringify({platform:{identityEndpoint:'/api/catalog'}}));await assert.rejects(loadAppIntegrations(f.root),/身份接口冲突/);
+});
+
+test('static packaging preserves original bytes, excludes unrelated data and backs up old releases',async t=>{
+  const f=await fixture(t), app=(await loadAppIntegrations(f.root)).forecast;
+  await mkdir(path.join(f.root,'apps/forecast'),{recursive:true});await writeFile(path.join(f.root,'apps/forecast/index.html'),'previous');
+  const result=await prepareStaticApp(f.root,'forecast',app);
+  assert.equal(await readFile(path.join(f.root,result.backup,'index.html'),'utf8'),'previous');
+  assert.deepEqual(await readFile(path.join(f.root,'apps/forecast/index.html')),await readFile(path.join(f.release,'report.html')));
+  await assert.rejects(readFile(path.join(f.root,'apps/forecast/secret.json')),/ENOENT/);
+  assert.equal(await readFile(path.join(f.release,'secret.json'),'utf8'),'not public');
+});
+
+test('configured navigation order removes inventory and keeps quicklook last even before pending apps become ready',async()=>{
+  const raw=JSON.parse(await readFile(new URL('../portal/config/apps.json',import.meta.url),'utf8'));
+  const config=validateConfig(raw);
+  assert.deepEqual(orderedApps(config.apps).map(a=>a.id),['sop','orderiq','forecast','leads','quicklook']);
+  assert.equal(config.apps.find(a=>a.id==='forecast').status,'ready');
+});

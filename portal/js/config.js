@@ -20,6 +20,7 @@ export function validateConfig(raw) {
     return { ...group, apps: group.apps.map(app => {
       if (typeof app.id !== 'string' || !ID.test(app.id) || ids.has(app.id)) throw new Error('应用 ID 无效或重复');
       ids.add(app.id);
+      if (app.order !== undefined && !Number.isFinite(app.order)) throw new Error(`应用 ${app.id} 的排序必须为数值`);
       if (typeof app.name !== 'string' || !app.name.trim() || typeof app.enabled !== 'boolean' || !['ready', 'pending', 'maintenance'].includes(app.status)) throw new Error(`应用 ${app.id} 的名称、启用状态或接入状态无效`);
       return { ...app, url: localPath(app.url), groupName: group.name };
     }) };
@@ -34,4 +35,8 @@ export function routeFromHash(hash, config) {
   if (hash === '#/home') return 'home';
   if (match && config.apps.some(app => app.id === match[1])) return match[1];
   return hash ? 'home' : config.platform.defaultApp;
+}
+
+export function orderedApps(apps) {
+  return [...apps].sort((a, b) => (a.order ?? 100) - (b.order ?? 100));
 }

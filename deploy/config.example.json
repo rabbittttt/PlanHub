@@ -6,7 +6,13 @@
   "Port": 8080,
   "RequireReverseProxy": false,
   "StaticApplications": [
-    { "Name": "orderiq", "Enabled": true },
-    { "Name": "inventory", "Enabled": false }
+    {
+      "Name": "orderiq",
+      "Enabled": true
+    },
+    {
+      "Name": "forecast",
+      "Enabled": true
+    }
   ]
 }

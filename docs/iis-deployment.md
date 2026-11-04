@@ -39,7 +39,7 @@ Copy-Item -LiteralPath '.\deploy\config.example.json' -Destination '.\deploy\con
 DataPlatform-001/
   portal/                 -> IIS 网站根目录
   apps/orderiq/           -> IIS 独立应用 /orderiq/
-  apps/inventory/         -> 预留，默认不启用
+  apps/forecast/          -> 原项目销量预测发布物，打包前运行 npm run prepare:apps -- forecast
   services/               -> 服务程序，不映射到 IIS 静态目录
   data/                   -> 业务数据，不映射到 IIS 静态目录
   logs/                   -> 服务日志，不映射到 IIS 静态目录
@@ -117,3 +117,5 @@ ARR 响应属于门户根应用，所以根配置只发送 `frame-ancestors 'sel
 - [Microsoft：URL Rewrite + ARR 反向代理](https://learn.microsoft.com/en-us/iis/extensions/url-rewrite-module/reverse-proxy-with-url-rewrite-v2-and-application-request-routing)：ARR 代理开关与公共/后端路径协调。
 - [Microsoft：URL Rewrite 配置参考](https://learn.microsoft.com/en-us/iis/extensions/url-rewrite-module/url-rewrite-module-configuration-reference)：规则匹配、重写及查询参数行为。
 - [Microsoft：配置继承边界](https://techcommunity.microsoft.com/blog/iis-support-blog/how-to-prevent-web-config-files-to-be-overwritten-by-config-files-in-application/297627)：`inheritInChildApplications` 的作用。
+
+销量预测与数据速查的实际路径、静态收集与动态代理交付说明见[接入记录](forecast-quicklook-integration.md)。数据速查不随静态包自动部署；须在独立项目准备服务，另行配置明确的代理路由。

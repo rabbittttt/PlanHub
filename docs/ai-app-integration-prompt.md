@@ -49,9 +49,9 @@
 【接入约束】
 - apps.json 仅登记入口，不会自动发布页面、启动服务或建立代理。
 - 门户 URL 必须为同源根相对子路径 /<id>/，带末尾斜线；不把本地后端端口或外域 URL 填入注册表。
-- 静态应用核对 portal/config/apps.json、scripts/dev-server.mjs 的 STATIC_APPS、实际产物 apps/<id>/、部署 JSON 的 StaticApplications 四处是否一致。
+- 静态应用核对 portal/config/apps.json、integration/apps.json 的相对路径/publicPaths、原项目产物（打包时由 prepare:apps 收集到 apps/<id>/）、部署 JSON 的 StaticApplications 四处是否一致。
 - 动态应用明确保留/剥离前缀策略，并检查资源、API、跳转、Cookie Path、上传下载和 WebSocket。
-- 当前 npm start/dev 只自动启动独立 SOP；其他后端需要自己的受控同源预览与部署支持。不能放宽同源校验或关闭安全策略来绕过缺少的接入逻辑。
+- 当前 npm start/dev 启动独立 SOP，并按 integration/apps.json 启动/复用配置中的独立 HTTP 服务；只允许固定回环目标，根 API 逐项登记且不得冲突。WebSocket 尚未支持，生产 IIS 需单独配置。不能放宽同源校验或关闭安全策略来绕过缺少的接入逻辑。
 - 核对页面是否允许同源 iframe；直接访问业务地址和 iframe 内访问都要正常。不支持时报告阻塞，不修改子应用或剥除响应头。HEAD/iframe 成功不代表业务 API 或权限已验收。
 - 部门成员统一使用查看、维护、导入导出等已有业务功能；门户不新增角色、写入域组或逐用户授权，也不修改子应用已有权限规则。保留部门访问边界、可信操作人记录及 Origin/代理校验；不能用隐藏菜单代替访问控制。
 - 全局维护暂停写入与成员角色是两回事。现有 SOP 预览写入隔离快照，不回写原项目；重启会创建新快照。

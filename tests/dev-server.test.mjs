@@ -96,15 +96,17 @@ test('ready static apps require artifacts while pending and hidden apps do not',
   const root = await fixture(t);
   const raw = { platform: { name: '检查', defaultApp: 'home' }, groups: [{ id: 'business', name: '业务', apps: [
     { id: 'orderiq', name: '订单', url: '/orderiq/', enabled: true, status: 'ready' },
-    { id: 'inventory', name: '库存', url: '/inventory/', enabled: false, status: 'ready' },
+    { id: 'forecast', name: '预测', url: '/forecast/', enabled: false, status: 'ready' },
     { id: 'sop', name: '计划', url: '/sop/', enabled: true, status: 'pending' },
   ] }] };
+  await mkdir(path.join(root, 'integration'));
+  await writeFile(path.join(root, 'integration/apps.json'), JSON.stringify({applications:{orderiq:{type:'static',root:'apps/orderiq',entry:'index.html',publicPaths:['index.html']},forecast:{type:'static',root:'apps/forecast',entry:'index.html',publicPaths:['index.html']}}}));
   const save = () => writeFile(path.join(root, 'portal/config/apps.json'), JSON.stringify(raw));
   await save();
   assert.equal((await validateWorkspace(root)).warnings.length, 0);
   raw.groups[0].apps[1].enabled = true;
   await save();
-  await assert.rejects(validateWorkspace(root), /inventory/);
+  await assert.rejects(validateWorkspace(root), /forecast/);
   raw.groups[0].apps[1].status = 'pending';
   raw.groups[0].apps[0].url = '/wrong/';
   await save();

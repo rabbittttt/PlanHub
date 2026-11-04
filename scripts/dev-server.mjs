@@ -3,7 +3,9 @@ import { readFile, realpath, stat } from 'node:fs/promises';
 import path from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 
-export const STATIC_APPS = Object.freeze({ orderiq: 'orderiq', inventory: 'inventory' });
+import {loadAppIntegrations, publicFile} from './app-integrations.mjs';
+import {proxyRequest} from './proxy-request.mjs';
+export const STATIC_APPS = Object.freeze({ orderiq: 'orderiq' });
 const PROJECT_ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const MIME = {
   '.html': 'text/html; charset=utf-8', '.css': 'text/css; charset=utf-8',
@@ -33,7 +35,7 @@ export function parseRequestPath(rawUrl) {
 }
 
 /** Local-only preview; the optional loopback SOP bridge does not provide Windows authentication. */
-export function createServer({ root = PROJECT_ROOT, sopProxy = null } = {}) {
+export function createServer({ root = PROJECT_ROOT, sopProxy = null, applications = null } = {}) {
   if (sopProxy && (!Number.isInteger(sopProxy.port) || sopProxy.port < 1 || sopProxy.port > 65535 || typeof sopProxy.secret !== 'string' || sopProxy.secret.length < 32 || typeof sopProxy.user !== 'string' || /[\r\n]/.test(sopProxy.user))) throw new Error('Invalid local SOP preview configuration');
   return http.createServer(async (request, response) => {
     const headers = { 'Cache-Control': 'no-store', 'X-Content-Type-Options': 'nosniff', 'X-Frame-Options': 'SAMEORIGIN' };
@@ -45,6 +47,14 @@ export function createServer({ root = PROJECT_ROOT, sopProxy = null } = {}) {
     let parsed;
     try { parsed = parseRequestPath(request.url); } catch { return send(400, 'Invalid or private request path'); }
     const { pathname, parts } = parsed;
+    const proxyEntry = Object.entries(applications || {}).find(([id, app]) => app.type === 'proxy' && (parts[0] === id || app.rootRoutes.includes(pathname)));
+    if (proxyEntry) {
+      const [id, app] = proxyEntry;
+      if (pathname === '/' + id) return send(308, 'Redirecting', {Location: '/' + id + '/' + (request.url.includes('?') ? request.url.slice(request.url.indexOf('?')) : '')});
+      const upstreamPath = parts[0] === id && app.stripPrefix ? request.url.slice(id.length + 1) : request.url;
+      proxyRequest(request, response, app, upstreamPath, send);
+      return;
+    }
     if (sopProxy && parts[0] === 'sop') {
       if (pathname === '/sop') return send(308, 'Redirecting', { Location: '/sop/' });
       const forwarded = { ...request.headers, host: `127.0.0.1:${sopProxy.port}` };
@@ -64,15 +74,23 @@ export function createServer({ root = PROJECT_ROOT, sopProxy = null } = {}) {
       return;
     }
     if (!['GET', 'HEAD'].includes(request.method)) return send(405, 'Method not allowed', { Allow: 'GET, HEAD' });
-    const appDirectory = Object.hasOwn(STATIC_APPS, parts[0]) ? STATIC_APPS[parts[0]] : null;
-    const base = appDirectory ? path.join(root, 'apps', appDirectory) : path.join(root, 'portal');
-    const relativeParts = appDirectory ? parts.slice(1) : parts;
+    const configured = applications?.[parts[0]];
+    const mount = configured?.type === 'static' ? configured : null;
+    const appDirectory = !applications && Object.hasOwn(STATIC_APPS, parts[0]) ? STATIC_APPS[parts[0]] : null;
+    const base = mount ? mount.root : appDirectory ? path.join(root, 'apps', appDirectory) : path.join(root, 'portal');
+    let relativeParts = mount || appDirectory ? parts.slice(1) : parts;
+    if (mount) {
+      if (relativeParts.length === 0 && !pathname.endsWith('/')) return send(308, 'Redirecting', {Location: pathname + '/' + (request.url.includes('?') ? request.url.slice(request.url.indexOf('?')) : '')});
+      if (relativeParts.length === 0 || relativeParts.join('/') === 'index.html') relativeParts = mount.entry.split('/');
+      if (!publicFile(mount, relativeParts.join('/'))) return send(404, 'Not found');
+    }
     let candidate = path.join(base, ...relativeParts);
     if (!inside(base, candidate)) return send(403, 'Forbidden');
     try {
       const resolvedBase = await realpath(base);
       candidate = await realpath(candidate);
       if (!inside(resolvedBase, candidate)) return send(403, 'Forbidden');
+      if (mount && !publicFile(mount, path.relative(resolvedBase, candidate).split(path.sep).join('/'))) return send(403, 'Forbidden');
       let info = await stat(candidate);
       if (info.isDirectory()) {
         if (!pathname.endsWith('/')) {
@@ -100,7 +118,9 @@ if (process.argv[1] && import.meta.url === pathToFileURL(path.resolve(process.ar
   const portIndex = process.argv.indexOf('--port');
   const port = portIndex >= 0 ? Number(process.argv[portIndex + 1]) : 4173;
   if (!Number.isInteger(port) || port < 1 || port > 65535) throw new Error('Port must be between 1 and 65535');
-  const server = createServer();
+  const applications = await loadAppIntegrations(PROJECT_ROOT);
+  for (const [id, app] of Object.entries(applications)) if (app.type === 'proxy' && Number(new URL(app.target).port || 80) === port) throw new Error(id + ' 服务端口不能与门户相同');
+  const server = createServer({applications});
   server.on('error', error => { console.error(`Preview failed: ${error.message}`); process.exitCode = 1; });
   server.listen(port, '127.0.0.1', () => console.log(`本地预览：http://127.0.0.1:${port}/（仅本机，无 Windows 身份认证）`));
 }

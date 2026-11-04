@@ -1,0 +1,54 @@
+{
+  "applications": {
+    "orderiq": {
+      "type": "static",
+      "root": "apps/orderiq",
+      "entry": "index.html",
+      "publicPaths": [
+        "index.html"
+      ]
+    },
+    "forecast": {
+      "type": "static",
+      "root": "../销量预测/output_file",
+      "entry": "鸿蒙智行销量预测.html",
+      "publicPaths": [
+        "鸿蒙智行销量预测.html",
+        "forecast_assets/"
+      ]
+    },
+    "quicklook": {
+      "type": "proxy",
+      "target": "http://127.0.0.1:8765",
+      "stripPrefix": true,
+      "rootRoutes": [
+        "/api/catalog",
+        "/api/table",
+        "/api/workbooks",
+        "/api/workbook",
+        "/api/sheet",
+        "/api/search",
+        "/api/raw",
+        "/api/import",
+        "/api/sync",
+        "/api/config",
+        "/api/recognition"
+      ],
+      "healthPath": "/api/catalog",
+      "healthKeys": [
+        "tables",
+        "files",
+        "status",
+        "config"
+      ],
+      "start": {
+        "cwd": "../数据速查",
+        "command": "../.venv/Scripts/python.exe",
+        "args": [
+          "-B",
+          "server.py"
+        ]
+      }
+    }
+  }
+}
