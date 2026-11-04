@@ -34,7 +34,7 @@ npm start
 
 默认从上述原 SOP 项目启动 `server.py`，只把数据在线备份到门户忽略的临时目录，可进行维护、导入导出等操作，修改仅保存在隔离快照，不会回写原项目；重新启动会创建新快照。业务实现始终来自原项目；数据快照不是第二套源码。保持启动窗口运行，打开终端打印的地址。端口已被旧进程占用时，在旧窗口按 Ctrl+C 后重启，或指定其他端口。
 
-销售来源优先采用 `SOP_SOURCE_DIR`、`SHARED_DATA_ROOT/订单汇总`；两个环境变量请填写绝对路径。未设置这两个变量时，显式 `--seed-from` 或本地配置 `dataRoot` 使用所选数据项目的 `input_file/`，保留历史或测试种子的完整来源。仅默认数据模式自动读取 SOP 同级 `../共享数据/订单汇总`，且只在共享根不存在时兼容原项目的 `input_file/`；共享根存在但缺少 `订单汇总/` 时会报错，不读取旧副本。预览启动时将销售文件复制到隔离目录，计划表优先按绝对路径环境变量 `SOP_PLAN_DIR` 选择；未指定时，显式种子始终从其 `input_file/SOP计划维护.xlsx` 复制，默认数据模式则从共享根 `SOP计划/SOP计划维护.xlsx` 复制（无共享根时兼容原项目 `input_file/`），数据库和规则仍按既有配置建立快照。共享源的后续更新需重启预览获取；网关 `plan_file` 始终指向隔离副本，所有维护操作只写隔离快照，不回写共享文件或原项目。
+销售来源优先采用 `SOP_SOURCE_DIR`、`SHARED_DATA_ROOT/订单汇总`；这些环境变量的相对路径均按门户根目录解析，例如 `SHARED_DATA_ROOT=../共享数据`，也兼容绝对路径。未设置这两个变量时，显式 `--seed-from` 或本地配置 `dataRoot` 使用所选数据项目的 `input_file/`，保留历史或测试种子的完整来源。仅默认数据模式自动读取 SOP 同级 `../共享数据/订单汇总`，且只在共享根不存在时兼容原项目的 `input_file/`；共享根存在但缺少 `订单汇总/` 时会报错，不读取旧副本。预览启动时将销售文件复制到隔离目录，计划表优先按环境变量 `SOP_PLAN_DIR` 选择（相对值按门户根目录解析）；未指定时，显式种子始终从其 `input_file/SOP计划维护.xlsx` 复制，默认数据模式则从共享根 `SOP计划/SOP计划维护.xlsx` 复制（无共享根时兼容原项目 `input_file/`），数据库和规则仍按既有配置建立快照。共享源的后续更新需重启预览获取；网关 `plan_file` 始终指向隔离副本，所有维护操作只写隔离快照，不回写共享文件或原项目。
 
 路径可以通过参数或忽略的 `config.local/sop.json` 配置：
 
@@ -42,7 +42,7 @@ npm start
 npm start -- --sop-source '../SOP看板' --shared-config '../订单分析/scripts/config/shared_config.py' --port 4176 --backend-port 8879
 ```
 
-本地配置字段为 `sourceRoot`、`dataRoot`、`sharedConfig`，模板见 `integration/sop.example.json`。相对字段按门户根目录解析，不按 `config.local/` 解析。`dataRoot` 是包含 `data/` 和 `input_file/` 的数据源项目目录，不等同于后端配置中的 `data_dir`。源码选择优先级为 `--sop-source`、`SOP_SOURCE_ROOT`、本地配置、实际兄弟目录。`--seed-from` 只选择数据来源，不选择运行代码。原项目未完成 gateway 适配时明确报错，不回退副本。
+本地配置字段为 `sourceRoot`、`dataRoot`、`sharedConfig`，模板见 `integration/sop.example.json`。本地配置、路径环境变量及 CLI 的 `--sop-source`、`--seed-from`、`--shared-config` 相对值统一按门户根目录解析，不受启动时的当前目录或 `config.local/` 位置影响。默认模板省略 `dataRoot`，以采用共享销售和计划目录；仅需完整历史或测试种子时才配置 `dataRoot` 或 `--seed-from`。`dataRoot` 是包含 `data/` 和 `input_file/` 的数据源项目目录，不等同于后端配置中的 `data_dir`。源码选择优先级为 `--sop-source`、`SOP_SOURCE_ROOT`、本地配置、实际兄弟目录。`--seed-from` 只选择数据来源，不选择运行代码。原项目未完成 gateway 适配时明确报错，不回退副本。
 
 `npm run dev` 与 `npm start` 相同；`npm run dev:static` 只提供静态门户和 OrderIQ；`npm run dev:sop -- --sop-source <原项目路径>` 使用演示数据，但仍从原项目运行代码。本地预览不能替代内网 Windows 认证验收。
 

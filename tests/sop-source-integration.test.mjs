@@ -73,6 +73,25 @@ test('source configuration precedence is explicit CLI, environment, local config
   assert.equal(explicitConfig.dataRoot,seed);
 });
 
+test('relative CLI paths and the default template resolve against the portal root',async t=>{
+  const {base,root}=await fixture(t);
+  const original=await source(path.join(base,'SOP看板'));await data(original);
+  const seed=await data(path.join(base,'historical-data'));
+  const rules=path.join(base,'订单分析','scripts','config','shared_config.py');
+  await mkdir(path.dirname(rules),{recursive:true});await writeFile(rules,'MERGE_GROUPS = {}\n');
+  const shared=path.join(base,'共享数据','订单汇总');await mkdir(shared,{recursive:true});
+  // The test process cwd is outside this disposable portal tree.
+  assert.notEqual(path.resolve(process.cwd()),root);
+  const settings=await resolvePreviewSettings(['--sop-source','../SOP看板','--seed-from','../historical-data',
+    '--shared-config','../订单分析/scripts/config/shared_config.py'],{root,env:{},requireData:true});
+  assert.equal(settings.sourceRoot,original);assert.equal(settings.dataRoot,seed);assert.equal(settings.sharedConfig,rules);
+  await mkdir(path.join(root,'config.local'));
+  await writeFile(path.join(root,'config.local','sop.json'),await readFile(new URL('../integration/sop.example.json',import.meta.url)));
+  const defaults=await resolvePreviewSettings([],{root,env:{},requireData:true});
+  assert.equal(defaults.dataRootExplicit,false);assert.equal(defaults.salesSourceDir,shared);
+  assert.equal(defaults.planSourceFile,path.join(base,'共享数据','SOP计划','SOP计划维护.xlsx'));
+});
+
 test('missing gateway and the removed portal copy are rejected instead of silently selecting other code',async t=>{
   const {base,root}=await fixture(t);
   const unadapted=await source(path.join(base,'unadapted'),{gateway:false});

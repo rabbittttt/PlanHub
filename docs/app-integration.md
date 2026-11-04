@@ -12,7 +12,7 @@
 
 - 默认 SOP 项目候选位置为 `../SOP看板`；不同机器先查明原项目再填写，不能为了满足示例而移动源码或创建副本。
 - `integration/sop.example.json` 使用相对路径；复制到 `config.local/sop.json` 后仍按门户根目录解析，而非 `config.local/`。
-- CLI 示例从门户根目录执行。其他项目按自身工具规则核对解析基准，不假定所有配置都按配置文件目录解析。
+- CLI 示例从门户根目录执行；门户的 `--sop-source`、`--seed-from`、`--shared-config` 即使从其他目录调用，也按门户根目录解析相对值。模板省略 `dataRoot` 以采用共享输入；仅历史或测试种子配置该字段。其他项目按自身工具规则核对解析基准。
 - 某些接口确实要求绝对路径：SOP 构建器的 `--destination`、IIS `DeploymentRoot`、SOP 服务器数据/规则路径等。保留现有校验，通过 `Resolve-Path`、`Join-Path`、`GetFullPath` 从当前环境生成；不直接填 `../` 去绕过要求，也不把某台机器的盘符写进接入指南。
 
 ## 1. 先确认接入的是什么

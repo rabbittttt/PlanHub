@@ -51,7 +51,7 @@ export async function resolvePreviewSettings(args=process.argv.slice(2),{root=RO
   root=await realpath(path.resolve(root));
   const local=await integrationConfig(root);
   const configured=(value)=>value?path.resolve(root,value):null;
-  const sourceRoot=values['sop-source']?path.resolve(values['sop-source']):configured(env.SOP_SOURCE_ROOT||local.sourceRoot)||path.resolve(root,'..','SOP看板');
+  const sourceRoot=configured(values['sop-source']||env.SOP_SOURCE_ROOT||local.sourceRoot)||path.resolve(root,'..','SOP看板');
   try {await requirePath(path.join(sourceRoot,'server.py'),'独立 SOP 源码入口');}
   catch(error) {throw new Error(`${error.message}\n请用 --sop-source 或 SOP_SOURCE_ROOT 指定唯一 SOP 原项目，不会使用门户内的旧副本。`);}
   const resolvedSource=await realpath(sourceRoot);
@@ -62,9 +62,9 @@ export async function resolvePreviewSettings(args=process.argv.slice(2),{root=RO
     await requirePath(path.join(sourceRoot,'sop_gateway.py'),'SOP gateway 接入模块');
     await requirePath(path.join(sourceRoot,'web','index.html'),'SOP 页面入口');
   } catch(error) {throw new Error(`${error.message}\n请先把必要的 gateway 适配合入独立 SOP 项目；启动器不会回退到另一套业务源码。`);}
-  const dataRoot=values['seed-from']?path.resolve(values['seed-from']):configured(local.dataRoot)||(requireData?sourceRoot:null);
+  const dataRoot=configured(values['seed-from']||local.dataRoot)||(requireData?sourceRoot:null);
   const dataRootExplicit=Boolean(values['seed-from']||local.dataRoot);
-  const sharedConfig=values['shared-config']?path.resolve(values['shared-config']):configured(env.SOP_SHARED_CONFIG||local.sharedConfig)||path.resolve(sourceRoot,'..','订单分析','scripts','config','shared_config.py');
+  const sharedConfig=configured(values['shared-config']||env.SOP_SHARED_CONFIG||local.sharedConfig)||path.resolve(sourceRoot,'..','订单分析','scripts','config','shared_config.py');
   let salesSourceDir=dataRoot?path.join(dataRoot,'input_file'):null;
   let planSourceFile=dataRoot?path.join(dataRoot,'input_file','SOP计划维护.xlsx'):null;
   if(dataRoot) {

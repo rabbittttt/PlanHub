@@ -1,5 +1,4 @@
 {
   "sourceRoot": "../SOP看板",
-  "dataRoot": "../SOP看板",
   "sharedConfig": "../订单分析/scripts/config/shared_config.py"
 }
