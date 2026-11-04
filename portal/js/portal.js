@@ -107,15 +107,15 @@ function renderCards() {
       const top = element('div', 'card-top');
       const iconBox = element('span', `app-icon ${Object.hasOwn(paths, app.icon) ? app.icon : 'grid'}`);
       iconBox.append(icon(app.icon));
-      top.append(iconBox, badge);
+      top.append(iconBox, element('h3', '', app.name), badge);
       const bottom = element('div', 'card-bottom');
       bottom.append(element('span', 'card-group', app.groupName || group?.name));
-      const link = element('a', 'card-link', app.id === 'sop' ? '打开计划看板' : '进入应用');
+      const link = element('a', 'card-link', '打开');
       link.href = `#/app/${app.id}`;
       link.setAttribute('aria-label', `进入${app.name}`);
       link.append(icon('arrow'));
       bottom.append(link);
-      card.append(top, element('h3', '', app.name), element('p', 'card-subtitle', app.subtitle || ''), element('p', 'card-description', app.description || ''), bottom);
+      card.append(top, element('p', 'card-description', app.description || ''), bottom);
       $('app-grid').append(card);
     } else {
       const iconBox = element('span', 'pending-icon');

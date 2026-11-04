@@ -11,8 +11,8 @@
   <link rel="icon" href="./assets/favicon.ico?v=open-p-20261104" sizes="any">
   <link rel="icon" href="./assets/planning-icon.svg?v=open-p-20261104" type="image/svg+xml">
   <link rel="apple-touch-icon" href="./assets/apple-touch-icon.png?v=open-p-20261104">
-  <link rel="stylesheet" href="./css/portal.css?v=neutral-blue-1">
-  <script type="module" src="./js/portal.js?v=neutral-blue-1"></script>
+  <link rel="stylesheet" href="./css/portal.css?v=compact-home-20261104">
+  <script type="module" src="./js/portal.js?v=compact-home-20261104"></script>
 </head>
 <body>
   <a class="skip-link" href="#main">跳转到工作区</a>
@@ -39,32 +39,20 @@
     <main id="main" tabindex="-1">
       <div id="boot-state" class="empty-state" role="status"><span class="spinner"></span><h1>正在准备工作空间</h1><p>加载应用配置…</p></div>
       <section id="home-view" class="home-view page-width" hidden aria-labelledby="home-title">
-        <div class="page-heading"><span class="page-kicker">计划部工作台 <span>/ OVERVIEW</span></span><time id="today"></time></div>
-        <div class="workspace-hero">
-          <div class="hero-copy">
-            <p class="eyebrow"><span></span> SALES &amp; OPERATIONS PLANNING</p>
-            <h1 id="home-title">销售与运作计划<span>工作台</span></h1>
-            <p class="hero-description">看清销售需求，制定未来各期入库量。<br>把需求洞察、计划协同与经营分析连接起来。</p>
-          </div>
-          <div class="planning-flow" aria-label="计划协同路径：销售需求、销运平衡、入库计划">
-            <div class="flow-caption">从需求到计划 <span>THE PLANNING CYCLE</span></div>
-            <ol class="flow-steps">
-              <li><span class="step-number">01</span><span><strong>销售需求</strong><small>订单与需求洞察</small></span><span class="step-symbol" data-icon="chart"></span></li>
-              <li><span class="step-number">02</span><span><strong>销运平衡</strong><small>销售与运作协同</small></span><span class="step-symbol" data-icon="layers"></span></li>
-              <li><span class="step-number">03</span><span><strong>入库计划</strong><small>未来各期计划入库量</small></span><span class="step-symbol" data-icon="calendar"></span></li>
-            </ol>
-          </div>
+        <div class="home-heading">
+          <div><div class="home-title-row"><h1 id="home-title">工作台</h1><span id="apps-summary" role="status" aria-atomic="true"></span></div><p class="home-context">销售需求 → 销运平衡 → 入库计划</p></div>
+          <time id="today"></time>
         </div>
 
         <section class="applications" aria-labelledby="apps-title">
+          <h2 id="apps-title" class="sr-only">业务应用</h2>
           <div class="section-toolbar">
-            <div class="section-heading"><h2 id="apps-title">业务应用</h2><span id="apps-summary"></span></div>
+            <div class="filter-row" id="group-filters" role="group" aria-label="筛选业务分组"></div>
             <label class="search"><span data-icon="search"></span><input id="app-search" type="search" placeholder="搜索应用" aria-label="搜索业务应用" autocomplete="off"><kbd>/</kbd></label>
           </div>
-          <div class="filter-row" id="group-filters" role="group" aria-label="筛选业务分组"></div>
           <div id="ready-section"><div class="app-grid" id="app-grid"></div></div>
           <section id="pending-section" class="pending-section" aria-labelledby="pending-title">
-            <div class="pending-heading"><h3 id="pending-title">更多业务应用</h3><p>接入后开放</p></div>
+            <div class="pending-heading"><h3 id="pending-title">待接入应用</h3></div>
             <div class="pending-grid" id="pending-grid"></div>
           </section>
           <p id="no-results" class="no-results" role="status" hidden>没有找到匹配的应用，请尝试其他关键词。</p>
