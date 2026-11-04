@@ -7,6 +7,8 @@ import path from 'node:path';
 import net from 'node:net';
 import {localPreviewArgs} from '../scripts/start-local.mjs';
 import {resolvePreviewSettings,runPreview} from '../scripts/dev-sop.mjs';
+import {resolveSopPython} from '../scripts/sop-python.mjs';
+import {fileURLToPath} from 'node:url';
 
 async function source(directory,{gateway=true}={}) {
   await mkdir(path.join(directory,'web'),{recursive:true});
@@ -164,12 +166,18 @@ async function freePort() {
 }
 
 test('preview executes independent source with a separate writable snapshot without mutating source data',async t=>{
-  const python=process.env.SOP_PYTHON||'python';
-  if(spawnSync(python,['--version'],{encoding:'utf8'}).status!==0){t.skip('Python is required for the external-service integration test');return;}
+  const projectRoot=path.resolve(path.dirname(fileURLToPath(import.meta.url)),'..');
+  let python;
+  try {python=resolveSopPython({root:projectRoot,sourceRoot:path.resolve(projectRoot,'..','SOP维护')});}
+  catch(error){t.skip(`Python with SOP dependencies is required: ${error.message}`);return;}
   const {base,root}=await fixture(t);
   const original=await source(path.join(base,'original-source'));
   await data(original,'code-project-data-must-not-be-used');
   const seed=await data(path.join(base,'seed-only-project'),'selected-seed');
+  const seedDb=path.join(seed,'data','sop.sqlite3');
+  const prepared=spawnSync(python,['-B','-c',"import sqlite3,sys; db=sqlite3.connect(sys.argv[1]); db.execute('CREATE TABLE marker (value TEXT)'); db.execute(\"INSERT INTO marker VALUES ('original-db')\"); db.commit(); db.close()",seedDb],{encoding:'utf8'});
+  assert.equal(prepared.status,0,prepared.stderr||prepared.error?.message);
+  const seedDbBefore=await readFile(seedDb);
   const shared=path.join(base,'共享数据','订单汇总');await mkdir(shared,{recursive:true});
   const sharedPlan=path.join(base,'共享数据','SOP计划','SOP计划维护.xlsx');
   await mkdir(path.dirname(sharedPlan));await writeFile(sharedPlan,'formal shared plan');
@@ -179,7 +187,7 @@ test('preview executes independent source with a separate writable snapshot with
   await writeFile(path.join(seed,'input_file','SOP计划维护.xlsx'),'selected project plan');
   const rules=path.join(base,'business-rules.py');await writeFile(rules,'MERGE_GROUPS = {}\n');
   const serverFile=path.join(original,'server.py');
-  await writeFile(serverFile,`import argparse,json,os
+  await writeFile(serverFile,`import argparse,json,os,sys
 from pathlib import Path
 from http.server import BaseHTTPRequestHandler,HTTPServer
 p=argparse.ArgumentParser();p.add_argument('--port',type=int);p.add_argument('--gateway-config');a=p.parse_args()
@@ -191,7 +199,7 @@ class Handler(BaseHTTPRequestHandler):
  def do_GET(self):
   if self.headers.get('X-SOP-Proxy-Key')!=os.environ[config['proxy_secret_env']]:return self.send(403,{'error':'key'})
   if self.path=='/sop/api/session':return self.send(200,{'mode':'gateway','user':self.headers.get('X-SOP-User'),'canWrite':config['allow_writes']})
-  return self.send(200,{'codeRoot':str(Path(__file__).parent),'cwd':os.getcwd(),'sourceData':json.loads((Path(config['data_dir'])/'sales.json').read_text()),'dataPath':config['data_dir'],'inputPath':config['source_dir'],'planPath':config['plan_file'],'readonly':not config['allow_writes'],'bytecodeDisabled':os.environ.get('PYTHONDONTWRITEBYTECODE')=='1'})
+  return self.send(200,{'codeRoot':str(Path(__file__).parent),'cwd':os.getcwd(),'executable':sys.executable,'configuredPython':os.environ.get('SOP_PYTHON_PATH'),'sourceData':json.loads((Path(config['data_dir'])/'sales.json').read_text()),'dataPath':config['data_dir'],'inputPath':config['source_dir'],'planPath':config['plan_file'],'readonly':not config['allow_writes'],'bytecodeDisabled':os.environ.get('PYTHONDONTWRITEBYTECODE')=='1'})
  def do_POST(self):
   if not config['allow_writes']:return self.send(403,{'error':'paused'})
   (Path(config['data_dir'])/'sales.json').write_text(json.dumps({'marker':'preview-edit'}))
@@ -201,11 +209,15 @@ HTTPServer(('127.0.0.1',a.port),Handler).serve_forever()
   const sourceBefore=await readFile(serverFile);
   const seedBefore=await readFile(path.join(seed,'data','sales.json'));
   const port=await freePort();let backendPort=await freePort();while(backendPort===port)backendPort=await freePort();
-  const server=await runPreview(['--sop-source',original,'--seed-from',seed,'--shared-config',rules,'--port',String(port),'--backend-port',String(backendPort)],{root,env:{SOP_PYTHON:python,SHARED_DATA_ROOT:path.dirname(shared)}});
+  const server=await runPreview(['--sop-source',original,'--seed-from',seed,'--shared-config',rules,'--port',String(port),'--backend-port',String(backendPort)],{root,env:{SOP_PYTHON_PATH:python,SOP_PYTHON:'obsolete-python-command',SHARED_DATA_ROOT:path.dirname(shared)}});
   try {
     const result=await fetch(`http://127.0.0.1:${port}/sop/api/provenance`).then(r=>r.json());
     assert.equal(result.codeRoot,original);assert.equal(result.cwd,original);
+    assert.equal(path.normalize(result.executable),python);assert.equal(result.configuredPython,python);
     assert.equal(result.sourceData.marker,'selected-seed');
+    const snapshot=spawnSync(python,['-B','-c',"import json,pathlib,sqlite3,sys; db=sqlite3.connect(pathlib.Path(sys.argv[1]).as_uri()+'?mode=ro',uri=True); print(json.dumps(db.execute('SELECT value FROM marker').fetchall())); db.close()",path.join(result.dataPath,'sop.sqlite3')],{encoding:'utf8'});
+    assert.equal(snapshot.status,0,snapshot.stderr||snapshot.error?.message);
+    assert.deepEqual(JSON.parse(snapshot.stdout),[['original-db']]);
     assert.ok(result.dataPath.startsWith(path.join(root,'artifacts')));
     assert.ok(result.inputPath.startsWith(path.join(root,'artifacts')));
     assert.equal(await readFile(path.join(result.inputPath,'current-sales.xlsx'),'utf8'),'shared sales');
@@ -219,7 +231,7 @@ HTTPServer(('127.0.0.1',a.port),Handler).serve_forever()
     assert.equal(JSON.parse(await readFile(path.join(result.dataPath,'sales.json'),'utf8')).marker,'preview-edit');
   } finally {await new Promise(resolve=>server.close(resolve));}
   const defaultPort=await freePort();let defaultBackend=await freePort();while(defaultBackend===defaultPort)defaultBackend=await freePort();
-  const defaultServer=await runPreview(['--sop-source',original,'--shared-config',rules,'--port',String(defaultPort),'--backend-port',String(defaultBackend)],{root,env:{SOP_PYTHON:python},requireData:true});
+  const defaultServer=await runPreview(['--sop-source',original,'--shared-config',rules,'--port',String(defaultPort),'--backend-port',String(defaultBackend)],{root,env:{SOP_PYTHON_PATH:python},requireData:true});
   try {
     const result=await fetch(`http://127.0.0.1:${defaultPort}/sop/api/provenance`).then(r=>r.json());
     assert.ok(result.planPath.startsWith(path.join(root,'artifacts')));
@@ -228,6 +240,7 @@ HTTPServer(('127.0.0.1',a.port),Handler).serve_forever()
   } finally {await new Promise(resolve=>defaultServer.close(resolve));}
   assert.deepEqual(await readFile(serverFile),sourceBefore);
   assert.deepEqual(await readFile(path.join(seed,'data','sales.json')),seedBefore);
+  assert.deepEqual(await readFile(seedDb),seedDbBefore);
   assert.equal(await readFile(path.join(shared,'current-sales.xlsx'),'utf8'),'shared sales');
   assert.equal(await readFile(path.join(shared,'SOP计划维护.xlsx'),'utf8'),'shared plan must not be used');
   assert.equal(await readFile(path.join(seed,'input_file','SOP计划维护.xlsx'),'utf8'),'selected project plan');

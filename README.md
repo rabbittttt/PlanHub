@@ -32,6 +32,10 @@ npm test
 npm start
 ```
 
+本地预览为 SQLite 快照、后端及其 Python 子任务选择同一个已验证的解释器。选择顺序为：显式 `SOP_PYTHON_PATH`、兼容旧配置的 `SOP_PYTHON`、原 SOP 的 `.venv`、门户的 `.venv`、门户父目录的 `.venv`、PATH 中的 `python` / `python3`；不再自动选择 Codex 缓存里的独立 Python。`SOP_PYTHON_PATH` 的相对路径以门户根目录为基准，例如 `../.venv/Scripts/python.exe`。旧 `SOP_PYTHON` 可使用 PATH 命令名，含目录的相对路径同样按门户根目录解析。找到虚拟环境但版本或依赖不合要求时明确报错，先修复该环境，不静默改用另一份 Python。启动前检查 Python 3.10+ 和 `openpyxl`。生产发布仍使用部署包自己的 `runtime/sop-venv`，不依赖开发机工作区。
+
+迁移到新电脑时安装 Python 3.10+ 和 Node.js 20+（含 npm），再从门户根目录运行 `powershell -NoProfile -ExecutionPolicy RemoteSigned -File '../SOP维护/setup-environment.ps1'`，按 SOP 的 requirements 重建项目 `.venv`，然后 `npm start`。虚拟环境包含本机路径，不复制旧 `.venv`；项目文件和数据目录可保持相对布局一起迁移。
+
 默认从上述原 SOP 项目启动 `server.py`，只把数据在线备份到门户忽略的临时目录，可进行维护、导入导出等操作，修改仅保存在隔离快照，不会回写原项目；重新启动会创建新快照。业务实现始终来自原项目；数据快照不是第二套源码。保持启动窗口运行，打开终端打印的地址。端口已被旧进程占用时，在旧窗口按 Ctrl+C 后重启，或指定其他端口。
 
 销售来源优先采用 `SOP_SOURCE_DIR`、`SHARED_DATA_ROOT/订单汇总`；这些环境变量的相对路径均按门户根目录解析，例如 `SHARED_DATA_ROOT=../共享数据`，也兼容绝对路径。未设置这两个变量时，显式 `--seed-from` 或本地配置 `dataRoot` 使用所选数据项目的 `input_file/`，保留历史或测试种子的完整来源。仅默认数据模式自动读取 SOP 同级 `../共享数据/订单汇总`，且只在共享根不存在时兼容原项目的 `input_file/`；共享根存在但缺少 `订单汇总/` 时会报错，不读取旧副本。预览启动时将销售文件复制到隔离目录，计划表优先按环境变量 `SOP_PLAN_DIR` 选择（相对值按门户根目录解析）；未指定时，显式种子始终从其 `input_file/SOP计划维护.xlsx` 复制，默认数据模式则从共享根 `SOP计划/SOP计划维护.xlsx` 复制（无共享根时兼容原项目 `input_file/`），数据库和规则仍按既有配置建立快照。共享源的后续更新需重启预览获取；网关 `plan_file` 始终指向隔离副本，所有维护操作只写隔离快照，不回写共享文件或原项目。

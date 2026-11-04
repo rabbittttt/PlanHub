@@ -7,6 +7,7 @@ import net from 'node:net';
 import {parseArgs} from 'node:util';
 import {fileURLToPath,pathToFileURL} from 'node:url';
 import {createServer} from './dev-server.mjs';
+import {resolveSopPython} from './sop-python.mjs';
 
 const ROOT=path.resolve(path.dirname(fileURLToPath(import.meta.url)),'..');
 
@@ -111,11 +112,13 @@ export async function runPreview(args=process.argv.slice(2),options={}) {
   await assertPreviewPortsAvailable(values.port,values.backendPort);
   const settings=await resolvePreviewSettings(args,options);
   const {root,sourceRoot,dataRoot,salesSourceDir,planSourceFile,sharedConfig,port,backendPort}=settings;
+  const runtimeEnv={...process.env,...(options.env||{})};
+  const python=resolveSopPython({root,sourceRoot,env:runtimeEnv});
+  const pythonEnv={...runtimeEnv,SOP_PYTHON_PATH:python,PYTHONIOENCODING:'utf-8',PYTHONDONTWRITEBYTECODE:'1'};
   await mkdir(path.join(root,'artifacts'),{recursive:true});
   const preview=await mkdtemp(path.join(root,'artifacts','sop-preview-'));
   const data=path.join(preview,'data'),source=path.join(preview,'input'),config=path.join(preview,'config');
   for(const dir of [data,source,config])await mkdir(dir);
-  const python=(options.env||process.env).SOP_PYTHON||'python';
   const rules=path.join(config,'shared_config.py');
   if(dataRoot) {
     await copyFile(path.join(dataRoot,'data','sales.json'),path.join(data,'sales.json'));
@@ -133,7 +136,7 @@ export async function runPreview(args=process.argv.slice(2),options={}) {
     try {
       await stat(originalDb);
       const script="import sqlite3,pathlib,sys; src=sqlite3.connect(pathlib.Path(sys.argv[1]).resolve().as_uri()+'?mode=ro',uri=True); dst=sqlite3.connect(sys.argv[2]); src.backup(dst); dst.close(); src.close()";
-      const result=spawnSync(python,['-c',script,originalDb,path.join(data,'sop.sqlite3')],{stdio:'inherit',timeout:30000});
+      const result=spawnSync(python,['-B','-c',script,originalDb,path.join(data,'sop.sqlite3')],{cwd:root,env:pythonEnv,stdio:'inherit',timeout:30000,windowsHide:true});
       if(result.error||result.status!==0)throw new Error('无法建立隔离的 SQLite 在线备份，原数据库未被写入。');
     } catch(error) {if(error.code!=='ENOENT')throw error;}
   } else {
@@ -144,7 +147,7 @@ export async function runPreview(args=process.argv.slice(2),options={}) {
   const gateway={base_path:'/sop',public_origin:`http://127.0.0.1:${port}`,proxy_secret_env:'SOP_DEV_PROXY_SECRET',allow_writes:true,data_dir:data,source_dir:source,shared_config:rules,plan_file:path.join(source,'SOP计划维护.xlsx')};
   const gatewayFile=path.join(config,'gateway.json');
   await writeFile(gatewayFile,JSON.stringify(gateway,null,2));
-  const env={...process.env,...(options.env||{}),SOP_DEV_PROXY_SECRET:secret,SOP_EXCEL_ENGINE:'python',PYTHONUNBUFFERED:'1',PYTHONIOENCODING:'utf-8',PYTHONDONTWRITEBYTECODE:'1'};
+  const env={...pythonEnv,SOP_DEV_PROXY_SECRET:secret,SOP_EXCEL_ENGINE:'python',PYTHONUNBUFFERED:'1'};
   const child=spawn(python,[path.join(sourceRoot,'server.py'),'--port',String(backendPort),'--gateway-config',gatewayFile],{cwd:sourceRoot,env,stdio:['ignore','inherit','inherit'],windowsHide:true});
   let failed=false,stopping=false;
   child.on('error',error=>{console.error(error.message);failed=true;});
@@ -172,6 +175,7 @@ export async function runPreview(args=process.argv.slice(2),options={}) {
   } catch(error) {closeChild();throw error;}
   console.log(`SOP 门户预览：http://127.0.0.1:${port}/#/app/sop`);
   console.log(`SOP 唯一源码：${sourceRoot}`);
+  console.log(`SOP Python：${python}`);
   console.log(dataRoot?`使用隔离业务快照，数据来源：${dataRoot}`:'使用演示数据，仅供界面验收。');
   if(dataRoot)console.log(`销售来源已复制到隔离快照：${salesSourceDir}`);
   console.log(`本地预览身份不代表 Windows 域认证；操作仅保存到隔离快照：${preview}，不会回写原项目。重新启动会创建新快照。Ctrl+C 停止。`);
