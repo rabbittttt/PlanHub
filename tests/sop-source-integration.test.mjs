@@ -51,11 +51,11 @@ test('the original sibling project is the default source and seed-from changes o
   const rules=path.join(base,'订单分析','scripts','config','shared_config.py');
   await mkdir(path.dirname(rules),{recursive:true});await writeFile(rules,'MERGE_GROUPS = {}\n');
   const seed=await data(path.join(base,'separate-data'),'seed');
-  const settings=await resolvePreviewSettings(['--seed-from',seed],{root,env:{},requireData:true});
+  const settings=await resolvePreviewSettings(['--snapshot','--seed-from',seed],{root,env:{},requireData:true});
   assert.equal(settings.sourceRoot,original);
   assert.equal(settings.dataRoot,seed);
   assert.equal(settings.sharedConfig,rules);
-  const forwarded=await localPreviewArgs(['--seed-from',seed],root,{});
+  const forwarded=await localPreviewArgs(['--snapshot','--seed-from',seed],root,{});
   assert.equal(forwarded[forwarded.indexOf('--sop-source')+1],original);
   assert.equal(forwarded[forwarded.indexOf('--seed-from')+1],seed);
 });
@@ -89,7 +89,7 @@ test('relative CLI paths and the default template resolve against the portal roo
   const shared=path.join(base,'共享数据','订单汇总');await mkdir(shared,{recursive:true});
   // The test process cwd is outside this disposable portal tree.
   assert.notEqual(path.resolve(process.cwd()),root);
-  const settings=await resolvePreviewSettings(['--sop-source','../SOP维护','--seed-from','../historical-data',
+  const settings=await resolvePreviewSettings(['--sop-source','../SOP维护','--snapshot','--seed-from','../historical-data',
     '--shared-config','../订单分析/scripts/config/shared_config.py'],{root,env:{},requireData:true});
   assert.equal(settings.sourceRoot,original);assert.equal(settings.dataRoot,seed);assert.equal(settings.sharedConfig,rules);
   await mkdir(path.join(root,'config.local'));
@@ -140,7 +140,7 @@ test('explicit seed and local dataRoot keep their sales inputs when default shar
   assert.equal(defaultArgs.includes('--seed-from'),false);
   assert.equal((await resolve(defaultArgs)).salesSourceDir,orders);
   assert.equal((await resolve(defaultArgs)).planSourceFile,path.join(shared,'SOP计划','SOP计划维护.xlsx'));
-  const seedArgs=[...args,'--seed-from',seed];
+  const seedArgs=[...args,'--snapshot','--seed-from',seed];
   assert.equal((await resolve(seedArgs)).salesSourceDir,path.join(seed,'input_file'));
   assert.equal((await resolve(seedArgs)).planSourceFile,path.join(seed,'input_file','SOP计划维护.xlsx'));
   const forwarded=await localPreviewArgs(seedArgs,root,{});
@@ -210,7 +210,7 @@ HTTPServer(('127.0.0.1',a.port),Handler).serve_forever()
   const sourceBefore=await readFile(serverFile);
   const seedBefore=await readFile(path.join(seed,'data','sales.json'));
   const port=await freePort();let backendPort=await freePort();while(backendPort===port)backendPort=await freePort();
-  const server=await runPreview(['--sop-source',original,'--seed-from',seed,'--shared-config',rules,'--port',String(port),'--backend-port',String(backendPort)],{root,env:{SOP_PYTHON_PATH:python,SOP_PYTHON:'obsolete-python-command',SHARED_DATA_ROOT:path.dirname(shared)}});
+  const server=await runPreview(['--sop-source',original,'--snapshot','--seed-from',seed,'--shared-config',rules,'--port',String(port),'--backend-port',String(backendPort)],{root,env:{SOP_PYTHON_PATH:python,SOP_PYTHON:'obsolete-python-command',SHARED_DATA_ROOT:path.dirname(shared)}});
   try {
     const result=await fetch(`http://127.0.0.1:${port}/sop/api/provenance`).then(r=>r.json());
     assert.equal(result.codeRoot,original);assert.equal(result.cwd,original);
@@ -235,7 +235,7 @@ HTTPServer(('127.0.0.1',a.port),Handler).serve_forever()
     assert.equal(JSON.parse(await readFile(path.join(result.dataPath,'sales.json'),'utf8')).marker,'preview-edit');
   } finally {await new Promise(resolve=>server.close(resolve));}
   const defaultPort=await freePort();let defaultBackend=await freePort();while(defaultBackend===defaultPort)defaultBackend=await freePort();
-  const defaultServer=await runPreview(['--sop-source',original,'--shared-config',rules,'--port',String(defaultPort),'--backend-port',String(defaultBackend)],{root,env:{SOP_PYTHON_PATH:python},requireData:true});
+  const defaultServer=await runPreview(['--snapshot','--sop-source',original,'--shared-config',rules,'--port',String(defaultPort),'--backend-port',String(defaultBackend)],{root,env:{SOP_PYTHON_PATH:python},requireData:true});
   try {
     const result=await fetch(`http://127.0.0.1:${defaultPort}/sop/api/provenance`).then(r=>r.json());
     assert.ok(result.planPath.startsWith(path.join(root,'artifacts')));

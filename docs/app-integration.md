@@ -12,7 +12,7 @@
 
 - 默认 SOP 项目候选位置为 `../SOP维护`；不同机器先查明原项目再填写，不能为了满足示例而移动源码或创建副本。
 - `integration/sop.example.json` 使用相对路径；复制到 `config.local/sop.json` 后仍按门户根目录解析，而非 `config.local/`。
-- CLI 示例从门户根目录执行；门户的 `--sop-source`、`--seed-from`、`--shared-config` 即使从其他目录调用，也按门户根目录解析相对值。模板省略 `dataRoot` 以采用共享输入；仅历史或测试种子配置该字段。其他项目按自身工具规则核对解析基准。
+- CLI 示例从门户根目录执行；门户的 `--sop-source`、`--data-root`、`--shared-config` 即使从其他目录调用，也按门户根目录解析相对值。模板省略 `dataRoot` 以采用共享输入；需独立持久数据项目时配置该字段；历史测试使用显式 `--snapshot --seed-from`。其他项目按自身工具规则核对解析基准。
 - 部署模板的 `DeploymentRoot` 可相对配置文件目录填写；SOP 部署模板的机密与业务路径按解析后的发布根处理，最终生成绝对路径，详见[部署路径说明](sop-intranet.md)。SOP 构建器的 `--destination`、IIS 物理路径及 SOP 运行时网关路径仍要求绝对值，通过 `Resolve-Path`、`Join-Path`、`GetFullPath` 从当前环境生成，不把某台机器的盘符写进指南。
 
 ## 1. 先确认接入的是什么
@@ -163,7 +163,7 @@ powershell -NoProfile -ExecutionPolicy RemoteSigned -File .\deploy\New-Deploymen
 
 ### 当前动态预览的实际边界
 
-`npm start` / `npm run dev` 启动原 SOP 并使用可操作的隔离数据快照（不回写原项目，重启创建新快照）；`npm run dev:sop` 可使用演示数据。同时按 `integration/apps.json` 启动或复用已登记的独立 HTTP 服务；这些服务的数据行为由原项目决定，不能假定都有隔离快照。
+`npm start` / `npm run dev` / `npm run dev:sop` 默认启动原 SOP 并直接使用原项目的持久数据，维护后重启保留；仅显式 `--snapshot` 使用隔离测试副本，演示另加 `--demo`。参见[SOP 持久数据接入](sop-persistence.md)。同时按 `integration/apps.json` 启动或复用已登记的独立 HTTP 服务；这些服务的数据行为由原项目决定，不能假定都有隔离快照。
 
 `createServer` 保留 SOP 专用桥接，并支持配置中的固定回环 HTTP 代理。使用 type=proxy、target、stripPrefix、rootRoutes、healthPath、healthKeys 及可选 start；可参照[数据速查接入](forecast-quicklook-integration.md)。没有登记的根 API 不转发，重复根路由和门户身份接口冲突会拒绝启动。不得复用 SOP 身份头或密钥。WebSocket 尚未实现，需要的应用另行实现并专项测试。
 

@@ -54,7 +54,7 @@ IIS 的 `/sop` 独立 Application 使用 .NET4 Integrated、Windows Authenticati
 
 本次仅更新源码、模板和本地预览，没有执行 IIS Apply。已有服务器必须先保留配置与发布物备份，由管理员重新构建唯一 SOP 原项目发布物及其身份桥接模块，并审阅新配置。将旧 `WriteGroups` 字段移除，显式配置服务级 `AllowWrites: true`；重新生成匹配的 `sop-auth.json` 与 `sop.json` 后再重启服务。不能只改一个开关或继续使用旧 DLL。旧字段、缺失开关或两端开关不一致会被拒绝，不会静默扩大旧配置的写入范围。
 
-本地 `npm start` 与 `npm run dev:sop` 使用可写的隔离快照；修改不会回写原 SOP 数据，重启创建新快照。预览身份只用于本机验收，不能作为真实 Windows 登录证明。
+本地 `npm start`、`npm run dev` 与 `npm run dev:sop` 默认直接使用原 SOP 持久数据库和共享计划表，重启保留维护结果；仅显式 `--snapshot` 才创建测试副本。详见[持久数据接入](sop-persistence.md)。本机代理身份不代表真实 Windows 登录证明。
 
 ## 部门统一功能验收（2026-11-03）
 

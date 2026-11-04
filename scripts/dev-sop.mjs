@@ -1,4 +1,4 @@
-// Development-only portal integration. SOP code is always loaded from its own project.
+// Local portal integration. SOP code and persistent data belong to the independent project.
 import {mkdir,mkdtemp,writeFile,copyFile,readdir,stat,readFile,realpath} from 'node:fs/promises';
 import {existsSync} from 'node:fs';
 import {spawn,spawnSync} from 'node:child_process';
@@ -16,10 +16,14 @@ const ROOT=path.resolve(path.dirname(fileURLToPath(import.meta.url)),'..');
 
 export function previewOptions(args=process.argv.slice(2)) {
   const {values}=parseArgs({args,options:{
-    'sop-source':{type:'string'},'seed-from':{type:'string'},'shared-config':{type:'string'},
+    'sop-source':{type:'string'},'seed-from':{type:'string'},'data-root':{type:'string'},'shared-config':{type:'string'},
+    snapshot:{type:'boolean'},demo:{type:'boolean'},
     port:{type:'string'},'backend-port':{type:'string'},help:{type:'boolean'}
   },strict:true,allowPositionals:false});
-  for(const name of ['sop-source','seed-from','shared-config'])if(values[name]!==undefined&&!values[name].trim())throw new Error(`--${name} 必须指定非空路径。`);
+  for(const name of ['sop-source','seed-from','data-root','shared-config'])if(values[name]!==undefined&&!values[name].trim())throw new Error(`--${name} 必须指定非空路径。`);
+  if(values['seed-from']&&!values.snapshot)throw new Error('--seed-from 仅用于 --snapshot 测试；日常持久数据目录请用 --data-root。');
+  if(values['seed-from']&&values['data-root'])throw new Error('--seed-from 与 --data-root 不能同时使用。');
+  if(values.demo&&(!values.snapshot||values['seed-from']||values['data-root']))throw new Error('--demo 只允许与 --snapshot 一起使用，不能指定真实数据来源。');
   const port=Number(values.port??'4173'),backendPort=Number(values['backend-port']??'8877');
   if(![port,backendPort].every(p=>Number.isInteger(p)&&p>0&&p<65536)||port===backendPort)throw new Error('门户和 SOP 端口必须为两个不同的 1–65535 整数。');
   return {...values,port,backendPort};
@@ -49,7 +53,7 @@ async function integrationConfig(root) {
 }
 
 /** Resolve code and data independently; no portal-owned business source fallback exists. */
-export async function resolvePreviewSettings(args=process.argv.slice(2),{root=ROOT,env=process.env,requireData=false}={}) {
+export async function resolvePreviewSettings(args=process.argv.slice(2),{root=ROOT,env=process.env}={}) {
   const values=previewOptions(args);
   if(values.help)return null;
   root=await realpath(path.resolve(root));
@@ -66,8 +70,13 @@ export async function resolvePreviewSettings(args=process.argv.slice(2),{root=RO
     await requirePath(path.join(sourceRoot,'sop','gateway.py'),'SOP gateway 接入模块');
     await requirePath(path.join(sourceRoot,'web','index.html'),'SOP 页面入口');
   } catch(error) {throw new Error(`${error.message}\n请先把必要的 gateway 适配合入独立 SOP 项目；启动器不会回退到另一套业务源码。`);}
-  const dataRoot=configured(values['seed-from']||local.dataRoot)||(requireData?sourceRoot:null);
-  const dataRootExplicit=Boolean(values['seed-from']||local.dataRoot);
+  const dataRoot=values.demo?null:(configured(values['data-root']||values['seed-from']||local.dataRoot)||sourceRoot);
+  const dataRootExplicit=!values.demo&&Boolean(values['data-root']||values['seed-from']||local.dataRoot);
+  const dataDirectory=dataRoot?(configured(env.SOP_DATA_DIR)||path.join(dataRoot,'data')):null;
+  if(!values.snapshot&&dataDirectory) {
+    const rel=path.relative(path.join(root,'artifacts'),dataDirectory);
+    if(rel===''||(!path.isAbsolute(rel)&&rel!=='..'&&!rel.startsWith('..'+path.sep)))throw new Error('日常持久数据不能指向门户 artifacts 临时快照；请配置原 SOP 数据目录。');
+  }
   const sharedConfig=configured(values['shared-config']||env.SOP_SHARED_CONFIG||local.sharedConfig)||path.resolve(sourceRoot,'..','订单分析','scripts','config','shared_config.py');
   let salesSourceDir=dataRoot?path.join(dataRoot,'input_file'):null;
   let planSourceFile=dataRoot?path.join(dataRoot,'input_file','SOP计划维护.xlsx'):null;
@@ -85,12 +94,12 @@ export async function resolvePreviewSettings(args=process.argv.slice(2),{root=RO
     const planDirectory=configured(env.SOP_PLAN_DIR)||(!dataRootExplicit&&useShared?path.join(sharedRoot,'SOP计划'):null);
     if(planDirectory)planSourceFile=path.join(planDirectory,'SOP计划维护.xlsx');
     try {
-      await requirePath(path.join(dataRoot,'data','sales.json'),'SOP 数据快照');
+      await requirePath(path.join(dataDirectory,'sales.json'),'SOP 销售数据');
       await requirePath(salesSourceDir,'SOP 销售来源目录',true);
       await requirePath(sharedConfig,'共享业务规则');
-    } catch(error) {throw new Error(`${error.message}\n--sop-source 选择运行代码，--seed-from 仅选择数据来源；请核对实际路径。不会自动改用演示数据。`);}
+    } catch(error) {throw new Error(`${error.message}\n--sop-source 选择运行代码，--data-root 选择持久数据项目，--snapshot --seed-from 仅用于测试；请核对实际路径。不会自动改用演示数据。`);}
   }
-  return {root,sourceRoot:resolvedSource,dataRoot,dataRootExplicit,salesSourceDir,planSourceFile,sharedConfig,port:values.port,backendPort:values.backendPort};
+  return {root,sourceRoot:resolvedSource,dataRoot,dataDirectory,dataRootExplicit,snapshot:Boolean(values.snapshot),demo:Boolean(values.demo),salesSourceDir,planSourceFile,sharedConfig,port:values.port,backendPort:values.backendPort};
 }
 
 export async function assertPreviewPortsAvailable(port,backendPort) {
@@ -114,7 +123,7 @@ export async function runPreview(args=process.argv.slice(2),options={}) {
   // Never inspect/copy business data or launch a process when either listener is busy.
   await assertPreviewPortsAvailable(values.port,values.backendPort);
   const settings=await resolvePreviewSettings(args,options);
-  const {root,sourceRoot,dataRoot,salesSourceDir,planSourceFile,sharedConfig,port,backendPort}=settings;
+  const {root,sourceRoot,dataRoot,dataDirectory,snapshot,salesSourceDir,planSourceFile,sharedConfig,port,backendPort}=settings;
   const runtimeEnv={...process.env,...(options.env||{})};
   const applications=await loadAppIntegrations(root);
   for(const [id,app] of Object.entries(applications))if(app.type==='proxy'&&[port,backendPort].includes(Number(new URL(app.target).port||80)))throw new Error(id+' 服务端口不能与门户或 SOP 端口相同');
@@ -126,35 +135,41 @@ export async function runPreview(args=process.argv.slice(2),options={}) {
   if(existsSync(path.join(pythonEnvironment,'pyvenv.cfg')))pythonEnv.VIRTUAL_ENV=pythonEnvironment;
   else delete pythonEnv.VIRTUAL_ENV;
   await mkdir(path.join(root,'artifacts'),{recursive:true});
-  const preview=await mkdtemp(path.join(root,'artifacts','sop-preview-'));
-  const data=path.join(preview,'data'),source=path.join(preview,'input'),config=path.join(preview,'config');
-  for(const dir of [data,source,config])await mkdir(dir);
-  const rules=path.join(config,'shared_config.py');
-  if(dataRoot) {
-    await copyFile(path.join(dataRoot,'data','sales.json'),path.join(data,'sales.json'));
-    try {await copyFile(path.join(dataRoot,'data','source_settings.json'),path.join(data,'source_settings.json'));}
-    catch(error) {if(error.code!=='ENOENT')throw error;}
-    for(const entry of await readdir(salesSourceDir,{withFileTypes:true})) {
-      const name=entry.name.toLowerCase();
-      if(entry.isFile()&&name.endsWith('.xlsx')&&!entry.name.startsWith('~$')&&!name.endsWith('.pending.xlsx')&&name!=='sop计划维护.xlsx')await copyFile(path.join(salesSourceDir,entry.name),path.join(source,entry.name));
+  const preview=await mkdtemp(path.join(root,'artifacts',snapshot?'sop-preview-':'sop-runtime-'));
+  const config=path.join(preview,'config');
+  await mkdir(config);
+  const data=snapshot?path.join(preview,'data'):dataDirectory;
+  const source=snapshot?path.join(preview,'input'):salesSourceDir;
+  const rules=snapshot?path.join(config,'shared_config.py'):sharedConfig;
+  const plan=snapshot?path.join(source,'SOP计划维护.xlsx'):planSourceFile;
+  if(snapshot) {
+    for(const dir of [data,source])await mkdir(dir);
+    if(dataRoot) {
+      await copyFile(path.join(dataDirectory,'sales.json'),path.join(data,'sales.json'));
+      try {await copyFile(path.join(dataDirectory,'source_settings.json'),path.join(data,'source_settings.json'));}
+      catch(error) {if(error.code!=='ENOENT')throw error;}
+      for(const entry of await readdir(salesSourceDir,{withFileTypes:true})) {
+        const name=entry.name.toLowerCase();
+        if(entry.isFile()&&name.endsWith('.xlsx')&&!entry.name.startsWith('~$')&&!name.endsWith('.pending.xlsx')&&name!=='sop计划维护.xlsx')await copyFile(path.join(salesSourceDir,entry.name),path.join(source,entry.name));
+      }
+      // The source plan may be shared; the gateway always receives the isolated copy.
+      try {await copyFile(planSourceFile,path.join(source,'SOP计划维护.xlsx'));}
+      catch(error) {if(error.code!=='ENOENT')throw error;}
+      await copyFile(sharedConfig,rules);
+      const originalDb=path.join(dataDirectory,'sop.sqlite3');
+      try {
+        await stat(originalDb);
+        const script="import sqlite3,pathlib,sys; src=sqlite3.connect(pathlib.Path(sys.argv[1]).resolve().as_uri()+'?mode=ro',uri=True); dst=sqlite3.connect(sys.argv[2]); src.backup(dst); dst.close(); src.close()";
+        const result=spawnSync(python,['-B','-c',script,originalDb,path.join(data,'sop.sqlite3')],{cwd:root,env:pythonEnv,stdio:'inherit',timeout:30000,windowsHide:true});
+        if(result.error||result.status!==0)throw new Error('无法建立隔离的 SQLite 在线备份，原数据库未被写入。');
+      } catch(error) {if(error.code!=='ENOENT')throw error;}
+    } else {
+      await writeFile(rules,'MERGE_GROUPS = {}\n');
+      await writeFile(path.join(data,'sales.json'),JSON.stringify({meta:{notes:['仅供本地界面验收的演示数据，不代表业务数据。']},products:[{id:'preview',brand:'演示',model:'本地验收 2026款',version:'示例版本'}],sales:[]}));
     }
-    // The source plan may be shared; the gateway always receives the isolated copy.
-    try {await copyFile(planSourceFile,path.join(source,'SOP计划维护.xlsx'));}
-    catch(error) {if(error.code!=='ENOENT')throw error;}
-    await copyFile(sharedConfig,rules);
-    const originalDb=path.join(dataRoot,'data','sop.sqlite3');
-    try {
-      await stat(originalDb);
-      const script="import sqlite3,pathlib,sys; src=sqlite3.connect(pathlib.Path(sys.argv[1]).resolve().as_uri()+'?mode=ro',uri=True); dst=sqlite3.connect(sys.argv[2]); src.backup(dst); dst.close(); src.close()";
-      const result=spawnSync(python,['-B','-c',script,originalDb,path.join(data,'sop.sqlite3')],{cwd:root,env:pythonEnv,stdio:'inherit',timeout:30000,windowsHide:true});
-      if(result.error||result.status!==0)throw new Error('无法建立隔离的 SQLite 在线备份，原数据库未被写入。');
-    } catch(error) {if(error.code!=='ENOENT')throw error;}
-  } else {
-    await writeFile(rules,'MERGE_GROUPS = {}\n');
-    await writeFile(path.join(data,'sales.json'),JSON.stringify({meta:{notes:['仅供本地界面验收的演示数据，不代表业务数据。']},products:[{id:'preview',brand:'演示',model:'本地验收 2026款',version:'示例版本'}],sales:[]}));
   }
   const secret=crypto.randomBytes(32).toString('hex');
-  const gateway={base_path:'/sop',public_origin:`http://127.0.0.1:${port}`,proxy_secret_env:'SOP_DEV_PROXY_SECRET',allow_writes:true,data_dir:data,source_dir:source,shared_config:rules,plan_file:path.join(source,'SOP计划维护.xlsx')};
+  const gateway={base_path:'/sop',public_origin:`http://127.0.0.1:${port}`,proxy_secret_env:'SOP_DEV_PROXY_SECRET',allow_writes:true,data_dir:data,source_dir:source,shared_config:rules,plan_file:plan};
   const gatewayFile=path.join(config,'gateway.json');
   await writeFile(gatewayFile,JSON.stringify(gateway,null,2));
   const env={...pythonEnv,SOP_DEV_PROXY_SECRET:secret,SOP_EXCEL_ENGINE:'python',PYTHONUNBUFFERED:'1'};
@@ -188,16 +203,21 @@ export async function runPreview(args=process.argv.slice(2),options={}) {
   console.log(`SOP 门户预览：http://127.0.0.1:${port}/#/app/sop`);
   console.log(`SOP 唯一源码：${sourceRoot}`);
   console.log(`SOP Python：${python}`);
-  console.log(dataRoot?`使用隔离业务快照，数据来源：${dataRoot}`:'使用演示数据，仅供界面验收。');
-  if(dataRoot)console.log(`销售来源已复制到隔离快照：${salesSourceDir}`);
-  console.log(`本地预览身份不代表 Windows 域认证；操作仅保存到隔离快照：${preview}，不会回写原项目。重新启动会创建新快照。Ctrl+C 停止。`);
+  if(snapshot) {
+    console.log(dataRoot?`显式测试模式：使用隔离快照，数据来源：${dataRoot}`:'显式演示模式，仅供测试。');
+    console.log(`测试数据仅保存在 ${preview}，不回写原项目。`);
+  } else {
+    console.log(`持久数据：${data}；维护结果直接保存，重启继续使用。`);
+    console.log(`销售来源：${source}；计划维护表：${plan}`);
+  }
+  console.log('当前为本机入口，代理身份不代表 Windows 域认证。Ctrl+C 停止。');
   process.once('SIGINT',stop);process.once('SIGTERM',stop);
   return server;
 }
 
 if(process.argv[1]&&import.meta.url===pathToFileURL(path.resolve(process.argv[1])).href) {
   try {
-    if(previewOptions().help)console.log('npm run dev:sop -- [--sop-source <独立SOP源码或发布目录>] [--seed-from <数据项目>] [--shared-config <规则文件>] [--port 4173 --backend-port 8877]\n无数据来源时仅使用演示数据，运行代码仍来自独立 SOP 项目。');
+    if(previewOptions().help)console.log('npm run dev:sop -- [--sop-source <独立SOP项目>] [--data-root <持久数据项目>] [--shared-config <规则文件>] [--port 4173 --backend-port 8877]\n默认直接使用原项目持久数据。只有显式 --snapshot 才使用测试副本；--snapshot --demo 使用演示数据。');
     else await runPreview();
   } catch(error) {console.error(`本地门户未启动：${error.message}`);process.exitCode=1;}
 }

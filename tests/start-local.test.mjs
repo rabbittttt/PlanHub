@@ -22,7 +22,7 @@ test('occupied portal or SOP ports fail before snapshot reads or Python startup'
     for(const [port,backend] of [[busy,free],[free,busy]]) {
       const result=spawnSync(process.execPath,[path.join(root,'scripts','dev-sop.mjs'),
         '--port',String(port),'--backend-port',String(backend),
-        '--seed-from',path.join(root,'artifacts','nonexistent-preflight-seed')],
+        '--snapshot','--seed-from',path.join(root,'artifacts','nonexistent-preflight-seed')],
       {cwd:root,encoding:'utf8',timeout:5000});
       assert.equal(result.error,undefined);
       assert.equal(result.status,1);
