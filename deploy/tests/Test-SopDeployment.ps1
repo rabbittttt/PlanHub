@@ -8,7 +8,7 @@ $project = Split-Path -Parent $deploy
 . (Join-Path $deploy 'Sop.Common.ps1')
 . (Join-Path $deploy 'Sop.Release.ps1')
 if (-not $SopSourceRoot) { $SopSourceRoot = $env:SOP_SOURCE_ROOT }
-if (-not $SopSourceRoot) { $SopSourceRoot = Join-Path (Split-Path -Parent $project) 'SOP看板' }
+if (-not $SopSourceRoot) { $SopSourceRoot = Join-Path (Split-Path -Parent $project) 'SOP维护' }
 $SopSourceRoot = [IO.Path]::GetFullPath($SopSourceRoot)
 foreach ($required in @('sop_gateway.py', 'scripts\build_release.py', 'integration\iis\SopIdentityBridge.cs')) {
     if (-not (Test-Path -LiteralPath (Join-Path $SopSourceRoot $required) -PathType Leaf)) { throw "Specify the authoritative integrated SOP project with SopSourceRoot. Missing: $required" }

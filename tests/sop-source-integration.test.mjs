@@ -39,7 +39,7 @@ async function fixture(t) {
 
 test('the original sibling project is the default source and seed-from changes only data',async t=>{
   const {base,root}=await fixture(t);
-  const original=await source(path.join(base,'SOP看板'));
+  const original=await source(path.join(base,'SOP维护'));
   await data(original,'original');
   const rules=path.join(base,'订单分析','scripts','config','shared_config.py');
   await mkdir(path.dirname(rules),{recursive:true});await writeFile(rules,'MERGE_GROUPS = {}\n');
@@ -75,14 +75,14 @@ test('source configuration precedence is explicit CLI, environment, local config
 
 test('relative CLI paths and the default template resolve against the portal root',async t=>{
   const {base,root}=await fixture(t);
-  const original=await source(path.join(base,'SOP看板'));await data(original);
+  const original=await source(path.join(base,'SOP维护'));await data(original);
   const seed=await data(path.join(base,'historical-data'));
   const rules=path.join(base,'订单分析','scripts','config','shared_config.py');
   await mkdir(path.dirname(rules),{recursive:true});await writeFile(rules,'MERGE_GROUPS = {}\n');
   const shared=path.join(base,'共享数据','订单汇总');await mkdir(shared,{recursive:true});
   // The test process cwd is outside this disposable portal tree.
   assert.notEqual(path.resolve(process.cwd()),root);
-  const settings=await resolvePreviewSettings(['--sop-source','../SOP看板','--seed-from','../historical-data',
+  const settings=await resolvePreviewSettings(['--sop-source','../SOP维护','--seed-from','../historical-data',
     '--shared-config','../订单分析/scripts/config/shared_config.py'],{root,env:{},requireData:true});
   assert.equal(settings.sourceRoot,original);assert.equal(settings.dataRoot,seed);assert.equal(settings.sharedConfig,rules);
   await mkdir(path.join(root,'config.local'));
@@ -102,7 +102,7 @@ test('missing gateway and the removed portal copy are rejected instead of silent
 
 test('shared sales inputs are selected independently from project state without stale fallback',async t=>{
   const {base,root}=await fixture(t);
-  const original=await source(path.join(base,'SOP看板'));
+  const original=await source(path.join(base,'SOP维护'));
   await data(original);
   const rules=path.join(base,'rules.py');await writeFile(rules,'MERGE_GROUPS = {}\n');
   const args=['--shared-config',rules];
@@ -122,7 +122,7 @@ test('shared sales inputs are selected independently from project state without 
 
 test('explicit seed and local dataRoot keep their sales inputs when default shared inputs coexist',async t=>{
   const {base,root}=await fixture(t);
-  const original=await source(path.join(base,'SOP看板'));await data(original);
+  const original=await source(path.join(base,'SOP维护'));await data(original);
   const seed=await data(path.join(base,'historical-data'));
   const shared=path.join(base,'共享数据');const orders=path.join(shared,'订单汇总');
   await mkdir(orders,{recursive:true});

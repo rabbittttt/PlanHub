@@ -51,7 +51,7 @@ export async function resolvePreviewSettings(args=process.argv.slice(2),{root=RO
   root=await realpath(path.resolve(root));
   const local=await integrationConfig(root);
   const configured=(value)=>value?path.resolve(root,value):null;
-  const sourceRoot=configured(values['sop-source']||env.SOP_SOURCE_ROOT||local.sourceRoot)||path.resolve(root,'..','SOP看板');
+  const sourceRoot=configured(values['sop-source']||env.SOP_SOURCE_ROOT||local.sourceRoot)||path.resolve(root,'..','SOP维护');
   try {await requirePath(path.join(sourceRoot,'server.py'),'独立 SOP 源码入口');}
   catch(error) {throw new Error(`${error.message}\n请用 --sop-source 或 SOP_SOURCE_ROOT 指定唯一 SOP 原项目，不会使用门户内的旧副本。`);}
   const resolvedSource=await realpath(sourceRoot);
