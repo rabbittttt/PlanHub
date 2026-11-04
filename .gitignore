@@ -28,3 +28,6 @@ config.local/
 *.xlsx
 *.xlsm
 *.xls
+
+# Local update helper.
+update_script.bat
