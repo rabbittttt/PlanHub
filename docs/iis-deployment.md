@@ -46,7 +46,7 @@ DataPlatform-001/
   config/iis.json         -> 服务器部署参数，不映射到 IIS 静态目录
 ```
 
-将发布包复制到目标服务器的新目录，以该目录作为发布根。`config/iis.json` 的 `DeploymentRoot` 必须从最终发布目录解析为绝对路径；此接口不接受相对值，但不能沿用模板中的固定盘符。IIS 物理根目录只指向相对发布根的 `portal/`，不能指向整个发布根。公开的 `portal/config/apps.json` 是前端菜单配置，不存放凭据或授权规则；它与外部的服务器 `config/` 是两个目录。
+将发布包复制到目标服务器的新目录，以该目录作为发布根。`config/iis.json` 的 `DeploymentRoot` 支持相对于配置文件所在目录的路径，模板的 `..` 因此表示发布包根；也兼容显式的本地绝对路径。打包保留配置中的路径写法，配置复制到新位置后，相对值按新位置解析。脚本读入后生成运行时绝对路径，不依赖启动时所在目录；拒绝 UNC、仅带盘符的相对路径和磁盘根目录。IIS 物理根目录只指向发布根下的 `portal/`，不能指向整个发布根。公开的 `portal/config/apps.json` 是前端菜单配置，不存放凭据或授权规则；它与外部的服务器 `config/` 是两个目录。
 
 本次 OrderIQ 静态 HTML 已嵌入业务数据快照，所有能访问 `/orderiq/` 的用户都能获得这些数据。发布前需确认允许访问人群；后续把 Excel/SQLite 放到 `data/` 不会撤回 HTML 内已有数据。
 
@@ -54,7 +54,7 @@ DataPlatform-001/
 
 服务器需要 IIS 静态内容、默认文档、Windows 身份验证及管理工具。仅静态门户与 OrderIQ 不要求 ARR。动态应用上线时才需 URL Rewrite、ARR；需要 WebSocket 的应用还需 IIS WebSocket 功能与单独验收。
 
-在目标服务器的管理员 PowerShell 中，先进入实际发布包根目录，核对 `DeploymentRoot` 与 `(Resolve-Path .).Path` 一致，再使用包内相对路径。以下仅为后续手工操作说明，不代表已授权或已执行部署：
+在目标服务器的管理员 PowerShell 中，先进入实际发布包根目录，核对配置解析出的发布根与 `(Resolve-Path .).Path` 一致，再使用包内相对路径。以下仅为后续手工操作说明，不代表已授权或已执行部署：
 
 ```powershell
 .\deploy\Install-IisSite.ps1 -ConfigPath '.\config\iis.json'

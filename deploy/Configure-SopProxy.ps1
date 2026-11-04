@@ -17,6 +17,7 @@ $proxyRoot = Join-Path $config.DeploymentRoot 'proxy\sop'
 $configRoot = Join-Path $config.DeploymentRoot 'config'
 $gatewayPath = Join-Path $configRoot 'sop.json'
 $authPath = Join-Path $configRoot 'sop-auth.json'
+$gatewayTemplate = Resolve-SopGatewayTemplate -Path (Join-Path $PSScriptRoot 'sop.example.json') -DeploymentRoot $config.DeploymentRoot
 $allowWrites = $config.AllowWrites
 Write-Output "SOP proxy: $($config.SiteName)/sop -> http://127.0.0.1:$($config.BackendPort)/sop/ (prefix preserved)"
 Write-Output "Dedicated .NET v4 Integrated pool: $($config.ApplicationPool)"
@@ -88,18 +89,12 @@ try {
     $appHost.GetSection('system.webServer/security/authentication/anonymousAuthentication', $location).SetAttributeValue('enabled', $false)
     $appHost.GetSection('system.webServer/security/authentication/windowsAuthentication', $location).SetAttributeValue('enabled', $true)
     $manager.CommitChanges()
-    $gateway = if (Test-Path -LiteralPath $gatewayPath) { Get-Content -LiteralPath $gatewayPath -Raw -Encoding UTF8 | ConvertFrom-Json } else { Get-Content -LiteralPath (Join-Path $PSScriptRoot 'sop.example.json') -Raw -Encoding UTF8 | ConvertFrom-Json }
+    $gateway = if (Test-Path -LiteralPath $gatewayPath) { Get-Content -LiteralPath $gatewayPath -Raw -Encoding UTF8 | ConvertFrom-Json } else { $gatewayTemplate }
     # Disable writes while applying the pair of authorization configurations.
     $gateway.allow_writes = $false
     $gateway.public_origin = $config.PublicOrigin
     $gateway.base_path = '/sop'
     $gateway.proxy_secret_env = 'SOP_PROXY_SECRET'
-    if (-not (Test-Path -LiteralPath $gatewayPath)) {
-        $gateway.data_dir = Join-Path $config.DeploymentRoot 'data\sop'
-        $gateway.source_dir = Join-Path $config.DeploymentRoot 'data\sop\input_file'
-        $gateway.shared_config = Join-Path $config.DeploymentRoot 'config\shared_config.py'
-        $gateway.plan_file = Join-Path $config.DeploymentRoot 'data\sop\SOP计划维护.xlsx'
-    }
     Write-SopJson -Path $gatewayPath -Value $gateway
     if (-not (Test-Path -LiteralPath $config.ProxySecretPath)) {
         $newSecret = New-SopProxySecret

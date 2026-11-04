@@ -38,6 +38,10 @@ IIS 的 `/sop` 独立 Application 使用 .NET4 Integrated、Windows Authenticati
 
 部署脚本消费 `services/sop/sop-release.json` 并验证运行产物。代码更新由原 SOP 重建新产物，不在部署目录直接维护业务源码。
 
+部署 JSON 模板不绑定盘符：`config.example.json` 和 `sop-iis.example.json` 的 `DeploymentRoot` 相对配置文件所在目录解析，默认 `..` 表示发布包根；`ProxySecretPath` 相对解析后的发布根，且仍必须位于 `config/` 内。显式本地绝对路径继续兼容。配置随发布包复制后，相对路径按最终配置位置解析，运行时均为绝对路径。
+
+`deploy/sop.example.json` 是生成模板，其数据、输入、规则和计划路径相对发布根。`Configure-SopProxy.ps1` 在只读计划阶段校验模板；只有管理员明确执行 Apply 才写出路径均为绝对值的 `config/sop.json`，已有运行时配置的自定义路径继续保留。不要把相对模板直接传给 SOP 的 `--gateway-config`：该子应用接口仍要求绝对路径。模板相对路径不得越出发布根，业务数据和规则不得落入 `portal/`、`apps/` 或 `proxy/` 网页目录；机密目录边界及 Apply 时的重解析点检查保持不变。
+
 ## 数据迁移
 
 需要迁移现有计划时，先安排原业务停止写入，用 SQLite backup API 导出一致快照，再复制匹配的 `sales.json`、`source_settings.json` 和计划维护表；不要热拷漏掉 WAL。不要让两个写入进程指向同一维护表。本次未删除、搬迁或写入原业务数据。

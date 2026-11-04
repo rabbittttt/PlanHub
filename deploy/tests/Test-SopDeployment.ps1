@@ -39,7 +39,10 @@ try {
         $env:SOP_PROXY_SECRET = $secret
         $pythonCheck = Join-Path $scratch 'check_generated_secret.py'
         [IO.File]::WriteAllText($pythonCheck, 'import sys; sys.path.insert(0, sys.argv[1]); from sop.gateway import GatewayConfig; config = GatewayConfig.load(sys.argv[2]); assert len(config.proxy_secret) == 96; print("Generated deployment secret accepted by Python GatewayConfig.load")', (New-Object Text.UTF8Encoding($false)))
-        & python '-B' $pythonCheck $SopSourceRoot (Join-Path $deploy 'sop.example.json')
+        $gatewayPath = Join-Path $scratch 'generated-gateway.json'
+        $gateway = Resolve-SopGatewayTemplate -Path (Join-Path $deploy 'sop.example.json') -DeploymentRoot $scratch
+        Write-SopJson -Path $gatewayPath -Value $gateway
+        & python '-B' $pythonCheck $SopSourceRoot $gatewayPath
         if ($LASTEXITCODE -ne 0) { throw 'Generated proxy secret was rejected by the Python gateway.' }
     }
     finally { [Environment]::SetEnvironmentVariable('SOP_PROXY_SECRET', $previousSecret, 'Process'); $secret = $null }

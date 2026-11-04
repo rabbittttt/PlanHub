@@ -1,7 +1,7 @@
 {
   "SiteName": "DataPlatform",
   "ApplicationPool": "DataPlatform-Static",
-  "DeploymentRoot": "D:\\DataPlatform",
+  "DeploymentRoot": "..",
   "HostName": "",
   "Port": 8080,
   "RequireReverseProxy": false,
