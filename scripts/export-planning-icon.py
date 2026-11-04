@@ -3,7 +3,7 @@
 The mark keeps a straight vertical stem, an asymmetric open bowl and a small
 pale-blue facet at their junction. SVG and PNG/ICO share these paths. Pillow is
 only a development-time exporter, never a front-end/runtime requirement.
-Run: python scripts/export-planning-icon.py
+Run from this project: ../.venv/Scripts/python.exe scripts/export-planning-icon.py
 """
 from __future__ import annotations
 

@@ -3,10 +3,10 @@ import assert from 'node:assert/strict';
 import path from 'node:path';
 import {resolveSopPython} from '../scripts/sop-python.mjs';
 
-const workspace=path.resolve('fixture workspace');
-const root=path.join(workspace,'portal');
+const workspace=path.resolve('arbitrary parent 中文 & spaces','Project');
+const root=path.join(workspace,'tools','nested portal');
 const sourceRoot=path.join(workspace,'SOP source');
-const interpreter=base=>path.join(base,'.venv',...(process.platform==='win32'?['Scripts','python.exe']:['bin','python']));
+const interpreter=(platform=process.platform)=>path.join(workspace,'.venv',...(platform==='win32'?['Scripts','python.exe']:['bin','python']));
 const ready=executable=>({status:0,stdout:JSON.stringify({executable}),stderr:''});
 const missing={error:Object.assign(new Error('not found'),{code:'ENOENT'}),status:null};
 
@@ -21,7 +21,7 @@ test('explicit Python path wins and relative values use the portal directory',()
   assert.equal(selected,expected);assert.deepEqual(calls,[expected]);
 });
 
-test('legacy SOP_PYTHON keeps command names and anchors path values',()=>{
+test('legacy explicit SOP_PYTHON keeps command names and anchors path values',()=>{
   for(const value of ['custom-python','../runtime/python.exe']) {
     const expected=value.includes('/')?path.resolve(root,value):value;
     const selected=resolveSopPython({root,sourceRoot,env:{SOP_PYTHON:value},exists:()=>false,run:command=>{
@@ -31,27 +31,24 @@ test('legacy SOP_PYTHON keeps command names and anchors path values',()=>{
   }
 });
 
-test('local environments prefer SOP source, then portal, then workspace',()=>{
-  const candidates=[interpreter(sourceRoot),interpreter(root),interpreter(workspace)];
-  for(let start=0;start<candidates.length;start++) {
-    const present=new Set(candidates.slice(start));
-    const calls=[];
-    const selected=resolveSopPython({root,sourceRoot,env:{},exists:value=>present.has(value),run:command=>{
-      calls.push(command);return ready(command);
-    }});
-    assert.equal(selected,candidates[start]);assert.deepEqual(calls,[candidates[start]]);
-  }
+test('nested projects always use Project/.venv even when every local environment exists',()=>{
+  const calls=[];
+  const checked=[];
+  const selected=resolveSopPython({root,sourceRoot,env:{},exists:value=>{checked.push(value);return true;},run:command=>{
+    calls.push(command);return ready(command);
+  }});
+  assert.equal(selected,interpreter());assert.deepEqual(calls,[interpreter()]);assert.deepEqual(checked,[interpreter()]);
 });
 
-test('an existing environment with missing dependencies fails without switching runtimes',()=>{
+test('a shared environment with missing dependencies fails without switching runtimes',()=>{
   const calls=[];
   assert.throws(()=>resolveSopPython({root,sourceRoot,env:{},exists:()=>true,run:command=>{
     calls.push(command);return {status:1,stdout:'',stderr:"ModuleNotFoundError: No module named 'openpyxl'"};
-  }}),/虚拟环境.*无法用于 SOP[\s\S]*openpyxl/);
-  assert.deepEqual(calls,[interpreter(sourceRoot)]);
+  }}),/Project 共享环境.*无法用于 SOP[\s\S]*openpyxl/);
+  assert.deepEqual(calls,[interpreter()]);
 });
 
-test('invalid explicit configuration fails instead of using an automatic environment',()=>{
+test('invalid explicit configuration fails instead of using the shared environment',()=>{
   const calls=[];
   assert.throws(()=>resolveSopPython({root,sourceRoot,env:{SOP_PYTHON_PATH:'missing/python.exe'},exists:()=>true,run:command=>{
     calls.push(command);return missing;
@@ -59,28 +56,21 @@ test('invalid explicit configuration fails instead of using an automatic environ
   assert.deepEqual(calls,[path.resolve(root,'missing/python.exe')]);
 });
 
-test('a virtual environment directory without its interpreter reports the damaged environment',()=>{
-  const calls=[];
-  assert.throws(()=>resolveSopPython({root,sourceRoot,env:{},exists:value=>value===path.join(sourceRoot,'.venv'),run:command=>{
-    calls.push(command);return missing;
-  }}),/虚拟环境.*无法用于 SOP/);
-  assert.deepEqual(calls,[interpreter(sourceRoot)]);
+test('a missing shared interpreter cannot fall back to project environments or PATH',()=>{
+  const checked=[];
+  assert.throws(()=>resolveSopPython({root,sourceRoot,env:{},exists:value=>{checked.push(value);return value!==interpreter();},run:()=>assert.fail('No other interpreter may run')}),/找不到 Project 共享 Python/);
+  assert.deepEqual(checked,[interpreter()]);
 });
 
-test('PATH is used without looking up a private runtime cache',()=>{
-  const calls=[];
-  const selected=resolveSopPython({root,sourceRoot,env:{USERPROFILE:path.join(workspace,'user')},exists:value=>{
-    assert.doesNotMatch(value,/codex-runtimes/);return false;
-  },run:command=>{calls.push(command);return ready(path.join(workspace,'system-python.exe'));}});
-  assert.deepEqual(calls,['python']);assert.equal(selected,path.join(workspace,'system-python.exe'));
+test('a portal outside Project fails before trying PATH or private caches',()=>{
+  assert.throws(()=>resolveSopPython({root:path.join(path.parse(root).root,'standalone-portal-fixture'),sourceRoot,env:{PATH:'available-python'},exists:()=>true,run:()=>assert.fail('No fallback may run')}),/找不到 Project 工作区/);
 });
 
-test('only an absent PATH command falls through; incompatible Python fails clearly',()=>{
-  const calls=[];
-  const selected=resolveSopPython({root,sourceRoot,env:{},exists:()=>false,run:command=>{
-    calls.push(command);return command==='python'?missing:ready(path.join(workspace,'python3'));
-  }});
-  assert.deepEqual(calls,['python','python3']);assert.equal(selected,path.join(workspace,'python3'));
-  assert.throws(()=>resolveSopPython({root,sourceRoot,env:{},exists:()=>false,run:()=>({status:1,stderr:'Python 3.10+ is required'})}),/Python 3.10\+/);
-  assert.throws(()=>resolveSopPython({root,sourceRoot,env:{},exists:()=>false,run:()=>missing}),/找不到 Python/);
+test('the shared interpreter uses the platform virtual-environment layout',()=>{
+  for(const platform of ['win32','linux']) {
+    const selected=resolveSopPython({root,env:{},platform,exists:()=>true,run:command=>{
+      assert.equal(command,interpreter(platform));return ready(command);
+    }});
+    assert.equal(selected,interpreter(platform));
+  }
 });

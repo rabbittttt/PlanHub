@@ -1,5 +1,6 @@
 // Development-only portal integration. SOP code is always loaded from its own project.
 import {mkdir,mkdtemp,writeFile,copyFile,readdir,stat,readFile,realpath} from 'node:fs/promises';
+import {existsSync} from 'node:fs';
 import {spawn,spawnSync} from 'node:child_process';
 import crypto from 'node:crypto';
 import path from 'node:path';
@@ -115,6 +116,11 @@ export async function runPreview(args=process.argv.slice(2),options={}) {
   const runtimeEnv={...process.env,...(options.env||{})};
   const python=resolveSopPython({root,sourceRoot,env:runtimeEnv});
   const pythonEnv={...runtimeEnv,SOP_PYTHON_PATH:python,PYTHONIOENCODING:'utf-8',PYTHONDONTWRITEBYTECODE:'1'};
+  for(const key of Object.keys(pythonEnv))if(key.toLowerCase()==='path')delete pythonEnv[key];
+  pythonEnv.PATH=path.dirname(python)+path.delimiter+(runtimeEnv.PATH??runtimeEnv.Path??'');
+  const pythonEnvironment=path.dirname(path.dirname(python));
+  if(existsSync(path.join(pythonEnvironment,'pyvenv.cfg')))pythonEnv.VIRTUAL_ENV=pythonEnvironment;
+  else delete pythonEnv.VIRTUAL_ENV;
   await mkdir(path.join(root,'artifacts'),{recursive:true});
   const preview=await mkdtemp(path.join(root,'artifacts','sop-preview-'));
   const data=path.join(preview,'data'),source=path.join(preview,'input'),config=path.join(preview,'config');

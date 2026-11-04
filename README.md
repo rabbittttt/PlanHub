@@ -24,7 +24,7 @@
 
 ## 本地运行
 
-要求 Node.js 20+、Python 3.10+ 以及原 SOP 的 requirements 依赖。双击 `启动本地门户.cmd`，或从门户根目录运行：
+要求 Node.js 20+、符合工作区依赖要求的共享 Python（至少 3.11，SOP 自身代码最低 3.10）以及原 SOP 的 requirements 依赖。双击 `启动本地门户.cmd`，或从门户根目录运行：
 
 ```powershell
 npm run check
@@ -32,9 +32,9 @@ npm test
 npm start
 ```
 
-本地预览为 SQLite 快照、后端及其 Python 子任务选择同一个已验证的解释器。选择顺序为：显式 `SOP_PYTHON_PATH`、兼容旧配置的 `SOP_PYTHON`、原 SOP 的 `.venv`、门户的 `.venv`、门户父目录的 `.venv`、PATH 中的 `python` / `python3`；不再自动选择 Codex 缓存里的独立 Python。`SOP_PYTHON_PATH` 的相对路径以门户根目录为基准，例如 `../.venv/Scripts/python.exe`。旧 `SOP_PYTHON` 可使用 PATH 命令名，含目录的相对路径同样按门户根目录解析。找到虚拟环境但版本或依赖不合要求时明确报错，先修复该环境，不静默改用另一份 Python。启动前检查 Python 3.10+ 和 `openpyxl`。生产发布仍使用部署包自己的 `runtime/sop-venv`，不依赖开发机工作区。
+本地预览为 SQLite 快照、后端及其 Python 子任务选择同一个已验证的解释器。默认从门户位置向上定位名为 `Project` 的工作区，仅使用其共享 `.venv`（Windows 为 `.venv/Scripts/python.exe`，其他系统为 `.venv/bin/python`）；Project 的上级路径可以任意改变。原 SOP 或门户自己的 `.venv` 不会抢占，也不会自动回退到 PATH 或 Codex 缓存。显式 `SOP_PYTHON_PATH`（兼容旧配置 `SOP_PYTHON`）仍可覆盖；相对路径以门户根目录为基准，例如 `../.venv/Scripts/python.exe`。旧 `SOP_PYTHON` 可使用 PATH 命令名，含目录的相对路径同样按门户根目录解析。共享环境缺失、损坏或缺依赖时明确报错。启动前检查 Python 3.10+ 和 `openpyxl`。显式生产发布流程仍使用部署包自己的 `runtime/sop-venv`，不依赖开发机工作区。
 
-迁移到新电脑时安装 Python 3.10+ 和 Node.js 20+（含 npm），再从门户根目录运行 `powershell -NoProfile -ExecutionPolicy RemoteSigned -File '../SOP维护/setup-environment.ps1'`，按 SOP 的 requirements 重建项目 `.venv`，然后 `npm start`。虚拟环境包含本机路径，不复制旧 `.venv`；项目文件和数据目录可保持相对布局一起迁移。
+迁移到新电脑时安装符合工作区依赖要求的 Python 3.11+ 和 Node.js 20+（含 npm），保持项目位于 `Project` 内，运行 Project 根的 `初始化共享环境.cmd` 重建所有项目共用的 `.venv`，然后 `npm start`。也可从门户根目录运行 `powershell -NoProfile -ExecutionPolicy RemoteSigned -File '../SOP维护/setup-environment.ps1'`，仅向 Project 共享环境安装 SOP 依赖。虚拟环境包含本机路径，不复制旧 `.venv`；项目文件和数据目录可保持相对布局一起迁移。
 
 默认从上述原 SOP 项目启动 `server.py`，只把数据在线备份到门户忽略的临时目录，可进行维护、导入导出等操作，修改仅保存在隔离快照，不会回写原项目；重新启动会创建新快照。业务实现始终来自原项目；数据快照不是第二套源码。保持启动窗口运行，打开终端打印的地址。端口已被旧进程占用时，在旧窗口按 Ctrl+C 后重启，或指定其他端口。
 

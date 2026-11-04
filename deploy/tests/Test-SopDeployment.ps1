@@ -1,9 +1,19 @@
 ﻿#requires -Version 5.1
 [CmdletBinding()]
-param([string]$SopSourceRoot = '')
+param([string]$SopSourceRoot = '', [string]$PythonPath = '')
 $ErrorActionPreference = 'Stop'
 $deploy = Split-Path -Parent $PSScriptRoot
 $project = Split-Path -Parent $deploy
+if (-not $PythonPath) { $PythonPath = $env:SOP_PYTHON_PATH }
+if ($PythonPath) {
+    if (-not [IO.Path]::IsPathRooted($PythonPath)) { $PythonPath = Join-Path $project $PythonPath }
+} else {
+    $workspace = Get-Item -LiteralPath $project
+    while ($workspace -and $workspace.Name -ine 'Project') { $workspace = $workspace.Parent }
+    if (-not $workspace) { throw 'Project workspace not found. Specify PythonPath explicitly for a standalone deployment test.' }
+    $PythonPath = Join-Path $workspace.FullName '.venv\Scripts\python.exe'
+}
+if (-not (Test-Path -LiteralPath $PythonPath -PathType Leaf)) { throw "Project shared Python was not found: $PythonPath" }
 . (Join-Path $deploy 'Deployment.Common.ps1')
 . (Join-Path $deploy 'Sop.Common.ps1')
 . (Join-Path $deploy 'Sop.Release.ps1')
@@ -42,7 +52,7 @@ try {
         $gatewayPath = Join-Path $scratch 'generated-gateway.json'
         $gateway = Resolve-SopGatewayTemplate -Path (Join-Path $deploy 'sop.example.json') -DeploymentRoot $scratch
         Write-SopJson -Path $gatewayPath -Value $gateway
-        & python '-B' $pythonCheck $SopSourceRoot $gatewayPath
+        & $PythonPath '-B' $pythonCheck $SopSourceRoot $gatewayPath
         if ($LASTEXITCODE -ne 0) { throw 'Generated proxy secret was rejected by the Python gateway.' }
     }
     finally { [Environment]::SetEnvironmentVariable('SOP_PROXY_SECRET', $previousSecret, 'Process'); $secret = $null }
@@ -76,7 +86,7 @@ try {
     $assembly = [Reflection.Assembly]::LoadFile((Join-Path $scratch 'bin\SopIdentityBridge.dll'))
     Assert-True ($null -ne $assembly.GetType('DataPlatform.SopIdentityBridge')) 'Compiled bridge type missing.'
     $releasePath = Join-Path $scratch 'sop-runtime'
-    & python '-B' (Join-Path $SopSourceRoot 'scripts\build_release.py') '--destination' $releasePath
+    & $PythonPath '-B' (Join-Path $SopSourceRoot 'scripts\build_release.py') '--destination' $releasePath
     if ($LASTEXITCODE -ne 0) { throw 'Authoritative SOP runtime build failed.' }
     $release = Assert-SopRelease -Path $releasePath
     Assert-True ($release.Manifest.appId -ceq 'hima-sop') 'Built artifact is not a SOP release.'

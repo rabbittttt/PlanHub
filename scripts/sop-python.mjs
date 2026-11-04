@@ -5,11 +5,10 @@ import path from 'node:path';
 
 const PROBE = "import sys,json; sys.version_info >= (3,10) or sys.exit('Python 3.10+ is required'); import openpyxl; print(json.dumps({'executable':sys.executable}))";
 
-export function resolveSopPython({root,sourceRoot,env=process.env,platform=process.platform,exists=existsSync,run=spawnSync}={}) {
+export function resolveSopPython({root,env=process.env,platform=process.platform,exists=existsSync,run=spawnSync}={}) {
   root=path.resolve(root);
-  const check=(candidate,label,allowMissing=false)=>{
+  const check=(candidate,label)=>{
     const result=run(candidate,['-B','-c',PROBE],{cwd:root,env:{...env,PYTHONIOENCODING:'utf-8',PYTHONDONTWRITEBYTECODE:'1'},encoding:'utf8',timeout:15000,windowsHide:true});
-    if(allowMissing&&result.error?.code==='ENOENT')return null;
     let executable;
     if(!result.error&&result.status===0) {
       try {executable=JSON.parse(result.stdout.trim()).executable;} catch {}
@@ -25,17 +24,13 @@ export function resolveSopPython({root,sourceRoot,env=process.env,platform=proce
     const candidate=path.isAbsolute(legacy)||/[\\/]/.test(legacy)?path.resolve(root,legacy):legacy;
     return check(candidate,'SOP_PYTHON ');
   }
-  const bases=[sourceRoot,root,path.dirname(root)].filter(Boolean);
-  for(const base of new Set(bases.map(value=>path.resolve(value)))) {
-    const venv=path.join(base,'.venv');
-    const candidate=path.join(venv,...(platform==='win32'?['Scripts','python.exe']:['bin','python']));
-    // An existing but broken environment is actionable; do not silently switch runtimes.
-    if(exists(venv)||exists(candidate))return check(candidate,'虚拟环境 ');
+  let workspace=root;
+  while(path.basename(workspace).toLowerCase()!=='project') {
+    const parent=path.dirname(workspace);
+    if(parent===workspace)throw new Error('找不到 Project 工作区。请将门户放在 Project 目录下，并初始化 Project/.venv。');
+    workspace=parent;
   }
-  for(const command of ['python','python3']) {
-    // Only a command that is absent from PATH may fall through to the next name.
-    const result=check(command,'PATH 中的 Python ',true);
-    if(result)return result;
-  }
-  throw new Error('找不到 Python。请在 SOP 项目或工作区创建 .venv 并安装原 SOP requirements.txt，或设置 SOP_PYTHON_PATH。');
+  const candidate=path.join(workspace,'.venv',...(platform==='win32'?['Scripts','python.exe']:['bin','python']));
+  if(!exists(candidate))throw new Error(`找不到 Project 共享 Python：${candidate}。请初始化 Project/.venv 并安装 SOP requirements.txt。`);
+  return check(candidate,'Project 共享环境 ');
 }

@@ -1,6 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {mkdtemp,mkdir,writeFile,readFile,rm,realpath} from 'node:fs/promises';
+import {existsSync} from 'node:fs';
 import {spawnSync} from 'node:child_process';
 import os from 'node:os';
 import path from 'node:path';
@@ -199,7 +200,7 @@ class Handler(BaseHTTPRequestHandler):
  def do_GET(self):
   if self.headers.get('X-SOP-Proxy-Key')!=os.environ[config['proxy_secret_env']]:return self.send(403,{'error':'key'})
   if self.path=='/sop/api/session':return self.send(200,{'mode':'gateway','user':self.headers.get('X-SOP-User'),'canWrite':config['allow_writes']})
-  return self.send(200,{'codeRoot':str(Path(__file__).parent),'cwd':os.getcwd(),'executable':sys.executable,'configuredPython':os.environ.get('SOP_PYTHON_PATH'),'sourceData':json.loads((Path(config['data_dir'])/'sales.json').read_text()),'dataPath':config['data_dir'],'inputPath':config['source_dir'],'planPath':config['plan_file'],'readonly':not config['allow_writes'],'bytecodeDisabled':os.environ.get('PYTHONDONTWRITEBYTECODE')=='1'})
+  return self.send(200,{'codeRoot':str(Path(__file__).parent),'cwd':os.getcwd(),'executable':sys.executable,'configuredPython':os.environ.get('SOP_PYTHON_PATH'),'pathFirst':os.environ['PATH'].split(os.pathsep)[0],'virtualEnv':os.environ.get('VIRTUAL_ENV'),'sourceData':json.loads((Path(config['data_dir'])/'sales.json').read_text()),'dataPath':config['data_dir'],'inputPath':config['source_dir'],'planPath':config['plan_file'],'readonly':not config['allow_writes'],'bytecodeDisabled':os.environ.get('PYTHONDONTWRITEBYTECODE')=='1'})
  def do_POST(self):
   if not config['allow_writes']:return self.send(403,{'error':'paused'})
   (Path(config['data_dir'])/'sales.json').write_text(json.dumps({'marker':'preview-edit'}))
@@ -214,6 +215,9 @@ HTTPServer(('127.0.0.1',a.port),Handler).serve_forever()
     const result=await fetch(`http://127.0.0.1:${port}/sop/api/provenance`).then(r=>r.json());
     assert.equal(result.codeRoot,original);assert.equal(result.cwd,original);
     assert.equal(path.normalize(result.executable),python);assert.equal(result.configuredPython,python);
+    assert.equal(path.normalize(result.pathFirst),path.dirname(python));
+    const expectedEnvironment=path.dirname(path.dirname(python));
+    assert.equal(result.virtualEnv,existsSync(path.join(expectedEnvironment,'pyvenv.cfg'))?expectedEnvironment:null);
     assert.equal(result.sourceData.marker,'selected-seed');
     const snapshot=spawnSync(python,['-B','-c',"import json,pathlib,sqlite3,sys; db=sqlite3.connect(pathlib.Path(sys.argv[1]).as_uri()+'?mode=ro',uri=True); print(json.dumps(db.execute('SELECT value FROM marker').fetchall())); db.close()",path.join(result.dataPath,'sop.sqlite3')],{encoding:'utf8'});
     assert.equal(snapshot.status,0,snapshot.stderr||snapshot.error?.message);
