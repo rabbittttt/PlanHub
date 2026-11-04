@@ -5,6 +5,7 @@ import { fileURLToPath, pathToFileURL } from 'node:url';
 
 import {loadAppIntegrations, publicFile} from './app-integrations.mjs';
 import {proxyRequest} from './proxy-request.mjs';
+import {handlePortalControl} from './portal-instance.mjs';
 export const STATIC_APPS = Object.freeze({ orderiq: 'orderiq' });
 const PROJECT_ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const MIME = {
@@ -35,7 +36,7 @@ export function parseRequestPath(rawUrl) {
 }
 
 /** Local-only preview; the optional loopback SOP bridge does not provide Windows authentication. */
-export function createServer({ root = PROJECT_ROOT, sopProxy = null, applications = null } = {}) {
+export function createServer({ root = PROJECT_ROOT, sopProxy = null, applications = null, runtime = null } = {}) {
   if (sopProxy && (!Number.isInteger(sopProxy.port) || sopProxy.port < 1 || sopProxy.port > 65535 || typeof sopProxy.secret !== 'string' || sopProxy.secret.length < 32 || typeof sopProxy.user !== 'string' || /[\r\n]/.test(sopProxy.user))) throw new Error('Invalid local SOP preview configuration');
   return http.createServer(async (request, response) => {
     const headers = { 'Cache-Control': 'no-store', 'X-Content-Type-Options': 'nosniff', 'X-Frame-Options': 'SAMEORIGIN' };
@@ -47,6 +48,7 @@ export function createServer({ root = PROJECT_ROOT, sopProxy = null, application
     let parsed;
     try { parsed = parseRequestPath(request.url); } catch { return send(400, 'Invalid or private request path'); }
     const { pathname, parts } = parsed;
+    if (handlePortalControl(request, response, runtime, pathname)) return;
     const proxyEntry = Object.entries(applications || {}).find(([id, app]) => app.type === 'proxy' && (parts[0] === id || app.rootRoutes.includes(pathname)));
     if (proxyEntry) {
       const [id, app] = proxyEntry;

@@ -1,6 +1,7 @@
 // Portal-owned integration metadata only; child source and responses remain unchanged.
 import {readFile} from 'node:fs/promises';
 import path from 'node:path';
+import {HEALTH_PATH,STOP_PATH} from './portal-instance.mjs';
 
 async function json(filename, fallback) {
   try {return JSON.parse((await readFile(filename,'utf8')).replace(/^\uFEFF/,''));}
@@ -40,6 +41,7 @@ export async function loadAppIntegrations(root) {
     result[id]=app;
   }
   const registry=await json(path.join(root,'portal/config/apps.json'),{});
+  if([HEALTH_PATH,STOP_PATH].includes(registry.platform?.identityEndpoint))throw new Error('门户管理接口不能用作身份接口');
   if(routes.has(registry.platform?.identityEndpoint))throw new Error('业务根接口与门户身份接口冲突');
   return result;
 }

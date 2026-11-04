@@ -11,7 +11,8 @@ import {fileURLToPath,pathToFileURL} from 'node:url';
 import {createServer} from './dev-server.mjs';
 import {resolveSopPython} from './sop-python.mjs';
 import {loadAppIntegrations} from './app-integrations.mjs';
-import {startAppServices} from './app-services.mjs';
+import {startAppServices,serviceHealthy} from './app-services.mjs';
+import {probePortal,workspaceId,configurationId,createPortalInstance,registerPortal,unregisterPortal} from './portal-instance.mjs';
 
 const ROOT=path.resolve(path.dirname(fileURLToPath(import.meta.url)),'..');
 
@@ -109,7 +110,7 @@ export async function assertPreviewPortsAvailable(port,backendPort) {
       const probe=net.createServer();
       probe.once('error',error=>{
         const hint=error.code==='EADDRINUSE'
-          ? `${label}端口 ${value} 已被占用。请先在旧的 npm run dev / npm start 窗口按 Ctrl+C 停止服务，或改用 npm start -- --port 4176 --backend-port 8879。`
+          ? `${label}端口 ${value} 已被占用。可识别的已运行门户会自动复用；需要重启请运行“停止本地门户.cmd”，或在旧的 npm run dev / npm start 窗口按 Ctrl+C。未识别的占用不会被自动结束。`
           : `无法使用${label}端口 ${value}（${error.code||error.message}）。请检查端口权限或指定其他端口。`;
         reject(new Error(hint));
       });
@@ -121,14 +122,30 @@ export async function assertPreviewPortsAvailable(port,backendPort) {
 export async function runPreview(args=process.argv.slice(2),options={}) {
   const values=previewOptions(args);
   if(values.help)return null;
-  // Never inspect/copy business data or launch a process when either listener is busy.
-  await assertPreviewPortsAvailable(values.port,values.backendPort);
+  const requestedRoot=options.root||ROOT;
+  const existing=await probePortal(values.port);
+  if(existing&&existing.workspaceId!==await workspaceId(requestedRoot))throw new Error('门户端口属于另一个工作区；请使用自己的端口。');
+  // An unknown listener must still fail before inspecting/copying business data.
+  if(!existing)await assertPreviewPortsAvailable(values.port,values.backendPort);
   const settings=await resolvePreviewSettings(args,options);
   const {root,sourceRoot,dataRoot,dataDirectory,snapshot,salesSourceDir,planSourceFile,sharedConfig,port,backendPort}=settings;
   const runtimeEnv={...process.env,...(options.env||{})};
   const applications=await loadAppIntegrations(root);
   for(const [id,app] of Object.entries(applications))if(app.type==='proxy'&&[port,backendPort].includes(Number(new URL(app.target).port||80)))throw new Error(id+' 服务端口不能与门户或 SOP 端口相同');
   const python=resolveSopPython({root,sourceRoot,env:runtimeEnv});
+  const configId=await configurationId(settings,applications,python);
+  if(existing){
+    if(existing.configId!==configId)throw new Error('已有门户使用不同代码版本或配置；请先运行“停止本地门户.cmd”再启动。');
+    try {
+      const session=await fetch('http://127.0.0.1:'+port+'/sop/api/session',{signal:AbortSignal.timeout(2000)});
+      await session.arrayBuffer();if(!session.ok)throw new Error('SOP');
+      for(const [id,app] of Object.entries(applications))if(app.type==='proxy'&&!await serviceHealthy(app))throw new Error(id);
+    }catch(error){throw new Error('门户已运行，但后端尚未响应（'+error.message+'）；请运行“停止本地门户.cmd”后重新启动。');}
+    console.log('本地门户已在运行，继续使用：http://127.0.0.1:'+port+'/');
+    console.log('未重复启动后端；需要停止时运行“停止本地门户.cmd”。');
+    return null;
+  }
+  const runtime=await createPortalInstance(root,port,configId);
   const pythonEnv={...runtimeEnv,SOP_PYTHON_PATH:python,PYTHONIOENCODING:'utf-8',PYTHONDONTWRITEBYTECODE:'1'};
   for(const key of Object.keys(pythonEnv))if(key.toLowerCase()==='path')delete pythonEnv[key];
   pythonEnv.PATH=path.dirname(python)+path.delimiter+(runtimeEnv.PATH??runtimeEnv.Path??'');
@@ -190,10 +207,11 @@ export async function runPreview(args=process.argv.slice(2),options={}) {
   if(!ready){stopService(child);throw new Error(`独立 SOP 服务未启动；请查看日志：${child.serviceLogs.stderr}`);}
   const stopApplications=await startAppServices(applications,{root,env:runtimeEnv});
   if(failed){stopApplications();stopService(child);throw new Error('SOP 在其他应用启动期间已退出，请检查原项目日志。');}
-  const server=createServer({root,applications,sopProxy:{port:backendPort,secret,user:'DEV\\local-preview'}});
+  const server=createServer({root,applications,runtime,sopProxy:{port:backendPort,secret,user:'DEV\\local-preview'}});
   const closeChild=()=>{stopping=true;stopService(child);stopApplications();process.removeListener('SIGINT',stop);process.removeListener('SIGTERM',stop);};
   function stop(){stopping=true;stopService(child);stopApplications();server.close();setTimeout(()=>server.closeAllConnections?.(),1000).unref();}
-  server.once('close',closeChild);
+  runtime.stop=stop;
+  server.once('close',()=>{closeChild();void unregisterPortal(root,runtime);});
   child.on('exit',()=>{if(!stopping&&server.listening){console.error('独立 SOP 服务已退出，本地门户预览随之停止。');server.close();}});
   try {
     await new Promise((resolve,reject)=>{
@@ -201,6 +219,7 @@ export async function runPreview(args=process.argv.slice(2),options={}) {
       server.listen(port,'127.0.0.1',()=>{server.removeListener('error',reject);resolve();});
     });
   } catch(error) {closeChild();throw error;}
+  try {await registerPortal(root,runtime);} catch(error){stop();throw error;}
   console.log(`SOP 门户预览：http://127.0.0.1:${port}/#/app/sop`);
   console.log(`SOP 唯一源码：${sourceRoot}`);
   console.log(`SOP Python：${python}`);

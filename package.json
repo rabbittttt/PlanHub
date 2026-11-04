@@ -11,7 +11,8 @@
     "dev:sop": "node scripts/dev-sop.mjs",
     "check": "node scripts/check.mjs",
     "test": "node --test tests/*.test.mjs",
-    "prepare:apps": "node scripts/prepare-apps.mjs"
+    "prepare:apps": "node scripts/prepare-apps.mjs",
+    "stop": "node scripts/stop-local.mjs"
   },
   "engines": {
     "node": ">=20"

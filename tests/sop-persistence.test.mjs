@@ -49,7 +49,7 @@ test('default portal saves through the original SOP service and survives a full 
  async function start(){
   const port=await freePort();let backend=await freePort();while(backend===port)backend=await freePort();
   const server=await runPreview([...configured,'--port',String(port),'--backend-port',String(backend)],{root,env});
-  return {server,origin:'http://127.0.0.1:'+port};
+  return {server,port,backend,origin:'http://127.0.0.1:'+port};
  }
  async function close(server){server.closeAllConnections();await new Promise(r=>server.close(r));await new Promise(r=>setTimeout(r,300));}
  let instance=await start(),month;
@@ -59,6 +59,12 @@ test('default portal saves through the original SOP service and survives a full 
   const saved=await response.json();assert.equal(response.status,200,JSON.stringify(saved));
   const readback=await fetch(instance.origin+'/sop/api/state').then(r=>r.json());
   assert.equal(readback.plans.find(p=>p.product_id==='persistent-fixture'&&p.month===month)?.sop,246);
+  const reused=await runPreview([...configured,'--port',String(instance.port),'--backend-port',String(instance.backend)],{root,env});
+  assert.equal(reused,null,'Repeat launch must reuse the live service');
+  await assert.rejects(runPreview([...configured,'--snapshot','--port',String(instance.port),'--backend-port',String(instance.backend)],{root,env}),/不同代码版本或配置/);
+  const differentBackend=await freePort();
+  await assert.rejects(runPreview([...configured,'--port',String(instance.port),'--backend-port',String(differentBackend)],{root,env}),/不同代码版本或配置/);
+  assert.equal((await readdir(path.join(root,'artifacts'))).filter(name=>name.startsWith('sop-runtime-')).length,1);
  }finally{await close(instance.server);}
  const db=path.join(dataRoot,'data/sop.sqlite3');
  assert.ok((await stat(db)).size>0);assert.ok((await stat(workbook)).size>0);
@@ -68,7 +74,7 @@ test('default portal saves through the original SOP service and survives a full 
  try{
   const state=await fetch(instance.origin+'/sop/api/state').then(r=>r.json());
   assert.equal(state.plans.find(p=>p.product_id==='persistent-fixture'&&p.month===month)?.sop,246);
-  for(const folder of await readdir(path.join(root,'artifacts'))){
+  for(const folder of (await readdir(path.join(root,'artifacts'))).filter(name=>name!=='portal-instances')){
    assert.ok(folder.startsWith('sop-runtime-'),'Default mode must not create data snapshots');
    const gateway=JSON.parse(await readFile(path.join(root,'artifacts',folder,'config/gateway.json'),'utf8'));
    assert.equal(gateway.data_dir,path.join(dataRoot,'data'));assert.equal(gateway.plan_file,workbook);
