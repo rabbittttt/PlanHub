@@ -72,7 +72,7 @@ test('default portal saves through the original SOP service and survives a full 
    assert.ok(folder.startsWith('sop-runtime-'),'Default mode must not create data snapshots');
    const gateway=JSON.parse(await readFile(path.join(root,'artifacts',folder,'config/gateway.json'),'utf8'));
    assert.equal(gateway.data_dir,path.join(dataRoot,'data'));assert.equal(gateway.plan_file,workbook);
-   assert.deepEqual(await readdir(path.join(root,'artifacts',folder)),['config']);
+   assert.deepEqual((await readdir(path.join(root,'artifacts',folder))).sort(),['config','logs']);
   }
  }finally{await close(instance.server);}
 });

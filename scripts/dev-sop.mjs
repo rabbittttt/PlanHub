@@ -1,7 +1,8 @@
 // Local portal integration. SOP code and persistent data belong to the independent project.
 import {mkdir,mkdtemp,writeFile,copyFile,readdir,stat,readFile,realpath} from 'node:fs/promises';
 import {existsSync} from 'node:fs';
-import {spawn,spawnSync} from 'node:child_process';
+import {spawnSync} from 'node:child_process';
+import {spawnService,stopService} from './service-process.mjs';
 import crypto from 'node:crypto';
 import path from 'node:path';
 import net from 'node:net';
@@ -173,7 +174,7 @@ export async function runPreview(args=process.argv.slice(2),options={}) {
   const gatewayFile=path.join(config,'gateway.json');
   await writeFile(gatewayFile,JSON.stringify(gateway,null,2));
   const env={...pythonEnv,SOP_DEV_PROXY_SECRET:secret,SOP_EXCEL_ENGINE:'python',PYTHONUNBUFFERED:'1'};
-  const child=spawn(python,[path.join(sourceRoot,'server.py'),'--port',String(backendPort),'--gateway-config',gatewayFile],{cwd:sourceRoot,env,stdio:['ignore','inherit','inherit'],windowsHide:true});
+  const child=spawnService(python,[path.join(sourceRoot,'server.py'),'--port',String(backendPort),'--gateway-config',gatewayFile],{cwd:sourceRoot,env,logDirectory:path.join(preview,'logs')});
   let failed=false,stopping=false;
   child.on('error',error=>{console.error(error.message);failed=true;});
   child.on('exit',()=>{failed=true;});
@@ -186,12 +187,12 @@ export async function runPreview(args=process.argv.slice(2),options={}) {
     } catch {}
     await new Promise(resolve=>setTimeout(resolve,250));
   }
-  if(!ready){child.kill();throw new Error('独立 SOP 服务未启动；请检查上方 Python 日志及原项目 gateway 适配。');}
-  const stopApplications=await startAppServices(applications,{env:runtimeEnv});
-  if(failed){stopApplications();child.kill();throw new Error('SOP 在其他应用启动期间已退出，请检查原项目日志。');}
+  if(!ready){stopService(child);throw new Error(`独立 SOP 服务未启动；请查看日志：${child.serviceLogs.stderr}`);}
+  const stopApplications=await startAppServices(applications,{root,env:runtimeEnv});
+  if(failed){stopApplications();stopService(child);throw new Error('SOP 在其他应用启动期间已退出，请检查原项目日志。');}
   const server=createServer({root,applications,sopProxy:{port:backendPort,secret,user:'DEV\\local-preview'}});
-  const closeChild=()=>{stopping=true;child.kill();stopApplications();process.removeListener('SIGINT',stop);process.removeListener('SIGTERM',stop);};
-  function stop(){stopping=true;child.kill();stopApplications();server.close();setTimeout(()=>server.closeAllConnections?.(),1000).unref();}
+  const closeChild=()=>{stopping=true;stopService(child);stopApplications();process.removeListener('SIGINT',stop);process.removeListener('SIGTERM',stop);};
+  function stop(){stopping=true;stopService(child);stopApplications();server.close();setTimeout(()=>server.closeAllConnections?.(),1000).unref();}
   server.once('close',closeChild);
   child.on('exit',()=>{if(!stopping&&server.listening){console.error('独立 SOP 服务已退出，本地门户预览随之停止。');server.close();}});
   try {
@@ -203,6 +204,7 @@ export async function runPreview(args=process.argv.slice(2),options={}) {
   console.log(`SOP 门户预览：http://127.0.0.1:${port}/#/app/sop`);
   console.log(`SOP 唯一源码：${sourceRoot}`);
   console.log(`SOP Python：${python}`);
+  console.log(`SOP 服务日志：${child.serviceLogs.stderr}`);
   if(snapshot) {
     console.log(dataRoot?`显式测试模式：使用隔离快照，数据来源：${dataRoot}`:'显式演示模式，仅供测试。');
     console.log(`测试数据仅保存在 ${preview}，不回写原项目。`);

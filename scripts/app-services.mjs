@@ -1,6 +1,9 @@
-import {spawn} from 'node:child_process';
+import path from 'node:path';
+import {fileURLToPath} from 'node:url';
+import {spawnService,stopService} from './service-process.mjs';
 import net from 'node:net';
-import {access} from 'node:fs/promises';
+import {access,mkdir,mkdtemp} from 'node:fs/promises';
+const ROOT=path.resolve(path.dirname(fileURLToPath(import.meta.url)),'..');
 
 export async function serviceHealthy(app) {
   try {
@@ -19,9 +22,9 @@ async function portFree(app) {
   });
 }
 // Only processes created here are stopped; already-running independent apps stay running.
-export async function startAppServices(applications,{env=process.env}={}) {
+export async function startAppServices(applications,{root=ROOT,env=process.env}={}) {
   const children=[];
-  const stop=()=>{for(const child of children)if(child.exitCode===null)child.kill();};
+  const stop=()=>{for(const child of children)stopService(child);};
   for(const [id,app] of Object.entries(applications)) {
     if(app.type!=='proxy')continue;
     try {
@@ -29,7 +32,9 @@ export async function startAppServices(applications,{env=process.env}={}) {
       if(!app.start)throw new Error('请单独启动配置中的服务');
       if(!await portFree(app))throw new Error('服务端口被占用且健康检查不匹配；不会终止已有进程');
       await access(app.start.command);await access(app.start.cwd);
-      const child=spawn(app.start.command,app.start.args,{cwd:app.start.cwd,env:{...env,PYTHONDONTWRITEBYTECODE:'1',PYTHONIOENCODING:'utf-8',PYTHONUNBUFFERED:'1'},stdio:['ignore','inherit','inherit'],windowsHide:true});
+      const artifacts=path.join(root,'artifacts');await mkdir(artifacts,{recursive:true});
+      const logDirectory=await mkdtemp(path.join(artifacts,'service-'+id+'-'));
+      const child=spawnService(app.start.command,app.start.args,{cwd:app.start.cwd,env:{...env,PYTHONDONTWRITEBYTECODE:'1',PYTHONIOENCODING:'utf-8',PYTHONUNBUFFERED:'1'},logDirectory});
       children.push(child);
       let failed=false;child.on('error',()=>{failed=true;});child.on('exit',()=>{failed=true;});
       let ready=false;
@@ -37,8 +42,8 @@ export async function startAppServices(applications,{env=process.env}={}) {
         if(await serviceHealthy(app)){ready=true;break;}
         await new Promise(resolve=>setTimeout(resolve,250));
       }
-      if(!ready){child.kill();throw new Error('独立服务未通过健康检查，请检查原项目启动日志');}
-      console.log(id+': 已从独立项目启动；数据仍由原项目管理');
+      if(!ready){stopService(child);throw new Error('独立服务未通过健康检查，日志：'+child.serviceLogs.stderr);}
+      console.log(id+': 已从独立项目启动；数据仍由原项目管理；日志：'+child.serviceLogs.stderr);
     } catch(error) {console.warn(id+' 接入暂不可用：'+error.message+'。可修正 config.local/apps.json 后重启；其他入口继续可用。');}
   }
   return stop;
