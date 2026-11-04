@@ -79,6 +79,7 @@ powershell -NoProfile -ExecutionPolicy RemoteSigned -File .\deploy\New-Deploymen
 - [单一源码核对、备份与验证记录](docs/single-source-migration.md)
 - [SOP 内网部署](docs/sop-intranet.md)
 - [IIS 通用部署](docs/iis-deployment.md)
+- [给子网页开发者的接入规范](docs/child-app-developer-guide.md)
 - [新业务页面接入指南（静态页面 / 动态服务）](docs/app-integration.md)
 - [可直接转给其他 AI 的接入任务模板](docs/ai-app-integration-prompt.md)
 - [本地排查](docs/troubleshooting.md)
