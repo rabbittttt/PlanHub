@@ -1,0 +1,6 @@
+{
+  "DeploymentRoot": "..",
+  "ProjectRoot": "../数据速查",
+  "SharedDataRoot": "../共享数据",
+  "RuntimePath": "runtime/quicklook-venv"
+}

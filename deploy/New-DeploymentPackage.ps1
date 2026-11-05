@@ -49,6 +49,9 @@ if ($PSCmdlet.ShouldProcess($target, 'Create new portal deployment package')) {
     }
     Copy-Item -LiteralPath (Join-Path $PSScriptRoot 'portal.web.config') -Destination (Join-Path $target 'portal\web.config') -Force
     Copy-Item -LiteralPath $ConfigPath -Destination (Join-Path $target 'config\iis.json')
+    foreach ($template in @('quicklook.example.json', 'quicklook-iis.example.json')) {
+        Copy-Item -LiteralPath (Join-Path $PSScriptRoot $template) -Destination (Join-Path $target ('config\' + $template))
+    }
     Get-ChildItem -LiteralPath $PSScriptRoot -File | Where-Object { $_.Extension -in @('.ps1', '.xml', '.config', '.json') -and $_.Name -notlike '*.local.*' } | ForEach-Object {
         Copy-Item -LiteralPath $_.FullName -Destination (Join-Path $target 'deploy')
     }
@@ -84,8 +87,22 @@ if ($PSCmdlet.ShouldProcess($target, 'Create new portal deployment package')) {
             }
         }
     }
+    $quicklookWheels = Join-Path $PSScriptRoot '..\offline\quicklook-wheels'
+    if (Test-Path -LiteralPath $quicklookWheels) {
+        Assert-NoReparsePoint -Path $quicklookWheels
+        $wheelFiles = @(Get-ChildItem -LiteralPath $quicklookWheels -File | Where-Object { $_.Extension -eq '.whl' -or $_.Name -eq 'SHA256SUMS' })
+        if ($wheelFiles.Count) {
+            $wheelDestination = Join-Path $target 'offline\quicklook-wheels'
+            New-Item -ItemType Directory -Force -Path $wheelDestination | Out-Null
+            foreach ($wheel in $wheelFiles) {
+                Assert-NoReparsePoint -Path $wheel.FullName
+                Copy-Item -LiteralPath $wheel.FullName -Destination $wheelDestination
+            }
+        }
+    }
     Write-Output "Package created: $target"
     Write-Output "Enabled static artifacts copied. External SOP release included: $IncludeSop. Business data and credentials are not copied."
     if ($IncludeSop) { Write-Output "SOP release source commit: $($sopRelease.Manifest.sourceCommit); source dirty: $($sopRelease.Manifest.sourceDirty)" }
     Write-Output "Configured server destination: $($config.DeploymentRoot)"
+    Write-Output 'Quicklook server tools and templates included. Deploy its independent project separately; its source and persistent data are not copied.'
 }
