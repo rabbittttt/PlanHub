@@ -1,4 +1,5 @@
 import { validateConfig, routeFromHash, orderedApps } from './config.js';
+import { mountWorkbench } from './workbench.js?v=cycle-demo-20261105';
 
 const $ = id => document.getElementById(id);
 const paths = {
@@ -26,8 +27,8 @@ document.querySelector('.skip-link').addEventListener('click', event => {
   event.preventDefault();
   $('main').focus();
 });
-const labels = { ready: '可用', pending: '待接入', maintenance: '维护中' };
-let config, current = 'home', filter = 'all', sequence = 0, controller, timer, frame;
+const labels = { ready: '已接入', pending: '待接入', maintenance: '维护中' };
+let config, current = 'home', sequence = 0, controller, timer, frame;
 
 function element(tag, className, text) {
   const node = document.createElement(tag);
@@ -57,9 +58,6 @@ document.addEventListener('keydown', e => {
     if (restoreFocus && $('nav-toggle').getClientRects().length) $('nav-toggle').focus();
     return;
   }
-  if (e.key === '/' && current === 'home' && !['INPUT','TEXTAREA','SELECT'].includes(e.target.tagName) && !e.target.isContentEditable) {
-    e.preventDefault(); $('app-search').focus();
-  }
 });
 
 function prioritizedApps(apps) {
@@ -75,66 +73,6 @@ function renderNavigation() {
     if (app.status !== 'ready') link.append(element('span', 'nav-pending', labels[app.status]));
     $('app-nav').append(link);
   }
-  const groups = [{ id: 'all', name: '全部应用', apps: config.apps }, ...config.groups];
-  $('group-filters').replaceChildren();
-  for (const group of groups) {
-    const count = group.apps.filter(app => app.enabled).length;
-    if (!count && group.id !== 'all') continue;
-    const button = element('button', 'filter', group.name);
-    button.append(element('span', '', count));
-    button.dataset.group = group.id;
-    button.setAttribute('aria-pressed', String(filter === group.id));
-    button.addEventListener('click', () => { filter = group.id; renderCards(); });
-    $('group-filters').append(button);
-  }
-}
-function renderCards() {
-  const query = $('app-search').value.trim().toLocaleLowerCase();
-  const group = config.groups.find(g => g.id === filter);
-  const apps = prioritizedApps((group ? group.apps.filter(a => a.enabled) : config.apps).filter(app =>
-    [app.name, app.description, app.subtitle, app.groupName, group?.name].filter(Boolean).join(' ').toLocaleLowerCase().includes(query)));
-  const ready = apps.filter(app => app.status === 'ready');
-  const pending = apps.filter(app => app.status !== 'ready');
-  $('app-grid').replaceChildren();
-  $('pending-grid').replaceChildren();
-  document.querySelectorAll('[data-group]').forEach(button => button.setAttribute('aria-pressed', String(button.dataset.group === filter)));
-  for (const app of apps) {
-    const card = element('article', `app-card app-card-${app.status === 'ready' ? 'ready' : 'pending'}`);
-    card.dataset.app = app.id;
-    const badge = element('span', `status-badge ${app.status}`);
-    badge.append(element('span', 'status-dot'), document.createTextNode(labels[app.status]));
-    if (app.status === 'ready') {
-      const top = element('div', 'card-top');
-      const iconBox = element('span', `app-icon ${Object.hasOwn(paths, app.icon) ? app.icon : 'grid'}`);
-      iconBox.append(icon(app.icon));
-      top.append(iconBox, element('h3', '', app.name), badge);
-      const bottom = element('div', 'card-bottom');
-      bottom.append(element('span', 'card-group', app.groupName || group?.name));
-      const link = element('a', 'card-link', '打开');
-      link.href = `#/app/${app.id}`;
-      link.setAttribute('aria-label', `进入${app.name}`);
-      link.append(icon('arrow'));
-      bottom.append(link);
-      card.append(top, element('p', 'card-description', app.description || ''), bottom);
-      $('app-grid').append(card);
-    } else {
-      const iconBox = element('span', 'pending-icon');
-      iconBox.append(icon(app.icon));
-      const copy = element('div', 'pending-copy');
-      copy.append(element('h3', '', app.name), element('p', 'card-description', app.description || ''));
-      card.append(iconBox, copy, badge);
-      $('pending-grid').append(card);
-    }
-  }
-  $('ready-section').hidden = ready.length === 0;
-  $('pending-section').hidden = pending.length === 0;
-  const counts = [`${ready.length} 个可用`];
-  for (const status of ['pending', 'maintenance']) {
-    const count = apps.filter(app => app.status === status).length;
-    if (count) counts.push(`${count} 个${labels[status]}`);
-  }
-  $('apps-summary').textContent = counts.join(' · ');
-  $('no-results').hidden = apps.length > 0;
 }
 function stopLoading() {
   sequence++;
@@ -247,7 +185,7 @@ async function boot() {
     $('brand-organization').textContent = config.platform.organization || '智选车';
     $('brand-name').textContent = config.platform.shortName || config.platform.name || '计划管理平台';
     $('today').textContent = new Intl.DateTimeFormat('zh-CN', { year: 'numeric', month: 'long', day: 'numeric', weekday: 'long', timeZone: 'Asia/Shanghai' }).format(new Date());
-    renderNavigation(); renderCards();
+    renderNavigation(); mountWorkbench($('home-view'), config.apps);
     $('boot-state').hidden = true;
     navigate(); loadIdentity();
   } catch (error) {
@@ -258,7 +196,6 @@ async function boot() {
     $('boot-state').replaceChildren(title, hint, retry);
   }
 }
-$('app-search').addEventListener('input', renderCards);
 $('retry-app').addEventListener('click', () => { const app = config.apps.find(a => a.id === current); if (app) openApp(app); });
 window.addEventListener('hashchange', navigate);
 boot();

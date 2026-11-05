@@ -11,8 +11,8 @@
   <link rel="icon" href="./assets/favicon.ico?v=open-p-20261104" sizes="any">
   <link rel="icon" href="./assets/planning-icon.svg?v=open-p-20261104" type="image/svg+xml">
   <link rel="apple-touch-icon" href="./assets/apple-touch-icon.png?v=open-p-20261104">
-  <link rel="stylesheet" href="./css/portal.css?v=compact-home-20261104">
-  <script type="module" src="./js/portal.js?v=compact-home-20261104"></script>
+  <link rel="stylesheet" href="./css/portal.css?v=cycle-demo-20261105">
+  <script type="module" src="./js/portal.js?v=cycle-demo-20261105"></script>
 </head>
 <body>
   <a class="skip-link" href="#main">跳转到工作区</a>
@@ -40,23 +40,22 @@
       <div id="boot-state" class="empty-state" role="status"><span class="spinner"></span><h1>正在准备工作空间</h1><p>加载应用配置…</p></div>
       <section id="home-view" class="home-view page-width" hidden aria-labelledby="home-title">
         <div class="home-heading">
-          <div><div class="home-title-row"><h1 id="home-title">工作台</h1><span id="apps-summary" role="status" aria-atomic="true"></span></div><p class="home-context">销售需求 → 销运平衡 → 入库计划</p></div>
-          <time id="today"></time>
+          <div><h1 id="home-title">本轮计划工作</h1><p class="home-context">围绕需求变化，制定未来各期入库计划</p></div>
+          <div class="home-heading-meta"><span class="demo-badge">DEMO · 计划周期</span><time id="today"></time></div>
         </div>
-
-        <section class="applications" aria-labelledby="apps-title">
-          <h2 id="apps-title" class="sr-only">业务应用</h2>
-          <div class="section-toolbar">
-            <div class="filter-row" id="group-filters" role="group" aria-label="筛选业务分组"></div>
-            <label class="search"><span data-icon="search"></span><input id="app-search" type="search" placeholder="搜索应用" aria-label="搜索业务应用" autocomplete="off"><kbd>/</kbd></label>
-          </div>
-          <div id="ready-section"><div class="app-grid" id="app-grid"></div></div>
-          <section id="pending-section" class="pending-section" aria-labelledby="pending-title">
-            <div class="pending-heading"><h3 id="pending-title">待接入应用</h3></div>
-            <div class="pending-grid" id="pending-grid"></div>
+        <div class="cycle-demo-notice"><p id="cycle-demo-note">阶段、清单和计划窗口为演示，刷新后重置；下方应用入口按实际接入状态开放。</p><button id="cycle-reset" class="secondary-button" type="button">重置演示</button></div>
+        <ol id="cycle-stages" class="cycle-stages" aria-label="演示计划阶段"></ol>
+        <div class="cycle-layout">
+          <section class="cycle-panel cycle-tasks" aria-labelledby="cycle-tasks-title">
+            <div class="cycle-panel-heading"><div><h2 id="cycle-tasks-title">本轮工作清单</h2><span id="cycle-focus"></span></div><span id="cycle-task-summary" role="status" aria-atomic="true"></span></div>
+            <div id="cycle-tasks"></div>
           </section>
-          <p id="no-results" class="no-results" role="status" hidden>没有找到匹配的应用，请尝试其他关键词。</p>
-        </section>
+          <aside class="cycle-aside">
+            <section class="cycle-panel" aria-labelledby="cycle-windows-title"><div class="cycle-panel-heading"><h2 id="cycle-windows-title">关注的计划窗口</h2><span>演示窗口</span></div><div id="cycle-windows"></div></section>
+            <section class="cycle-panel" aria-labelledby="cycle-records-title"><div class="cycle-panel-heading"><h2 id="cycle-records-title">本轮记录</h2><span>演示占位</span></div><div id="cycle-records" class="cycle-record-links"></div><div id="cycle-record-detail" class="cycle-record-detail" role="status" aria-atomic="true" hidden></div></section>
+          </aside>
+        </div>
+        <section class="cycle-apps" aria-labelledby="home-apps-title"><h2 id="home-apps-title">应用入口</h2><div id="home-apps" class="cycle-app-links"></div></section>
       </section>
 
       <section id="app-view" class="app-view" hidden aria-labelledby="app-title">
