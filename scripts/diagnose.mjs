@@ -16,16 +16,18 @@ async function location(filename,directory=false){
   try{const info=await stat(filename);return {path:filename,ok:directory?info.isDirectory():info.isFile()&&info.size>0};}
   catch(error){return {path:filename,ok:false,reason:error.code||'UNAVAILABLE'};}
 }
-async function httpCheck(url,{method='GET',keys=null,fetcher=fetch}={}){
+async function httpCheck(url,{method='GET',keys=null,timeoutMs=2500,fetcher=fetch}={}){
+  const started=performance.now();
+  const result=state=>({...state,method,timeoutMs,elapsedMs:Math.round(performance.now()-started)});
   try{
-    const response=await fetcher(url,{method,redirect:'manual',signal:AbortSignal.timeout(2500)});
+    const response=await fetcher(url,{method,redirect:'manual',signal:AbortSignal.timeout(timeoutMs)});
     if(keys&&response.ok){
-      let body;try{body=await response.json();}catch{return {ok:false,status:response.status,reason:'NOT_JSON'};}
+      let body;try{body=await response.json();}catch(error){if(['TimeoutError','AbortError'].includes(error.name))throw error;return result({ok:false,status:response.status,reason:'NOT_JSON'});}
       const missing=keys.filter(key=>!body||!Object.hasOwn(body,key));
-      return {ok:missing.length===0,status:response.status,...(missing.length?{reason:'MISSING_HEALTH_KEYS',missing}:{})};
+      return result({ok:missing.length===0,status:response.status,...(missing.length?{reason:'MISSING_HEALTH_KEYS',missing}:{})});
     }
-    await response.arrayBuffer();return {ok:response.ok,status:response.status};
-  }catch(error){return {ok:false,reason:['TimeoutError','AbortError'].includes(error.name)?'TIMEOUT':error.cause?.code||error.code||'CONNECTION_FAILED'};}
+    await response.arrayBuffer();return result({ok:response.ok,status:response.status});
+  }catch(error){return result({ok:false,reason:['TimeoutError','AbortError'].includes(error.name)?'TIMEOUT':error.cause?.code||error.code||'CONNECTION_FAILED'});}
 }
 async function declaredPackages(directory){
   const found=new Set(),visited=new Set();
@@ -74,6 +76,9 @@ export async function collectDiagnostics({root=ROOT,port=4173,fetcher=fetch,run=
     if(app.status!=='ready'){result.note='尚未接入或维护中，不属于启动故障';continue;}
     try{
       const binding=integrations[app.id];
+      // Check the lightweight page before a slow business API can add scan load.
+      result.page=await httpCheck(origin+app.url,{method:'HEAD',timeoutMs:binding?.type==='proxy'?(binding.healthTimeoutMs??5000):2500,fetcher});
+      if(!result.page.ok&&![405,501].includes(result.page.status))result.issues.push('门户页面探测失败：'+(result.page.reason||'HTTP '+result.page.status));
       if(binding?.type==='static'){
         result.type='static';result.checks.push(await location(binding.root,true));result.checks.push(await location(path.join(binding.root,binding.entry)));
         for(const item of binding.publicPaths.filter(p=>p!==binding.entry)){
@@ -89,7 +94,7 @@ export async function collectDiagnostics({root=ROOT,port=4173,fetcher=fetch,run=
         result.dataChecks=[];
         if(result.backend.ok)for(const check of binding.diagnosticChecks||[]){
           const state=await probeServiceHealth({...binding,healthPath:check.path,healthKeys:check.keys,healthText:undefined,healthTimeoutMs:10000},{fetcher});
-          result.dataChecks.push({name:check.name,...state});
+          result.dataChecks.push({name:check.name,timeoutMs:10000,...state});
           if(!state.ok)result.issues.push(check.name+'异常（与进程存活不同）：'+(state.status?'HTTP '+state.status:state.reason));
         }
         if(binding.start){
@@ -108,8 +113,6 @@ export async function collectDiagnostics({root=ROOT,port=4173,fetcher=fetch,run=
         result.latestLog=await latestLog(root,app.id);result.hint='检查原项目、配置的解释器及其 requirements；SOP 使用的解释器不一定与本服务相同。日志路径仅供定位，不据旧日志断定当前故障。';
       }else if(app.id==='sop')result.type='sop';
       else result.issues.push('没有配置实际挂载或代理');
-      result.page=await httpCheck(origin+app.url,{method:'HEAD',fetcher});
-      if(!result.page.ok&&![405,501].includes(result.page.status))result.issues.push('门户页面探测失败：'+(result.page.reason||'HTTP '+result.page.status));
     }catch(error){result.issues.push('此应用检查未完成：'+(error.code||'CHECK_FAILED'));}
   }
   return report;
@@ -120,9 +123,9 @@ export function formatDiagnostics(report){
   for(const app of report.applications){
     lines.push('\n['+app.name+'] '+(app.note|| (app.issues.length?'未通过':'已检查')));
     for(const check of app.checks)lines.push('  '+(check.ok?'存在 ':'缺少 ')+check.path);
-    if(app.page)lines.push('  页面：'+(app.page.status||app.page.reason));
+    if(app.page)lines.push('  页面：'+app.page.method+' '+(app.page.status||app.page.reason)+'；耗时 '+app.page.elapsedMs+'ms；时限 '+app.page.timeoutMs+'ms');
     if(app.backend)lines.push('  后端：'+(app.backend.status||app.backend.reason)+(app.backend.reason?' '+app.backend.reason:'')+'；探针 '+app.backend.path);
-    for(const check of app.dataChecks||[])lines.push('  '+check.name+'：'+(check.status||check.reason));
+    for(const check of app.dataChecks||[])lines.push('  '+check.name+'：'+(check.status||check.reason)+(check.reason==='TIMEOUT'?'（'+check.timeoutMs+'ms 内未完成，不等于服务未启动）':''));
     if(app.python)lines.push('  Python：'+(app.python.version||app.python.reason)+'；已声明依赖仅检查安装情况，不代替版本兼容验证');
     for(const issue of app.issues)lines.push('  问题：'+issue);
     if(app.latestLog)lines.push('  最近日志：'+app.latestLog.path);

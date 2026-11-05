@@ -70,3 +70,25 @@ test('a live page does not hide catalog HTTP errors in the separate data check',
  assert.equal(app.backend.ok,true);assert.equal(app.dataChecks[0].status,400);assert.ok(app.issues.some(s=>s.includes('HTTP 400')));assert.ok(!app.issues.some(s=>s.includes('后端健康检查失败')));
  assert.doesNotMatch(formatDiagnostics(report),/PRIVATE API DETAILS/);
 });
+
+test('page is checked before scanning APIs and uses the configured service deadline',async t=>{
+ const {root}=await fixture(t),file=path.join(root,'integration/apps.json'),config=JSON.parse(await readFile(file,'utf8'));
+ Object.assign(config.applications.quicklook,{healthPath:'/',healthKeys:[],healthText:'<title>数据速查</title>',healthTimeoutMs:5000,start:null,diagnosticChecks:[{name:'Catalog',path:'/api/catalog',keys:['tables','status']}]});
+ await writeFile(file,JSON.stringify(config));
+ let scanStarted=false,pageCalls=0;const ordinary=await transport(root);
+ const fetcher=async(url,options)=>{
+  const parsed=new URL(String(url));
+  if(parsed.pathname==='/quicklook/'){
+   pageCalls++;assert.equal(options.method,'HEAD');assert.equal(scanStarted,false,'Page probing must precede the heavy API');
+   return new Response(null,{status:200});
+  }
+  if(parsed.port==='8765'){
+   if(parsed.pathname==='/api/catalog'){scanStarted=true;return new Response(JSON.stringify({tables:[],status:{}}));}
+   return new Response('<title>数据速查</title>');
+  }
+  return ordinary(url,options);
+ };
+ const report=await collectDiagnostics({root,fetcher}),app=report.applications.find(a=>a.id==='quicklook');
+ assert.equal(pageCalls,1);assert.equal(scanStarted,true);assert.equal(app.page.ok,true);assert.equal(app.page.timeoutMs,5000);assert.ok(app.page.elapsedMs>=0);
+ assert.equal(app.dataChecks[0].ok,true);assert.equal(app.issues.length,0);
+});

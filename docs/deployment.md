@@ -63,13 +63,13 @@ IIS 脚本兼容 Windows PowerShell 5.1；目标服务器检查和安装使用 *
 
 ### 静态网页
 
-OrderIQ 必须已有经过审核的 `apps/orderiq/index.html`。销量预测先在其原项目生成网页及完整 `forecast_assets/`，再从门户根执行：
+订单分析和销量预测先在各自原项目生成并审核最终发布物；本地默认直接读取原项目目录。打包前，从门户根收集到发布目录：
 
 ```powershell
-npm run prepare:apps -- forecast
+npm run prepare:apps -- orderiq forecast
 ```
 
-该命令只收集公开清单中的原样发布文件，已有目标产物移到 `artifacts/static-backup-...` 保留恢复。来源与哈希记录在忽略的 `apps/forecast.import.json`。数据库、原始 Excel、日志、秘密及整套业务源码不入静态目录或公开 Git。
+该命令只收集公开清单中的原样发布文件，已有目标产物移到 `artifacts/static-backup-...` 保留恢复。来源与哈希记录在忽略的 `apps/<应用ID>.import.json`。订单最终发布入口仍为 `apps/orderiq/index.html`，销量预测保留完整资源目录；旧订单导入器生成的本机覆盖仍可作为打包来源。数据库、原始 Excel、日志、秘密及整套业务源码不入静态目录或公开 Git。
 
 ### SOP 发布物与完整包
 

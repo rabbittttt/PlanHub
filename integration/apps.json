@@ -2,10 +2,10 @@
   "applications": {
     "orderiq": {
       "type": "static",
-      "root": "apps/orderiq",
-      "entry": "index.html",
+      "root": "../订单分析/output_file",
+      "entry": "鸿蒙智行订单分析汇总.html",
       "publicPaths": [
-        "index.html"
+        "鸿蒙智行订单分析汇总.html"
       ]
     },
     "forecast": {
