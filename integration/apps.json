@@ -34,13 +34,8 @@
         "/api/config",
         "/api/recognition"
       ],
-      "healthPath": "/api/catalog",
-      "healthKeys": [
-        "tables",
-        "files",
-        "status",
-        "config"
-      ],
+      "healthPath": "/",
+      "healthKeys": [],
       "start": {
         "cwd": "../数据速查",
         "command": "../.venv/Scripts/python.exe",
@@ -48,7 +43,21 @@
           "-B",
           "server.py"
         ]
-      }
+      },
+      "healthText": "<title>数据速查</title>",
+      "healthTimeoutMs": 5000,
+      "diagnosticChecks": [
+        {
+          "name": "目录与数据接口",
+          "path": "/api/catalog",
+          "keys": [
+            "tables",
+            "files",
+            "status",
+            "config"
+          ]
+        }
+      ]
     }
   }
 }

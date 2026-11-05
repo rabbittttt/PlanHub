@@ -92,3 +92,28 @@ test('configured navigation order removes inventory and keeps quicklook last eve
   assert.deepEqual(orderedApps(config.apps).map(a=>a.id),['sop','orderiq','forecast','leads','quicklook']);
   assert.equal(config.apps.find(a=>a.id==='forecast').status,'ready');
 });
+
+test('page health checks require an explicit identity marker and bounded timeout',async t=>{
+  const f=await fixture(t);
+  const proxy={type:'proxy',target:'http://127.0.0.1:8765',stripPrefix:true,rootRoutes:[],healthPath:'/',healthKeys:[],start:null};
+  const save=()=>writeFile(path.join(f.root,'integration/apps.json'),JSON.stringify(f.config));
+  f.config.applications.quicklook=proxy;await save();await assert.rejects(loadAppIntegrations(f.root),/固定页面标记/);
+  f.config.applications.quicklook={...proxy,healthText:'<title>Application</title>',healthTimeoutMs:5000,diagnosticChecks:[{name:'Catalog',path:'/api/catalog',keys:['tables','status']}]};await save();assert.equal((await loadAppIntegrations(f.root)).quicklook.healthTimeoutMs,5000);
+  await writeFile(path.join(f.root,'config.local/apps.json'),JSON.stringify({applications:{quicklook:{healthPath:'/api/catalog',healthKeys:['tables']}}}));
+  assert.equal((await loadAppIntegrations(f.root)).quicklook.healthText,undefined,'Explicit legacy JSON checks must remain compatible');
+  await writeFile(path.join(f.root,'config.local/apps.json'),JSON.stringify({applications:{quicklook:{healthKeys:['tables']}}}));
+  const inherited=await loadAppIntegrations(f.root);
+  assert.equal(inherited.quicklook.healthText,undefined);
+  assert.equal(inherited.quicklook.healthPath,'/api/catalog','Legacy key-only override must keep its JSON endpoint');
+  for(const healthPath of ['/api/catalog','/api/custom']){
+    await writeFile(path.join(f.root,'config.local/apps.json'),JSON.stringify({applications:{quicklook:{healthPath}}}));
+    const legacy=await loadAppIntegrations(f.root);
+    assert.equal(legacy.quicklook.healthPath,healthPath);
+    assert.equal(legacy.quicklook.healthText,undefined);
+    assert.deepEqual(legacy.quicklook.healthKeys,['tables','status'],'Legacy path-only override retains JSON keys');
+  }
+  await writeFile(path.join(f.root,'config.local/apps.json'),JSON.stringify({applications:{quicklook:{healthKeys:['unknown']}}}));
+  await assert.rejects(loadAppIntegrations(f.root),/需明确 healthPath/);
+  await writeFile(path.join(f.root,'config.local/apps.json'),JSON.stringify({applications:{}}));
+  f.config.applications.quicklook.healthTimeoutMs=60000;await save();await assert.rejects(loadAppIntegrations(f.root),/1000–10000/);
+});

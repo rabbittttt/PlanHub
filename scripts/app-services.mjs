@@ -1,17 +1,13 @@
 import path from 'node:path';
 import {fileURLToPath} from 'node:url';
 import {spawnService,stopService} from './service-process.mjs';
+import {probeServiceHealth} from './health-check.mjs';
 import net from 'node:net';
 import {access,mkdir,mkdtemp} from 'node:fs/promises';
 const ROOT=path.resolve(path.dirname(fileURLToPath(import.meta.url)),'..');
 
 export async function serviceHealthy(app) {
-  try {
-    const response=await fetch(new URL(app.healthPath,app.target),{signal:AbortSignal.timeout(1500),redirect:'error'});
-    if(!response.ok){await response.arrayBuffer();return false;}
-    const body=await response.json();
-    return body && app.healthKeys.every(key=>Object.hasOwn(body,key));
-  } catch{return false;}
+  return (await probeServiceHealth(app)).ok;
 }
 async function portFree(app) {
   const target=new URL(app.target);
