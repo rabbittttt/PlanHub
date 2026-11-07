@@ -6,29 +6,33 @@
   <meta name="color-scheme" content="light">
   <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self'; style-src 'self'; img-src 'self' data:; connect-src 'self'; frame-src 'self'; object-src 'none'; base-uri 'none'; form-action 'self'">
   <meta name="description" content="智选车计划部数据平台，查看销售需求、制定未来入库计划，统一访问 SOP 计划看板与订单分析。">
-  <meta name="theme-color" content="#329AF0">
+  <meta name="theme-color" content="#f3f4f6">
   <title>智选车计划部数据平台</title>
   <link rel="icon" href="./assets/favicon.ico?v=open-p-20261104" sizes="any">
   <link rel="icon" href="./assets/planning-icon.svg?v=open-p-20261104" type="image/svg+xml">
   <link rel="apple-touch-icon" href="./assets/apple-touch-icon.png?v=open-p-20261104">
-  <link rel="stylesheet" href="./css/portal.css?v=cycle-demo-20261105">
+  <link rel="stylesheet" href="./css/portal.css?v=shopeers-20261107">
   <script type="module" src="./js/portal.js?v=cycle-demo-20261105"></script>
 </head>
 <body>
   <a class="skip-link" href="#main">跳转到工作区</a>
   <div class="shell">
-    <header class="site-header">
-      <div class="header-main page-width">
+    <aside class="sidebar">
         <a class="brand" href="#/home">
           <img class="brand-mark" src="./assets/planning-icon.svg?v=open-p-20261104" width="42" height="42" alt="" aria-hidden="true">
           <span class="brand-copy"><span id="brand-organization" class="brand-organization">智选车</span><strong id="brand-name">计划部数据平台</strong></span>
         </a>
-          <div id="primary-navigation" class="primary-navigation">
-            <a class="nav-item home-link" href="#/home" id="home-link"><span data-icon="grid"></span><span>工作台</span></a>
-            <nav id="app-nav" aria-label="业务应用"></nav>
-          </div>
+        <nav id="primary-navigation" class="primary-navigation" aria-label="工作台导航">
+          <div class="nav-section">工作区</div>
+          <a class="nav-item home-link" href="#/home" id="home-link"><span data-icon="grid"></span><span>工作台</span></a>
+          <div class="nav-section nav-section-apps">业务应用</div>
+          <div id="app-nav"></div>
+        </nav>
+    </aside>
+    <header class="site-header">
+      <div class="header-main">
+        <div class="location-trail"><span data-icon="layers"></span><span>工作空间</span><span class="location-divider" aria-hidden="true">/</span><strong id="current-location">工作台</strong></div>
         <div class="header-tools">
-          <span id="current-location" class="sr-only">工作台</span>
           <div class="identity"><span class="avatar" data-icon="user"></span><span><strong id="identity-name">计划部工作空间</strong><small id="identity-detail">销售与运作计划</small></span></div>
           <button id="nav-toggle" class="nav-toggle" aria-label="展开应用导航" aria-expanded="false" aria-controls="primary-navigation"><span data-icon="menu"></span><span>应用</span></button>
         </div>
@@ -41,9 +45,9 @@
       <section id="home-view" class="home-view page-width" hidden aria-labelledby="home-title">
         <div class="home-heading">
           <div><h1 id="home-title">本轮计划工作</h1><p class="home-context">围绕需求变化，制定未来各期入库计划</p></div>
-          <div class="home-heading-meta"><span class="demo-badge">DEMO · 计划周期</span><time id="today"></time></div>
+          <div class="home-heading-meta"><span class="demo-badge">DEMO · 计划周期</span><span class="home-date"><span data-icon="calendar"></span><time id="today"></time></span><button id="cycle-reset" class="secondary-button" type="button"><span data-icon="refresh"></span>重置演示</button></div>
         </div>
-        <div class="cycle-demo-notice"><p id="cycle-demo-note">阶段、清单和计划窗口为演示，刷新后重置；下方应用入口按实际接入状态开放。</p><button id="cycle-reset" class="secondary-button" type="button">重置演示</button></div>
+        <p id="cycle-demo-note" class="cycle-demo-notice">阶段、清单和计划窗口为演示，刷新后重置。应用入口按实际接入状态开放。</p>
         <ol id="cycle-stages" class="cycle-stages" aria-label="演示计划阶段"></ol>
         <div class="cycle-layout">
           <section class="cycle-panel cycle-tasks" aria-labelledby="cycle-tasks-title">
