@@ -34,7 +34,7 @@
       "apps": [
         {
           "id": "sop",
-          "name": "SOP 计划看板",
+          "name": "SOP计划管理",
           "subtitle": "SALES & OPERATIONS PLANNING",
           "description": "协同销售需求与运作计划，制定未来各期入库量。",
           "url": "/sop/",
