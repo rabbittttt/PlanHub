@@ -89,13 +89,15 @@ PATHS = [(icon_coordinates(commands), fill) for commands, fill in [
 ]]
 
 
-def svg_source() -> str:
+def svg_source(*, with_background: bool = True) -> str:
+    tile_description = "\u767d\u8272\u5706\u89d2\u5e95\u4e0a\u7684" if with_background else ""
     result = [
         '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" width="512" height="512" role="img" aria-labelledby="planning-title planning-description">',
         '  <title id="planning-title">\u8ba1\u5212\u90e8\u81ea\u7531\u5f00\u53e3 P \u56fe\u6807</title>',
-        '  <desc id="planning-description">\u767d\u8272\u5706\u89d2\u5e95\u4e0a\u7684\u84dd\u8272 P\uff0c\u76f4\u7ad6\u8fde\u63a5\u4e0d\u5bf9\u79f0\u5f00\u53e3\u5706\u8179\uff0c\u8854\u63a5\u5904\u5e26\u6709\u6d45\u84dd\u6298\u9762\u3002</desc>',
-        f'  <rect width="64" height="64" rx="10" fill="{BACKGROUND}"/>',
+        f'  <desc id="planning-description">{tile_description}\u84dd\u8272 P\uff0c\u76f4\u7ad6\u8fde\u63a5\u4e0d\u5bf9\u79f0\u5f00\u53e3\u5706\u8179\uff0c\u8854\u63a5\u5904\u5e26\u6709\u6d45\u84dd\u6298\u9762\u3002</desc>',
     ]
+    if with_background:
+        result.append(f'  <rect width="64" height="64" rx="10" fill="{BACKGROUND}"/>')
     for commands, fill in PATHS:
         data = ' '.join(str(value) for command in commands for value in command)
         result.append(f'  <path d="{data}" fill="{fill}"/>')
@@ -123,12 +125,13 @@ def path_points(commands: list[tuple]) -> list[tuple[float, float]]:
     return points
 
 
-def render_png(size: int) -> Image.Image:
+def render_png(size: int, *, with_background: bool = True) -> Image.Image:
     scale = 32
     image = Image.new("RGBA", (64 * scale, 64 * scale), (0, 0, 0, 0))
     drawing = ImageDraw.Draw(image)
-    drawing.rounded_rectangle((0, 0, 64 * scale - 1, 64 * scale - 1),
-                              radius=10 * scale, fill=BACKGROUND)
+    if with_background:
+        drawing.rounded_rectangle((0, 0, 64 * scale - 1, 64 * scale - 1),
+                                  radius=10 * scale, fill=BACKGROUND)
     for commands, fill in PATHS:
         drawing.polygon([(round(x * scale), round(y * scale)) for x, y in path_points(commands)], fill=fill)
     return image.resize((size, size), Image.Resampling.LANCZOS)
@@ -141,9 +144,12 @@ def main() -> None:
     (OUTPUT / "planning-icon.svg").write_text(svg_source(), encoding="utf-8", newline="\n")
     render_png(512).save(OUTPUT / "planning-icon.png", optimize=True)
     render_png(180).save(OUTPUT / "apple-touch-icon.png", optimize=True)
-    render_png(32).save(OUTPUT / "favicon-32.png", optimize=True)
-    render_png(64).save(OUTPUT / "favicon.ico", format="ICO", sizes=[(16, 16), (32, 32), (48, 48), (64, 64)])
-    print("Exported approved open P: SVG, 512/180/32 PNG, 16/32/48/64 ICO (portal assets only).")
+    (OUTPUT / "favicon.svg").write_text(svg_source(with_background=False), encoding="utf-8", newline="\n")
+    render_png(32, with_background=False).save(OUTPUT / "favicon-32.png", optimize=True)
+    render_png(64, with_background=False).save(
+        OUTPUT / "favicon.ico", format="ICO", sizes=[(16, 16), (32, 32), (48, 48), (64, 64)]
+    )
+    print("Exported open P brand assets and transparent SVG, PNG and ICO favicons.")
 
 
 if __name__ == "__main__":
