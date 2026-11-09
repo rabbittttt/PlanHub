@@ -39,6 +39,6 @@
 
 ## 品牌与验收
 
-品牌的 SVG、PNG、ICO 沿用已确认几何，以 `portal/assets/planning-icon.svg` 为主。导出器为 `scripts/export-planning-icon.py`。此前的布局与验证记录见 [实施与验证档案](../../docs/history.md)。
+品牌的 SVG、PNG、ICO 以 `portal/assets/planning-icon.svg` 为主。2026-11-09 将 P 的竖笔向下延长 4.8 个画布单位，保留笔直平收的轮廓，并调整图形的垂直留白。导出器为 `scripts/export-planning-icon.py`。此前的布局与验证记录见 [实施与验证档案](../../docs/history.md)。
 
 运行 `npm run check` 与 `npm test`。在浏览器查看桌面、手机和断点附近截图，核对分栏比例、卡片密度、溢出、键盘焦点、演示交互、各应用嵌入和待接入提示。使用隔离数据验证业务视图。

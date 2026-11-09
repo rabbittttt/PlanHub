@@ -24,7 +24,8 @@ INNER_EDGE = "#0382DE"
 # Native vector reconstruction of the user's approved refinement of concept 3
 # (2026-11-04). Source-space coordinates preserve the chosen freeform outline;
 # the transform removes the generated preview margin, not any part of the P.
-# The lower stem stays between x=250 and x=418, with no outward tail or flick.
+# The lower stem stays between x=250 and x=418, with a flat end.
+# Its bottom extends by 84 source units to give the P a longer upright.
 P_OUTLINE = [
     ("M", 250, 553),
     ("C", 250, 377, 487, 228, 769, 228),
@@ -37,10 +38,10 @@ P_OUTLINE = [
     ("C", 513, 393, 451, 424, 418, 463),
     ("C", 386, 501, 388, 569, 403, 631),
     ("C", 409, 658, 418, 690, 418, 722),
-    ("L", 418, 1020),
-    ("C", 418, 1030, 413, 1035, 404, 1035),
-    ("L", 265, 1035),
-    ("C", 255, 1035, 250, 1030, 250, 1020),
+    ("L", 418, 1104),
+    ("C", 418, 1114, 413, 1119, 404, 1119),
+    ("L", 265, 1119),
+    ("C", 255, 1119, 250, 1114, 250, 1104),
     ("Z",),
 ]
 P_STEM = [
@@ -48,10 +49,10 @@ P_STEM = [
     ("C", 276, 477, 421, 400, 598, 393),
     ("C", 473, 413, 395, 470, 393, 551),
     ("C", 390, 605, 417, 662, 418, 702),
-    ("L", 418, 1020),
-    ("C", 418, 1030, 413, 1035, 404, 1035),
-    ("L", 265, 1035),
-    ("C", 255, 1035, 250, 1030, 250, 1020),
+    ("L", 418, 1104),
+    ("C", 418, 1114, 413, 1119, 404, 1119),
+    ("L", 265, 1119),
+    ("C", 255, 1119, 250, 1114, 250, 1104),
     ("Z",),
 ]
 P_INNER_EDGE = [
@@ -76,7 +77,7 @@ def icon_coordinates(commands: list[tuple]) -> list[tuple]:
     for command in commands:
         values = [command[0]]
         for index, value in enumerate(command[1:]):
-            origin, offset = (250, 8) if index % 2 == 0 else (228, 9)
+            origin, offset = (250, 8) if index % 2 == 0 else (228, 6.6)
             values.append(round((value - origin) * 48 / 840 + offset, 4))
         result.append(tuple(values))
     return result
