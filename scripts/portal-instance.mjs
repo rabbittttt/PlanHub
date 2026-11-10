@@ -9,10 +9,28 @@ const APP_ID='planhub-local-portal';
 const SCRIPTS=path.dirname(fileURLToPath(import.meta.url));
 const hash=value=>crypto.createHash('sha256').update(value).digest('hex');
 export async function workspaceId(root){return hash(await realpath(root));}
+
+async function sopBackendCode(sourceRoot){
+  const files=['server.py'];
+  async function visit(relative){
+    for(const entry of await readdir(path.join(sourceRoot,relative),{withFileTypes:true})){
+      const filename=path.join(relative,entry.name);
+      if(entry.isDirectory())await visit(filename);
+      else if(entry.isFile()&&entry.name.endsWith('.py'))files.push(filename);
+    }
+  }
+  await visit('sop');
+  files.sort();
+  return Promise.all(files.map(async filename=>[
+    filename.split(path.sep).join('/'),hash(await readFile(path.join(sourceRoot,filename)))
+  ]));
+}
+
 export async function configurationId(settings,applications,python){
   const files=(await readdir(SCRIPTS)).filter(name=>name.endsWith('.mjs')).sort();
   const code=await Promise.all(files.map(async name=>[name,hash(await readFile(path.join(SCRIPTS,name)))]));
-  return hash(JSON.stringify({settings,applications,python,code}));
+  const backendCode=await sopBackendCode(settings.sourceRoot);
+  return hash(JSON.stringify({settings,applications,python,code,backendCode}));
 }
 export async function probePortal(port){
   try {

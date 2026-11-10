@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import {mkdtemp,realpath,readFile,writeFile,rm} from 'node:fs/promises';
+import {mkdtemp,realpath,readFile,writeFile,mkdir,rm} from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
 import net from 'node:net';
@@ -39,13 +39,24 @@ test('stale records and another workspace cannot stop or clean up the current in
  await registerPortal(root,runtime);await stopPortal(root,port);await unregisterPortal(root,runtime);await unregisterPortal(root,successor);
 });
 
-test('configuration identity changes with the backend, source paths, data modes and application mappings',async()=>{
- const settings={root:'workspace',sourceRoot:'source',dataDirectory:'data',salesSourceDir:'sales',planSourceFile:'plan.xlsx',sharedConfig:'rules.py',port:4173,backendPort:8877,snapshot:false,demo:false};
+test('configuration identity changes with the backend, source paths, data modes and application mappings',async t=>{
+ const sourceRoot=await fixture(t),otherSourceRoot=await fixture(t);
+ for(const source of [sourceRoot,otherSourceRoot]){
+  await mkdir(path.join(source,'sop'));
+  await writeFile(path.join(source,'server.py'),'# server entry\n');
+  await writeFile(path.join(source,'sop','gateway.py'),'# backend module\n');
+ }
+ const settings={root:'workspace',sourceRoot,dataDirectory:'data',salesSourceDir:'sales',planSourceFile:'plan.xlsx',sharedConfig:'rules.py',port:4173,backendPort:8877,snapshot:false,demo:false};
  const applications={forecast:{type:'static',root:'output'}};
  const baseline=await configurationId(settings,applications,'python');
- for(const change of [{backendPort:8878},{dataDirectory:'other'},{planSourceFile:'other.xlsx'},{sourceRoot:'other-source'},{snapshot:true},{demo:true}])assert.notEqual(await configurationId({...settings,...change},applications,'python'),baseline);
+ for(const change of [{backendPort:8878},{dataDirectory:'other'},{planSourceFile:'other.xlsx'},{sourceRoot:otherSourceRoot},{snapshot:true},{demo:true}])assert.notEqual(await configurationId({...settings,...change},applications,'python'),baseline);
  assert.notEqual(await configurationId(settings,{forecast:{type:'static',root:'other'}},'python'),baseline);
  assert.notEqual(await configurationId(settings,applications,'different-python'),baseline);
+ await writeFile(path.join(sourceRoot,'server.py'),'# changed server route\n');
+ assert.notEqual(await configurationId(settings,applications,'python'),baseline);
+ await writeFile(path.join(sourceRoot,'server.py'),'# server entry\n');
+ await writeFile(path.join(sourceRoot,'sop','option_mix.py'),'# newly added backend module\n');
+ assert.notEqual(await configurationId(settings,applications,'python'),baseline);
 });
 
 test('a static-only preview cannot be mistaken for a full portal instance',async t=>{
