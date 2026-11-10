@@ -11,7 +11,7 @@ const paths = {
   users: '<circle cx="9" cy="8" r="3"/><path d="M3 21v-3a6 6 0 0 1 12 0v3M16 5a3 3 0 0 1 0 6m3 10v-3a6 6 0 0 0-2-4"/>',
   user: '<circle cx="12" cy="8" r="4"/><path d="M5 21v-2a7 7 0 0 1 14 0v2"/>',
   layers: '<path d="m12 3 10 5-10 5L2 8l10-5Zm-10 9 10 5 10-5M2 16l10 5 10-5"/>',
-  menu: '<path d="M4 6h16M4 12h16M4 18h16"/>',
+  panel: '<rect x="3" y="4" width="18" height="16" rx="2"/><path d="M9 4v16m4-11 3 3-3 3"/>',
   search: '<circle cx="10.5" cy="10.5" r="6.5"/><path d="m16 16 5 5"/>',
   info: '<circle cx="12" cy="12" r="9"/><path d="M12 11v6M12 7h.01"/>',
   refresh: '<path d="M20 7v5h-5M4 17v-5h5M6 6a8 8 0 0 1 13 2M18 18A8 8 0 0 1 5 16"/>',
@@ -36,27 +36,34 @@ function element(tag, className, text) {
   if (text !== undefined) node.textContent = text;
   return node;
 }
-function setNavigationOpen(open) {
-  $('primary-navigation').classList.toggle('open', open);
-  $('nav-toggle').setAttribute('aria-expanded', String(open));
-  $('nav-toggle').setAttribute('aria-label', open ? '收起应用导航' : '展开应用导航');
+const shell = document.querySelector('.shell');
+const sidebar = document.querySelector('.sidebar');
+const navToggle = $('nav-toggle');
+const navBackdrop = $('nav-backdrop');
+
+function setNavigationOpen(open, restoreFocus = false) {
+  shell.classList.toggle('nav-open', open);
+  navBackdrop.hidden = !open;
+  const label = open ? '收起应用导航' : '展开应用导航';
+  navToggle.setAttribute('aria-expanded', String(open));
+  navToggle.setAttribute('aria-label', label);
+  navToggle.title = label;
+  if (restoreFocus) navToggle.focus();
 }
-$('nav-toggle').addEventListener('click', () => setNavigationOpen($('nav-toggle').getAttribute('aria-expanded') !== 'true'));
-$('primary-navigation').addEventListener('click', e => {
-  if (!e.target.closest('a')) return;
-  const wasOpen = $('nav-toggle').getAttribute('aria-expanded') === 'true';
-  setNavigationOpen(false);
-  if (wasOpen && $('nav-toggle').getClientRects().length) $('nav-toggle').focus();
+
+navToggle.addEventListener('click', () => setNavigationOpen(!shell.classList.contains('nav-open')));
+navBackdrop.addEventListener('mousedown', event => event.preventDefault());
+navBackdrop.addEventListener('click', () => setNavigationOpen(false, true));
+sidebar.addEventListener('click', event => {
+  if (shell.classList.contains('nav-open') && event.target.closest('a')) setNavigationOpen(false, true);
 });
-document.addEventListener('click', e => {
-  if (!$('primary-navigation').contains(e.target) && !$('nav-toggle').contains(e.target)) setNavigationOpen(false);
+sidebar.addEventListener('focusout', event => {
+  if (shell.classList.contains('nav-open') && !sidebar.contains(event.relatedTarget)) setNavigationOpen(false);
 });
-document.addEventListener('keydown', e => {
-  if (e.key === 'Escape' && $('nav-toggle').getAttribute('aria-expanded') === 'true') {
-    const restoreFocus = $('primary-navigation').contains(document.activeElement);
-    setNavigationOpen(false);
-    if (restoreFocus && $('nav-toggle').getClientRects().length) $('nav-toggle').focus();
-    return;
+document.addEventListener('keydown', event => {
+  if (event.key === 'Escape' && shell.classList.contains('nav-open')) {
+    event.preventDefault();
+    setNavigationOpen(false, true);
   }
 });
 
@@ -69,7 +76,10 @@ function renderNavigation() {
     const link = element('a', 'nav-item');
     link.href = `#/app/${app.id}`;
     link.dataset.app = app.id;
-    link.append(icon(app.icon), element('span', '', app.name));
+    const name = app.status === 'ready' ? app.name : `${app.name} · ${labels[app.status]}`;
+    link.setAttribute('aria-label', name);
+    link.title = name;
+    link.append(icon(app.icon), element('span', 'nav-label', app.name));
     if (app.status !== 'ready') link.append(element('span', 'nav-pending', labels[app.status]));
     $('app-nav').append(link);
   }
@@ -156,7 +166,6 @@ function navigate() {
   const app = config.apps.find(app => app.id === current);
   $('home-view').hidden = current !== 'home';
   $('app-view').hidden = current === 'home';
-  $('current-location').textContent = app?.name || '工作台';
   document.title = `${app?.name || '工作台'} · ${config.platform.name}`;
   document.querySelectorAll('.nav-item').forEach(link => {
     const active = (link.dataset.app || 'home') === current;
@@ -166,28 +175,20 @@ function navigate() {
   setNavigationOpen(false);
   if (app) openApp(app); else stopLoading();
 }
-async function loadIdentity() {
-  if (!config.platform.identityEndpoint) return;
-  try {
-    const response = await fetch(config.platform.identityEndpoint, { credentials: 'same-origin', cache: 'no-store', signal: AbortSignal.timeout(5000) });
-    if (!response.ok) throw new Error();
-    const user = await response.json();
-    if (typeof user.displayName !== 'string' || !user.displayName.trim()) throw new Error();
-    $('identity-name').textContent = user.displayName;
-    $('identity-detail').textContent = '企业用户';
-  } catch { $('identity-detail').textContent = '用户信息暂不可用'; }
-}
 async function boot() {
   try {
     const response = await fetch('./config/apps.json', { cache: 'no-store', signal: AbortSignal.timeout(10000) });
     if (!response.ok) throw new Error(`配置请求失败（HTTP ${response.status}）`);
     config = validateConfig(await response.json());
+    const brand = sidebar.querySelector('.brand');
+    brand.setAttribute('aria-label', config.platform.name);
+    brand.title = config.platform.name;
     $('brand-organization').textContent = config.platform.organization || '智选车';
     $('brand-name').textContent = config.platform.shortName || config.platform.name || '计划管理平台';
     $('today').textContent = new Intl.DateTimeFormat('zh-CN', { year: 'numeric', month: 'long', day: 'numeric', weekday: 'long', timeZone: 'Asia/Shanghai' }).format(new Date());
     renderNavigation(); mountWorkbench($('home-view'), config.apps);
     $('boot-state').hidden = true;
-    navigate(); loadIdentity();
+    navigate();
   } catch (error) {
     const title = element('h1', '', '工作空间暂时无法加载');
     const hint = element('p', '', location.protocol === 'file:' ? '请通过本地预览服务或 IIS 地址打开门户，不要直接双击 HTML 文件。' : `请检查应用配置后重试。${error.message}`);

@@ -11,34 +11,26 @@
   <link rel="icon" href="./assets/favicon.ico?v=transparent-20261109" sizes="any">
   <link rel="icon" href="./assets/favicon.svg?v=transparent-20261109" type="image/svg+xml">
   <link rel="apple-touch-icon" href="./assets/apple-touch-icon.png?v=open-p-20261109">
-  <link rel="stylesheet" href="./css/portal.css?v=shopeers-20261107">
-  <script type="module" src="./js/portal.js?v=cycle-demo-20261105"></script>
+  <link rel="stylesheet" href="./css/portal.css?v=compact-rail-20261110">
+  <script type="module" src="./js/portal.js?v=compact-rail-20261110"></script>
 </head>
 <body>
   <a class="skip-link" href="#main">跳转到工作区</a>
   <div class="shell">
     <aside class="sidebar">
-        <a class="brand" href="#/home">
-          <img class="brand-mark" src="./assets/planning-icon.svg?v=open-p-20261109" width="42" height="42" alt="" aria-hidden="true">
+      <div class="sidebar-heading">
+        <a class="brand" href="#/home" aria-label="智选车计划部数据平台" title="智选车计划部数据平台">
+          <img class="brand-mark" src="./assets/planning-icon.svg?v=open-p-20261109" width="36" height="36" alt="">
           <span class="brand-copy"><span id="brand-organization" class="brand-organization">智选车</span><strong id="brand-name">计划部数据平台</strong></span>
         </a>
-        <nav id="primary-navigation" class="primary-navigation" aria-label="工作台导航">
-          <div class="nav-section">工作区</div>
-          <a class="nav-item home-link" href="#/home" id="home-link"><span data-icon="grid"></span><span>工作台</span></a>
-          <div class="nav-section nav-section-apps">业务应用</div>
-          <div id="app-nav"></div>
-        </nav>
-    </aside>
-    <header class="site-header">
-      <div class="header-main">
-        <div class="location-trail"><span data-icon="layers"></span><span>工作空间</span><span class="location-divider" aria-hidden="true">/</span><strong id="current-location">工作台</strong></div>
-        <div class="header-tools">
-          <div class="identity"><span class="avatar" data-icon="user"></span><span><strong id="identity-name">计划部工作空间</strong><small id="identity-detail">销售与运作计划</small></span></div>
-          <button id="nav-toggle" class="nav-toggle" aria-label="展开应用导航" aria-expanded="false" aria-controls="primary-navigation"><span data-icon="menu"></span><span>应用</span></button>
-        </div>
+        <button id="nav-toggle" class="nav-toggle" type="button" aria-label="展开应用导航" title="展开应用导航" aria-expanded="false" aria-controls="primary-navigation"><span data-icon="panel"></span></button>
       </div>
-
-    </header>
+      <nav id="primary-navigation" class="primary-navigation" aria-label="工作台导航">
+        <a class="nav-item home-link" href="#/home" id="home-link" aria-label="工作台" title="工作台"><span data-icon="grid"></span><span class="nav-label">工作台</span></a>
+        <div id="app-nav"></div>
+      </nav>
+    </aside>
+    <div id="nav-backdrop" class="nav-backdrop" aria-hidden="true" hidden></div>
 
     <main id="main" tabindex="-1">
       <div id="boot-state" class="empty-state" role="status"><span class="spinner"></span><h1>正在准备工作空间</h1><p>加载应用配置…</p></div>
