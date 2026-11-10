@@ -31,3 +31,6 @@ config.local/
 
 # Local update helper.
 update_script.bat
+
+# Machine-specific release inputs.
+deploy/app-releases.local.json

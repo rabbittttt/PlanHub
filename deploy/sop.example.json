@@ -6,5 +6,6 @@
   "data_dir": "data/sop",
   "source_dir": "data/sop/input_file",
   "shared_config": "config/shared_config.py",
-  "plan_file": "data/sop/SOP计划维护.xlsx"
+  "plan_file": "data/sop/SOP计划维护.xlsx",
+  "storage_root": "../shared"
 }

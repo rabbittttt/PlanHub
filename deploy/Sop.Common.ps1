@@ -32,12 +32,19 @@ function Resolve-SopGatewayTemplate {
     if ($DeploymentRoot -notmatch '^[A-Za-z]:[\\/]') { throw 'Resolve the deployment root before generating gateway configuration.' }
     $root = Resolve-LocalDeploymentPath -Value $DeploymentRoot -BasePath $DeploymentRoot -Name 'DeploymentRoot'
     $gateway = Get-Content -LiteralPath $Path -Raw -Encoding UTF8 | ConvertFrom-Json
+    # Portal-only template metadata. The child receives only its existing absolute path fields.
+    $storageRoot = $root
+    if ($null -ne $gateway.PSObject.Properties['storage_root']) {
+        if ($gateway.storage_root -isnot [string]) { throw 'storage_root must be a path string.' }
+        $storageRoot = Resolve-LocalDeploymentPath -Value $gateway.storage_root -BasePath $root -Name 'storage_root'
+        $gateway.PSObject.Properties.Remove('storage_root')
+    }
     foreach ($name in @('data_dir', 'source_dir', 'shared_config', 'plan_file')) {
         if ($null -eq $gateway.PSObject.Properties[$name]) { throw "Missing gateway template path: $name" }
         if ($gateway.$name -isnot [string]) { throw "$name must be a path string." }
         $value = [string]$gateway.$name
-        $resolved = Resolve-LocalDeploymentPath -Value $value -BasePath $root -Name $name
-        if ($value -notmatch '^[A-Za-z]:[\\/]' -and -not $resolved.StartsWith($root + '\', [StringComparison]::OrdinalIgnoreCase)) { throw "Relative $name must stay inside DeploymentRoot." }
+        $resolved = Resolve-LocalDeploymentPath -Value $value -BasePath $storageRoot -Name $name
+        if ($value -notmatch '^[A-Za-z]:[\\/]' -and -not $resolved.StartsWith($storageRoot + '\', [StringComparison]::OrdinalIgnoreCase)) { throw "Relative $name must stay inside the configured storage root." }
         foreach ($folder in @('portal', 'apps', 'proxy')) {
             $webRoot = Join-Path $root $folder
             if ($resolved -eq $webRoot -or $resolved.StartsWith($webRoot + '\', [StringComparison]::OrdinalIgnoreCase)) { throw "$name must stay outside web roots." }

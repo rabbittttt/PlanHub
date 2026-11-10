@@ -33,6 +33,19 @@ IIS 脚本兼容 Windows PowerShell 5.1；目标服务器检查和安装使用 *
 
 ## 2. 发布包与路径规则
 
+正式运行采用独立发布版本。开发目录的改动不会自动传到服务器，发布包也不会自动切换运行中的进程；每次动态应用更新都必须配套重启该应用服务。当前 `npm start` 的源码联调模式保留，用于本地开发，不作为正式运行方式。
+
+建议服务器目录保持如下关系，具体名称可配置：
+
+```text
+服务器目录/
+  DataPlatform-v1/        # 已验证旧包，保留恢复
+  DataPlatform-v2/        # 新版本包，不覆盖旧包
+  shared/                # 版本外的持久数据、计划表、业务设置和规则
+```
+
+门户新 SOP 模板使用 `storage_root: "../shared"`，由门户部署脚本解析后只把已有绝对路径字段交给 SOP；该字段不会传入子应用。旧模板和已有实际配置仍兼容，不会自动迁移数据。相邻发布版本默认指向同一存储目录；采用其他层级时先调整配置。
+
 发布布局如下；版本目录名按实际发布批次确定：
 
 ```text
@@ -41,7 +54,7 @@ IIS 脚本兼容 Windows PowerShell 5.1；目标服务器检查和安装使用 *
   apps/orderiq/           # 独立 IIS Application /orderiq/
   apps/forecast/          # 独立 IIS Application /forecast/
   services/sop/           # SOP 原项目构建的运行产物，不作静态映射
-  data/                   # 持久业务数据，不作静态映射
+  data/                   # 兼容空目录，新部署持久数据使用包外 ../shared/
   logs/                   # 服务日志，不作静态映射
   config/iis.json         # 服务器配置，不作静态映射
   config/quicklook.json   # 数据速查服务路径配置，不作静态映射
@@ -59,7 +72,8 @@ IIS 脚本兼容 Windows PowerShell 5.1；目标服务器检查和安装使用 *
 | 开发机文档中的文件路径 | 相对门户根目录；命令从该根执行 |
 | `config.example.json` / `sop-iis.example.json` 的 `DeploymentRoot` | 相对配置文件所在目录；模板 `..` 表示发布包根 |
 | `ProxySecretPath` | 相对解析后的发布根，且必须位于 `config/` 内 |
-| `deploy/sop.example.json` 的数据、来源、规则、计划路径 | 相对发布根；由配置脚本生成运行时绝对路径 |
+| SOP 模板的 storage_root | 相对发布根；新模板为 ../shared，未提供时兼容原发布根基准 |
+| SOP 模板的数据、来源、规则、计划路径 | 相对 storage_root；由配置脚本生成子应用已有的绝对路径字段 |
 | 数据速查配置的 `DeploymentRoot` | 相对配置文件目录；配置放在 `config/` 时 `..` 指向发布根 |
 | 数据速查配置的 `ProjectRoot`、`SharedDataRoot`、`RuntimePath` | 相对解析后的发布根；原项目数据继续由该原项目管理 |
 | SOP 构建器 `--destination`、IIS 物理路径、SOP 网关路径、部分部署脚本参数 | 要求绝对路径；用 `Resolve-Path`、`Join-Path`、`GetFullPath` 从当前环境生成 |
@@ -131,14 +145,50 @@ if ($LASTEXITCODE -ne 0) { throw '完整发布包生成失败。' }
 
 打包器附带门户、启用的静态产物、SOP 产物、部署脚本、配置模板及已准备的两套离线 wheel。**数据速查源码、数据库、真实 Excel、共享规则、账号及机密不在包中**，需按下一节另行迁移。完整工作台需要 SOP 时不得省略 `-IncludeSop -SopReleasePath`；目的目录存在时打包器拒绝覆盖。
 
+### 通用应用发布与完整交付检查
+
+所有新应用沿用固定 `/应用ID/` 入口，内部标签和接口变更不要求门户更新。原项目交付配套前后端的版本目录，门户只核对、复制；不要直接复制整个开发工作区或在正式目录 git pull。发布物格式与生成示例见[接入手册的正式发布契约](child-app-developer-guide.md#正式发布契约所有应用及开发者-ai-必读)。
+
+`New-AppRelease.ps1` 支持静态及服务发布封装，生成带文件哈希的 `app-release.json` 与原样 `payload/`。源目录应是原项目准备好的运行产物，数据库、原始 Excel、日志、密钥和开发目录不能混入。发布版本不可覆盖；目标目录存在时使用新的版本号。校验失败时不继续发布，保留失败目录排查，不将它作为可用版本。
+
+已登记 ready 的通用应用，可在本机发布映射中列出，例如：
+
+```json
+{"applications":[{"id":"capacity","release":"../staging/capacity-v1"}]}
+```
+
+保存为 `deploy/app-releases.local.json`，release 相对**该映射文件所在目录**解析；ID、公共前缀必须匹配门户已登记的应用，静态应用还需在 StaticApplications 中启用。不要把该示例 ID 直接应用到当前注册表。SOP 继续用 IncludeSop / SopReleasePath，禁止在两种输入中重复登记。源码与门户入口的本机联调配置不参与正式收集。
+
+```powershell
+# 在前文静态收集、SOP 构建和其他原项目发布完成后执行。
+./deploy/New-DeploymentPackage.ps1 -ConfigPath ./deploy/config.local.json `
+  -Destination $packagePath -IncludeSop -SopReleasePath $sopRelease `
+  -AppReleasesPath ./deploy/app-releases.local.json -RequireComplete -WhatIf
+# 去掉 -WhatIf 仅创建本地新包；不会启动服务或修改服务器。
+```
+
+完整包把静态产物放 apps/<id>、动态产物放 services/<id>，在 config/app-releases/<id>.json 保存通用清单。config/release-inventory.json 汇总所有 ready 应用的交付状态及版本。`-RequireComplete` 会在创建目录前拒绝缺少应用的包；不指定时允许部分包并明确提示 external，不会将缺失应用伪装成完整交付。
+
+当前数据速查尚无符合“数据外置”契约的独立包，且前端仍调用根 `/api/`（需要原项目支持 `/quicklook/` 公共前缀以摆脱逐接口代理），因而当前原项目条件下完整模式应拒绝缺少 quicklook 的交付。这是待原项目解决的阻塞，不要用空目录或伪造清单绕过。既有数据速查单独目录方案只作为迁移前兼容方式，暂不宣称它具备不可变版本切换能力。
+
+包复制到另一台电脑或交付前，执行只读核对：
+
+```powershell
+./deploy/Test-DeploymentPackage.ps1 -DeploymentRoot $packagePath -RequireComplete
+```
+
+该检查拒绝丢失、额外或被改写的应用文件、清单不匹配、路径越界和重解析点，不启动服务、不读业务数据库。它验证的是应用产物，不是整个服务器安全配置，也不证明业务接口、依赖和数据迁移已验收。实际服务器配置修改不影响应用文件哈希；不要修改已校验的业务运行文件。
+
+通用包中的新动态应用还需管理员按开发者交付命令建立独立常驻服务，并为整个公共前缀配置代理，不能逐个登记业务 API。现有 SOP、数据速查专用脚本保持原适用范围。首次新应用接入需完成这些配置，后续内部改动在前缀、端口和启动契约不变时只更新该应用版本。
+
 ### 另外迁移业务数据与数据速查原项目
 
 迁移前停止相关服务和写入，用 SQLite backup API 导出一致快照，或在确认服务全部停止后备份；不热拷主库而漏掉 WAL。保留迁移前原始数据和恢复备份。将以下内容通过已批准的方式送到目标电脑，均不得放入 `portal/` 或 `apps/`：
 
 | 内容 | 目标位置及配置 |
 |---|---|
-| SOP `sop.sqlite3`、`sales.json`、`source_settings.json` 及备份 | 按 `deploy/sop.example.json` 配置的数据目录，默认发布根的 `data/sop/` |
-| SOP 销售输入、已有计划维护 Excel、真实共享规则 | 默认 `data/sop/input_file/`、`data/sop/SOP计划维护.xlsx`、`config/shared_config.py`；先审核模板中的实际路径 |
+| SOP `sop.sqlite3`、`sales.json`、`source_settings.json` 及备份 | 按 `deploy/sop.example.json` 配置的数据目录，新模板为发布根外 `../shared/data/sop/` |
+| SOP 销售输入、已有计划维护 Excel、真实共享规则 | 新模板为 `../shared/data/sop/input_file/`、`../shared/data/sop/SOP计划维护.xlsx`、`../shared/config/shared_config.py`；先审核模板中的实际路径 |
 | 数据速查独立原仓库的已审核版本及 requirements | 默认发布根同级 `../数据速查/`；核对源提交，保留其 `output_file/` 和 `input_file/`，不复制开发机 `.venv` |
 | 数据速查数据库、设置、识别规则、缓存及私有输入 | 原项目的 `output_file/`、`input_file/`；迁移 `warehouse.db`、`workspace.json`、`recognition.json` 等实际文件，保留既有来源设置 |
 | 共用 Excel 输入 | 默认发布根同级 `../共享数据/`；按实际目录迁移，不能用空目录代替真实来源 |
@@ -340,6 +390,19 @@ Start-Website -Name $siteName
 ### 升级与回退
 
 升级前保存当前原项目版本、发布包、有效服务配置、任务定义、门户 `web.config` 及对应业务数据备份。任务与绑定沿用原名称时需管理员审核既有配置，不能把首次安装脚本当作覆盖升级命令；两个注册脚本均拒绝替换同名任务。数据速查更换依赖时选新 `RuntimePath`，保留上一环境；新版本服务不能与旧版本同时写同一数据库。
+
+**单应用更新优先按以下流程，不停止整个门户或其他应用：**
+
+1. 在新目录准备并校验该应用完整发布物、依赖和有效配置，保留旧目录。正式服务不可指向开发目录。
+2. 通知该应用使用者结束维护并关闭旧页面，等待上传、保存、导出及后台任务结束；备份该应用持久数据。
+3. 动态应用只停止自己的 Windows 任务/服务，确认进程退出；切换启动入口到新版本，保持原公共前缀、端口和外置数据路径，再启动该服务。不得并行启动两个版本写同一数据库。
+4. 静态应用在维护窗口一次切换该应用的 IIS 物理目录到新版本 payload；不逐文件覆盖正在使用的目录。动态应用的前端由同一版本服务提供，避免新前端配旧后端。
+5. 验证稳定健康地址、页面、新旧业务功能和持久数据，再让用户刷新重开应用。门户外壳不需要重新发布；已有页面缓存与 API 兼容由原应用负责。
+6. 失败时仅将该应用切回已保留的旧版本及匹配运行配置。数据库迁移不保证可逆，先确认兼容性，不能自动拿旧数据覆盖新数据。
+
+SOP 专用启动脚本接收 DeploymentRoot。独立更新 SOP 时可从新的完整包运行其服务脚本，保持原监听端口、身份配置和实际持久路径；不必同时切换门户站点。旧的已生成配置包含绝对路径，复制后须逐项核对并重新解析新机器路径，不能直接套用旧电脑绝对路径。禁止将首次安装脚本当作覆盖升级脚本。
+
+仅首次整体切换或明确的全站维护才需要下面的完整停止步骤。
 
 完整停止前先等待上传和计划保存完成，并停止有关写入。目标发布根下，管理员使用实际站点和任务名停止：
 

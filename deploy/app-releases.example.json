@@ -1,0 +1,5 @@
+{
+  "applications": [
+    {"id": "quicklook", "release": "../staging/quicklook-RELEASE_VERSION"}
+  ]
+}

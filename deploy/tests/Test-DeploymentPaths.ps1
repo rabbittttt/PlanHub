@@ -1,4 +1,4 @@
-#requires -Version 5.1
+﻿#requires -Version 5.1
 [CmdletBinding()]
 param()
 $ErrorActionPreference = 'Stop'
@@ -61,6 +61,7 @@ try {
     Save-Fixture $iisPath $iis
     $gatewayPath = Join-Path $releaseA 'deploy\sop.json'
     $gateway = Read-Json (Join-Path $deploy 'sop.example.json')
+    $gateway.PSObject.Properties.Remove('storage_root') # Verify compatibility with existing templates.
     $gateway.data_dir = 'data/sop'
     $gateway.source_dir = 'data/sop/input_file'
     $gateway.shared_config = 'config/shared_config.py'
@@ -129,6 +130,14 @@ try {
             Save-Fixture $path $candidate
             Assert-Rejected { Read-SopIisConfig -Path $path } "Secret escaped the config subtree: $value"
         }
+    }
+    Test-Case 'Versioned deployments share persistent storage without changing the child schema' {
+        $template = Join-Path $deploy 'sop.example.json'
+        $first = Resolve-SopGatewayTemplate -Path $template -DeploymentRoot $releaseA
+        $second = Resolve-SopGatewayTemplate -Path $template -DeploymentRoot $releaseB
+        foreach ($name in $gatewayFields) { Assert-Equal $first.$name $second.$name "Storage changed with release version: $name" }
+        Assert-Equal $first.data_dir (Join-Path $scratch 'shared\data\sop') 'Default storage must be outside both releases.'
+        Assert-Equal $first.PSObject.Properties['storage_root'] $null 'Portal metadata leaked into child configuration.'
     }
     Test-Case 'Gateway relative paths become absolute without rewriting the template' {
         $before = [IO.File]::ReadAllText($gatewayPath)
