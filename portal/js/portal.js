@@ -65,12 +65,9 @@ navToggle.addEventListener('click', () => {
   }
 });
 
-function prioritizedApps(apps) {
-  return orderedApps(apps);
-}
 function renderNavigation() {
   $('app-nav').replaceChildren();
-  for (const app of prioritizedApps(config.apps)) {
+  for (const app of orderedApps(config.apps)) {
     const link = element('a', 'nav-item');
     link.href = `#/app/${app.id}`;
     link.dataset.app = app.id;

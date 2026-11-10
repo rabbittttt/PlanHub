@@ -6,11 +6,10 @@ import crypto from 'node:crypto';
 import {fileURLToPath,pathToFileURL} from 'node:url';
 import {createInterface} from 'node:readline/promises';
 import {validateConfig} from '../portal/js/config.js';
-import {loadAppIntegrations} from './app-integrations.mjs';
+import {loadAppIntegrations,STATIC_MIME_TYPES} from './app-integrations.mjs';
 const ROOT=path.resolve(path.dirname(fileURLToPath(import.meta.url)),'..');
 const FILES=['portal/config/apps.json','config.local/apps.json','deploy/config.local.json'];
 const PRIVATE=new Set(['data','logs','node_modules','runtime','input_file','config.local']);
-const EXTENSIONS=new Set(['.html','.css','.js','.mjs','.json','.svg','.png','.jpg','.jpeg','.gif','.webp','.ico','.woff','.woff2','.txt']);
 const plain=value=>value&&typeof value==='object'&&!Array.isArray(value);
 const json=value=>JSON.stringify(value,null,2)+'\n';
 async function readOptional(filename){try{return await readFile(filename,'utf8');}catch(e){if(e.code==='ENOENT')return null;throw e;}}
@@ -34,7 +33,7 @@ async function validateStatic(root,app){
     if(info.isDirectory()){
       if(!directory)throw new Error('公开目录必须以 / 结尾：'+relative);
       for(const item of await readdir(filename,{withFileTypes:true}))await check(relative.replace(/\/$/,'')+'/'+item.name,item.isDirectory());
-    }else if(!info.isFile()||!relativeAsset(relative)||!EXTENSIONS.has(path.extname(relative).toLowerCase()))throw new Error('不是允许公开的网页资源：'+relative);
+    }else if(!info.isFile()||!relativeAsset(relative)||!Object.hasOwn(STATIC_MIME_TYPES,path.extname(relative).toLowerCase()))throw new Error('不是允许公开的网页资源：'+relative);
   }
   for(const item of app.publicPaths)await check(item,item.endsWith('/'));
   const entry=await lstat(path.join(source,app.entry));

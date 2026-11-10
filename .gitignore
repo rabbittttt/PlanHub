@@ -3,7 +3,6 @@ dist/
 staging/
 artifacts/
 apps/*/
-!apps/README.md
 deploy/config.local.json
 deploy/releases/
 apps/*.import.json

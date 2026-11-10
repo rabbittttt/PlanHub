@@ -72,11 +72,7 @@ node scripts/register-app.mjs --config config.local/new-app.json
 - 新旧程序切换使用同一份正式数据。不得启动时重置，也不同时启动两版写同一数据库。
 - 静态应用当前支持 HTML/CSS/JS/JSON、常见图片及字体；用明确公开清单。SPA history 回退、WebSocket 等特殊能力需单独确认，不能假定自动支持。
 
-## 当前项目差异
-
-订单分析已为动态服务，正式包由其 `package_release.py` 生成；生产需指定 data-dir、state-dir、web-dir。数据速查已支持 PUBLIC_PREFIX、PUBLIC_ORIGIN、DATA_DIR 等原项目环境配置及 `/healthz`；使用完整 `/quicklook/` 子树代理，不再为新接口加根路径白名单。SOP 保留原发布校验和身份网关。
-
-线索声量保留 ID `leads` 和 `/leads/`，本机示例入口为 `../线索声量/lead-dashboard.html`。替换内网正式文件后必须再次检查真实页面资源与下载。
+各应用的默认目录及入口见[项目首页](../README.md)。首次部署参数见[部署手册](deployment.md)。
 
 ## 发布与验收
 

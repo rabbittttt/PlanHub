@@ -66,4 +66,4 @@
 - 新应用优先使用 `接入新网页.bat`，在实际内网电脑登记。不能要求把业务源码传到外网电脑。
 - 发布以 BAT/PowerShell 和不可变产物为基础，不依赖外部发布平台；内网 Jenkins 可选。未配置允许的远程通道时，发送产物后需在部署电脑执行，不能把发送成功描述成上线成功。
 - 本机配置留在被忽略的 config.local；公开仓库仅维护通用工具、模板和入口。程序包不覆盖生产数据，首次 IIS/服务身份配置在目标机由部署人员明确完成。
-- 日常说明集中 README、docs/deployment.md 和 docs/child-app-developer-guide.md；旧 usage/文档目录只作链接入口，不复制维护同类说明。
+- 日常说明集中 README、docs/deployment.md 和 docs/child-app-developer-guide.md，从项目首页进入。

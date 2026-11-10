@@ -3,9 +3,8 @@ import {mkdir,mkdtemp,readdir,readFile,writeFile,copyFile,realpath,stat,rename,l
 import path from 'node:path';
 import crypto from 'node:crypto';
 import {fileURLToPath,pathToFileURL} from 'node:url';
-import {loadAppIntegrations,publicFile} from './app-integrations.mjs';
+import {loadAppIntegrations,publicFile,STATIC_MIME_TYPES} from './app-integrations.mjs';
 const ROOT=path.resolve(path.dirname(fileURLToPath(import.meta.url)),'..');
-const extensions=new Set(['.html','.css','.js','.mjs','.json','.svg','.png','.jpg','.jpeg','.gif','.webp','.ico','.woff','.woff2','.txt']);
 function inside(base,target){const rel=path.relative(base,target);return !path.isAbsolute(rel)&&rel!=='..'&&!rel.startsWith('..'+path.sep);}
 export async function prepareStaticApp(root,id,app) {
   if(!/^[a-z][a-z0-9-]*$/.test(id)||app.type!=='static')throw new Error('Invalid static application');
@@ -23,7 +22,7 @@ export async function prepareStaticApp(root,id,app) {
     if(info.isDirectory()) {
       for(const entry of await readdir(filename))await collect(relative.replace(/\/$/,'')+'/'+entry);
     } else if(info.isFile()) {
-      if(!publicFile(app,relative)||!extensions.has(path.extname(relative).toLowerCase())||relative.split('/').some(p=>p.startsWith('.')||['node_modules','logs','data'].includes(p)))throw new Error('Not a public release asset: '+relative);
+      if(!publicFile(app,relative)||!Object.hasOwn(STATIC_MIME_TYPES,path.extname(relative).toLowerCase())||relative.split('/').some(p=>p.startsWith('.')||['node_modules','logs','data'].includes(p)))throw new Error('Not a public release asset: '+relative);
       if(!files.includes(relative))files.push(relative);
     }
   }

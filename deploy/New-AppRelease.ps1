@@ -21,8 +21,6 @@ $manifest = New-AppManifest -PayloadPath $source -AppId $AppId -Version $Version
 Write-Output "Validated $AppId $Version ($Type). Copies prepared artifacts only; does not build, start or deploy the app."
 if ($PSCmdlet.ShouldProcess($target,'Create new independent release envelope')) {
     $release = [pscustomobject]@{Manifest=$manifest;Files=(Assert-AppPayload $source $manifest)}
-    Copy-AppPayload -Release $release -Destination (Join-Path $target 'payload')
-    Write-AppReleaseJson -Path (Join-Path $target 'app-release.json') -Value $manifest
-    $null = Assert-AppRelease $target
+    $null = Copy-ValidatedRelease $release $target
     Write-Output "Release created: $target"
 }

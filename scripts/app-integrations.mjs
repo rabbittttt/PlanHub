@@ -3,6 +3,15 @@ import {readFile} from 'node:fs/promises';
 import path from 'node:path';
 import {HEALTH_PATH,STOP_PATH} from './portal-instance.mjs';
 
+export const STATIC_MIME_TYPES = Object.freeze({
+  '.html': 'text/html; charset=utf-8', '.css': 'text/css; charset=utf-8',
+  '.js': 'text/javascript; charset=utf-8', '.mjs': 'text/javascript; charset=utf-8',
+  '.json': 'application/json; charset=utf-8', '.svg': 'image/svg+xml',
+  '.png': 'image/png', '.jpg': 'image/jpeg', '.jpeg': 'image/jpeg',
+  '.gif': 'image/gif', '.webp': 'image/webp', '.ico': 'image/x-icon',
+  '.woff': 'font/woff', '.woff2': 'font/woff2', '.txt': 'text/plain; charset=utf-8',
+});
+
 async function json(filename, fallback) {
   try {return JSON.parse((await readFile(filename,'utf8')).replace(/^\uFEFF/,''));}
   catch(error){if(error.code==='ENOENT')return fallback;throw error;}
@@ -11,15 +20,14 @@ function relativeFile(value) {
   return typeof value==='string' && value.length>0 && !value.includes('\\') && !value.includes(':') && !value.startsWith('/') && value.split('/').filter(Boolean).every(p=>p!=='.'&&p!=='..'&&!p.startsWith('.'));
 }
 // A probe is an explicit local endpoint, never an origin, query or traversal path.
-export function fixedProbePath(value) {
+function fixedProbePath(value) {
   return typeof value==='string' && /^\/(?:[A-Za-z0-9_-]+\/)*[A-Za-z0-9_-]*$/.test(value);
 }
 export function publicFile(app, relative) {
   return app.publicPaths.some(p=>p.endsWith('/')?relative.startsWith(p):relative===p);
 }
 export async function loadAppIntegrations(root) {
-  const fallback={applications:{orderiq:{type:'static',root:'apps/orderiq',entry:'index.html',publicPaths:['index.html']}}};
-  const defaults=await json(path.join(root,'integration/apps.json'),fallback);
+  const defaults=await json(path.join(root,'integration/apps.json'),{applications:{}});
   const local=await json(path.join(root,'config.local/apps.json'),{applications:{}});
   if(!defaults.applications||!local.applications)throw new Error('应用接入配置必须包含 applications');
   const result={}; const routes=new Set();

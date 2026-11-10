@@ -23,12 +23,6 @@ function Assert-PublishId {
     param([string]$AppId)
     if ($AppId -cnotmatch '^[a-z][a-z0-9-]{0,39}$' -or $AppId -in @('api','home','portal','config','assets','css','js','data','services','deploy','logs','tests')) { throw 'Invalid application ID.' }
 }
-function Copy-ValidatedRelease {
-    param($Release,[string]$Destination)
-    Copy-AppPayload -Release $Release -Destination (Join-Path $Destination 'payload')
-    Write-AppReleaseJson (Join-Path $Destination 'app-release.json') $Release.Manifest
-    return Assert-AppRelease $Destination
-}
 function Get-PublishRevision {
     param([string]$Source)
     $result = & git -C $Source rev-parse HEAD 2>$null

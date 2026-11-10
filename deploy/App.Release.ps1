@@ -109,3 +109,10 @@ function Copy-AppPayload {
     }
     $null = Assert-AppPayload -Path $target -Manifest $Release.Manifest
 }
+
+function Copy-ValidatedRelease {
+    param($Release,[string]$Destination)
+    Copy-AppPayload -Release $Release -Destination (Join-Path $Destination 'payload')
+    Write-AppReleaseJson (Join-Path $Destination 'app-release.json') $Release.Manifest
+    return Assert-AppRelease $Destination
+}

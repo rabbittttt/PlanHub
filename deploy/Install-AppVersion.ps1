@@ -88,10 +88,7 @@ try {
         New-Item -ItemType Directory -Path $parent -Force | Out-Null
         Assert-LocalPath $parent
         $incoming=Join-Path $parent ('.incoming-'+[guid]::NewGuid().ToString('N'))
-        New-Item -ItemType Directory -Path $incoming | Out-Null
-        Copy-AppPayload $plan.Release (Join-Path $incoming 'payload')
-        Write-AppReleaseJson (Join-Path $incoming 'app-release.json') $plan.Release.Manifest
-        $null=Assert-AppRelease $incoming
+        $null=Copy-ValidatedRelease $plan.Release $incoming
         Move-Item -LiteralPath $incoming -Destination $plan.Destination
     }
     $payload=Join-Path $plan.Destination 'payload'

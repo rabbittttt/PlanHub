@@ -3,19 +3,10 @@ import { readFile, realpath, stat } from 'node:fs/promises';
 import path from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 
-import {loadAppIntegrations, publicFile} from './app-integrations.mjs';
+import {loadAppIntegrations, publicFile, STATIC_MIME_TYPES} from './app-integrations.mjs';
 import {proxyRequest} from './proxy-request.mjs';
 import {handlePortalControl} from './portal-instance.mjs';
-export const STATIC_APPS = Object.freeze({ orderiq: 'orderiq' });
 const PROJECT_ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
-const MIME = {
-  '.html': 'text/html; charset=utf-8', '.css': 'text/css; charset=utf-8',
-  '.js': 'text/javascript; charset=utf-8', '.mjs': 'text/javascript; charset=utf-8',
-  '.json': 'application/json; charset=utf-8', '.svg': 'image/svg+xml',
-  '.png': 'image/png', '.jpg': 'image/jpeg', '.jpeg': 'image/jpeg',
-  '.gif': 'image/gif', '.webp': 'image/webp', '.ico': 'image/x-icon',
-  '.woff': 'font/woff', '.woff2': 'font/woff2', '.txt': 'text/plain; charset=utf-8',
-};
 const PRIVATE = new Set(['web.config', 'deploy', 'data', 'services', 'logs', 'scripts', 'tests', 'node_modules']);
 
 function inside(base, target) {
@@ -78,9 +69,8 @@ export function createServer({ root = PROJECT_ROOT, sopProxy = null, application
     if (!['GET', 'HEAD'].includes(request.method)) return send(405, 'Method not allowed', { Allow: 'GET, HEAD' });
     const configured = applications?.[parts[0]];
     const mount = configured?.type === 'static' ? configured : null;
-    const appDirectory = !applications && Object.hasOwn(STATIC_APPS, parts[0]) ? STATIC_APPS[parts[0]] : null;
-    const base = mount ? mount.root : appDirectory ? path.join(root, 'apps', appDirectory) : path.join(root, 'portal');
-    let relativeParts = mount || appDirectory ? parts.slice(1) : parts;
+    const base = mount?.root ?? path.join(root, 'portal');
+    let relativeParts = mount ? parts.slice(1) : parts;
     if (mount) {
       if (relativeParts.length === 0 && !pathname.endsWith('/')) return send(308, 'Redirecting', {Location: pathname + '/' + (request.url.includes('?') ? request.url.slice(request.url.indexOf('?')) : '')});
       if (relativeParts.length === 0 || relativeParts.join('/') === 'index.html') relativeParts = mount.entry.split('/');
@@ -103,10 +93,10 @@ export function createServer({ root = PROJECT_ROOT, sopProxy = null, application
         if (!inside(resolvedBase, candidate)) return send(403, 'Forbidden');
         info = await stat(candidate);
       }
-      if (!info.isFile() || !Object.hasOwn(MIME, path.extname(candidate).toLowerCase())) return send(404, 'Not found');
+      if (!info.isFile() || !Object.hasOwn(STATIC_MIME_TYPES, path.extname(candidate).toLowerCase())) return send(404, 'Not found');
       // Read before sending headers so an interrupted publication returns a clear error.
       const content = request.method === 'HEAD' ? null : await readFile(candidate);
-      response.writeHead(200, { ...headers, 'Content-Type': MIME[path.extname(candidate).toLowerCase()], 'Content-Length': content?.length ?? info.size });
+      response.writeHead(200, { ...headers, 'Content-Type': STATIC_MIME_TYPES[path.extname(candidate).toLowerCase()], 'Content-Length': content?.length ?? info.size });
       response.end(content);
     } catch (error) {
       if (['ENOENT', 'ENOTDIR'].includes(error.code)) return send(404, 'Not found');

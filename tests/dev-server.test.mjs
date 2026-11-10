@@ -6,17 +6,18 @@ import path from 'node:path';
 import http from 'node:http';
 import { createServer, parseRequestPath } from '../scripts/dev-server.mjs';
 import { validateWorkspace } from '../scripts/check.mjs';
+import { loadAppIntegrations } from '../scripts/app-integrations.mjs';
 
 async function fixture(t) {
   const root = await mkdtemp(path.join(os.tmpdir(), 'portal-test-'));
   t.after(() => rm(root, { recursive: true, force: true }));
-  for (const directory of ['portal/js', 'portal/config', 'apps/orderiq', 'data', 'services', 'deploy']) {
+  for (const directory of ['portal/js', 'portal/config', 'apps/reports', 'data', 'services', 'deploy']) {
     await mkdir(path.join(root, directory), { recursive: true });
   }
   await Promise.all([
     writeFile(path.join(root, 'portal/index.html'), '<title>portal</title>'),
     writeFile(path.join(root, 'portal/js/app.js'), 'export const ready = true;'),
-    writeFile(path.join(root, 'apps/orderiq/index.html'), '<title>orders</title>'),
+    writeFile(path.join(root, 'apps/reports/index.html'), '<title>reports</title>'),
     writeFile(path.join(root, 'data/private.txt'), 'private fixture'),
     writeFile(path.join(root, 'portal/web.config'), 'private config fixture'),
   ]);
@@ -35,8 +36,10 @@ function request(port, url, method = 'GET') {
   });
 }
 
-async function serve(t, root) {
-  const server = createServer({ root });
+async function serve(t, root, applications = {
+    reports: { type: 'static', root: path.join(root, 'apps/reports'), entry: 'index.html', publicPaths: ['index.html'] },
+}) {
+  const server = createServer({ root, applications });
   await new Promise((resolve, reject) => { server.once('error', reject); server.listen(0, '127.0.0.1', resolve); });
   t.after(() => new Promise(resolve => { server.closeAllConnections(); server.close(resolve); }));
   return server.address().port;
@@ -46,22 +49,26 @@ test('preview serves portal and explicit static mounts, including correct HEAD a
   const root = await fixture(t);
   const port = await serve(t, root);
   assert.equal((await request(port, '/')).body, '<title>portal</title>');
-  assert.equal((await request(port, '/orderiq/')).body, '<title>orders</title>');
+  assert.equal((await request(port, '/reports/')).body, '<title>reports</title>');
   const js = await request(port, '/js/app.js');
   assert.match(js.headers['content-type'], /javascript/);
-  const head = await request(port, '/orderiq/', 'HEAD');
+  const head = await request(port, '/reports/', 'HEAD');
   assert.equal(head.status, 200);
   assert.equal(head.body, '');
-  assert.equal(Number(head.headers['content-length']), Buffer.byteLength('<title>orders</title>'));
-  const redirect = await request(port, '/orderiq?view=all');
+  assert.equal(Number(head.headers['content-length']), Buffer.byteLength('<title>reports</title>'));
+  const redirect = await request(port, '/reports?view=all');
   assert.equal(redirect.status, 308);
-  assert.equal(redirect.headers.location, '/orderiq/?view=all');
+  assert.equal(redirect.headers.location, '/reports/?view=all');
   assert.equal((await request(port, '/', 'POST')).status, 405);
 });
 
 test('unknown applications and files produce 404 instead of portal fallbacks', async t => {
-  const port = await serve(t, await fixture(t));
-  for (const url of ['/unknown/', '/sop/', '/leads/', '/forecast/', '/orderiq/missing.js', '/constructor/', '/toString/']) {
+  const root = await fixture(t);
+  await mkdir(path.join(root, 'apps/orderiq'));
+  await writeFile(path.join(root, 'apps/orderiq/index.html'), '<title>Retired static report</title>');
+  assert.deepEqual(await loadAppIntegrations(root), {});
+  const port = await serve(t, root, null);
+  for (const url of ['/orderiq/', '/unknown/', '/sop/', '/leads/', '/forecast/', '/reports/missing.js', '/constructor/', '/toString/']) {
     const result = await request(port, url);
     assert.equal(result.status, 404, url);
     assert.equal(result.body, 'Not found');
@@ -71,9 +78,9 @@ test('unknown applications and files produce 404 instead of portal fallbacks', a
 test('private paths, traversal, Windows alternate streams and encoded evasions are rejected', async t => {
   const port = await serve(t, await fixture(t));
   for (const url of [
-    '/../data/private.txt', '/orderiq/../../data/private.txt', '/%2e%2e/data/private.txt',
-    '/orderiq/%252e%252e/data/private.txt', '/orderiq%2f..%2fdata/private.txt',
-    '/orderiq%5c..%5cdata/private.txt', '/orderiq\\..\\data/private.txt',
+    '/../data/private.txt', '/reports/../../data/private.txt', '/%2e%2e/data/private.txt',
+    '/reports/%252e%252e/data/private.txt', '/reports%2f..%2fdata/private.txt',
+    '/reports%5c..%5cdata/private.txt', '/reports\\..\\data/private.txt',
     '/data/private.txt', '/services/main.py', '/deploy/config.json', '/.git/config',
     '/.env', '/web.config', '/WEB.CONFIG', '/js/app.js::$DATA', '/js/app.js.', '/%00', '/bad%zz',
   ]) {
@@ -95,12 +102,12 @@ test('public directory links cannot expose private files', async t => {
 test('ready static apps require artifacts while pending and hidden apps do not', async t => {
   const root = await fixture(t);
   const raw = { platform: { name: '检查', defaultApp: 'home' }, groups: [{ id: 'business', name: '业务', apps: [
-    { id: 'orderiq', name: '订单', url: '/orderiq/', enabled: true, status: 'ready' },
+    { id: 'reports', name: '报表', url: '/reports/', enabled: true, status: 'ready' },
     { id: 'forecast', name: '预测', url: '/forecast/', enabled: false, status: 'ready' },
     { id: 'sop', name: '计划', url: '/sop/', enabled: true, status: 'pending' },
   ] }] };
   await mkdir(path.join(root, 'integration'));
-  await writeFile(path.join(root, 'integration/apps.json'), JSON.stringify({applications:{orderiq:{type:'static',root:'apps/orderiq',entry:'index.html',publicPaths:['index.html']},forecast:{type:'static',root:'apps/forecast',entry:'index.html',publicPaths:['index.html']}}}));
+  await writeFile(path.join(root, 'integration/apps.json'), JSON.stringify({applications:{reports:{type:'static',root:'apps/reports',entry:'index.html',publicPaths:['index.html']},forecast:{type:'static',root:'apps/forecast',entry:'index.html',publicPaths:['index.html']}}}));
   const save = () => writeFile(path.join(root, 'portal/config/apps.json'), JSON.stringify(raw));
   await save();
   assert.equal((await validateWorkspace(root)).warnings.length, 0);
