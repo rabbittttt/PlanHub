@@ -1,4 +1,4 @@
-﻿# Generic release envelopes. Application code is copied byte-for-byte and never executed here.
+# Generic release envelopes. Application code is copied byte-for-byte and never executed here.
 Set-StrictMode -Version Latest
 . (Join-Path $PSScriptRoot 'Deployment.Common.ps1')
 
@@ -53,7 +53,7 @@ function Assert-AppManifest {
         if ($entry.path -isnot [string] -or -not (Test-AppReleasePath $entry.path) -or $seen.ContainsKey($entry.path)) { throw 'Unsafe or duplicate release path.' }
         if ($entry.sha256 -isnot [string] -or $entry.sha256 -cnotmatch '^[a-f0-9]{64}$' -or
             ($entry.bytes -isnot [int] -and $entry.bytes -isnot [long]) -or $entry.bytes -lt 0) { throw 'Invalid file checksum or length.' }
-        if ($Manifest.type -ceq 'static' -and [IO.Path]::GetExtension($entry.path).ToLowerInvariant() -notin @('.html','.css','.js','.mjs','.json','.svg','.png','.jpg','.jpeg','.gif','.webp','.ico','.woff','.woff2','.txt')) { throw 'Non-public file in static release.' }
+        if ($Manifest.type -ceq 'static' -and -not ($Manifest.appId -ceq 'planhub' -and $entry.path -ceq 'web.config') -and [IO.Path]::GetExtension($entry.path).ToLowerInvariant() -notin @('.html','.css','.js','.mjs','.json','.svg','.png','.jpg','.jpeg','.gif','.webp','.ico','.woff','.woff2','.txt')) { throw 'Non-public file in static release.' }
         $seen[$entry.path] = $true
     }
     if (-not $seen.ContainsKey($Manifest.entryPoint)) { throw 'Release entryPoint is missing.' }

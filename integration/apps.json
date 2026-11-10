@@ -33,30 +33,23 @@
       "type": "proxy",
       "target": "http://127.0.0.1:8765",
       "stripPrefix": true,
-      "rootRoutes": [
-        "/api/catalog",
-        "/api/table",
-        "/api/workbooks",
-        "/api/workbook",
-        "/api/sheet",
-        "/api/search",
-        "/api/raw",
-        "/api/import",
-        "/api/sync",
-        "/api/config",
-        "/api/recognition"
+      "rootRoutes": [],
+      "healthPath": "/healthz",
+      "healthKeys": [
+        "ok",
+        "app"
       ],
-      "healthPath": "/",
-      "healthKeys": [],
       "start": {
         "cwd": "../数据速查",
         "command": "../.venv/Scripts/python.exe",
         "args": [
           "-B",
           "server.py"
-        ]
+        ],
+        "env": {
+          "DATA_QUICKLOOK_PUBLIC_PREFIX": "/quicklook/"
+        }
       },
-      "healthText": "<title>数据速查</title>",
       "healthTimeoutMs": 5000,
       "diagnosticChecks": [
         {
@@ -69,6 +62,14 @@
             "config"
           ]
         }
+      ]
+    },
+    "leads": {
+      "type": "static",
+      "root": "../线索声量",
+      "entry": "lead-dashboard.html",
+      "publicPaths": [
+        "lead-dashboard.html"
       ]
     }
   }

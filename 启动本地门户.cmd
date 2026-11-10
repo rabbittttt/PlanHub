@@ -8,7 +8,7 @@ if errorlevel 1 (
   pause
   exit /b 1
 )
-echo 正在启动本地门户、SOP 与数据速查服务，请保留此窗口。
+echo 正在启动本地门户及已配置的业务服务，请保留此窗口。
 node scripts\start-local.mjs %*
 set "portal_exit=%errorlevel%"
 if not "%portal_exit%"=="0" (

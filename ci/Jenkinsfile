@@ -1,0 +1,41 @@
+// Optional INTRANET Jenkins pipeline. BAT/PowerShell also work without Jenkins.
+// A node: full local source projects + private PLANHUB_PUBLISH_CONFIG.
+// B node: preinstalled IIS/runtime + private PLANHUB_DEPLOY_CONFIG.
+// Configure these environment variables on the corresponding Jenkins nodes.
+// Requires an already reviewed Windows agent/service identity, no passwords in Git.
+pipeline {
+    agent none
+    options { skipDefaultCheckout(true); disableConcurrentBuilds(); skipStagesAfterUnstable() }
+    parameters {
+        string(name: 'APP_ID', defaultValue: 'planhub', description: 'Registered application ID; planhub publishes the portal')
+        string(name: 'VERSION', defaultValue: '', description: 'Unique version, required')
+    }
+    stages {
+        stage('Package and verify') {
+            agent { label 'planhub-build' }
+            steps {
+                checkout scm
+                powershell '''
+                    $ErrorActionPreference='Stop'
+                    if(-not $env:PLANHUB_PUBLISH_CONFIG){throw 'Set PLANHUB_PUBLISH_CONFIG on the build node.'}
+                    if($env:APP_ID -cnotmatch '^[a-z][a-z0-9-]{0,39}$' -or $env:VERSION -cnotmatch '^[A-Za-z0-9][A-Za-z0-9._-]{0,79}$'){throw 'Invalid app/version.'}
+                    & ./deploy/Publish-App.ps1 -AppId $env:APP_ID -Version $env:VERSION -ConfigPath $env:PLANHUB_PUBLISH_CONFIG -Action Package -NonInteractive
+                '''
+                archiveArtifacts artifacts: "staging/releases/${params.APP_ID}-${params.VERSION}/**", fingerprint: true, onlyIfSuccessful: true
+                stash name: 'verified-release', includes: "staging/releases/${params.APP_ID}-${params.VERSION}/**,deploy/*.ps1", useDefaultExcludes: false
+            }
+        }
+        stage('Publish selected version') {
+            agent { label 'planhub-deploy' }
+            steps {
+                // Do not checkout the business repositories on the deployment node.
+                unstash 'verified-release'
+                powershell '''
+                    $ErrorActionPreference='Stop'
+                    if(-not $env:PLANHUB_DEPLOY_CONFIG){throw 'Set PLANHUB_DEPLOY_CONFIG on the deployment node.'}
+                    & ./deploy/Install-AppVersion.ps1 -ReleasePath ("staging/releases/"+$env:APP_ID+"-"+$env:VERSION) -ConfigPath $env:PLANHUB_DEPLOY_CONFIG -Apply
+                '''
+            }
+        }
+    }
+}

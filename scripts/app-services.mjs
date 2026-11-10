@@ -6,6 +6,17 @@ import net from 'node:net';
 import {access,mkdir,mkdtemp} from 'node:fs/promises';
 const ROOT=path.resolve(path.dirname(fileURLToPath(import.meta.url)),'..');
 
+// The application owns the meaning of its environment paths (usually relative to cwd).
+export function serviceEnvironment(start, inherited=process.env) {
+  const result={...inherited};
+  for(const [key,value] of Object.entries({...start?.env,PYTHONDONTWRITEBYTECODE:'1',PYTHONIOENCODING:'utf-8',PYTHONUNBUFFERED:'1'})){
+    // Windows treats names case-insensitively; remove inherited spelling before overriding.
+    if(process.platform==='win32')for(const name of Object.keys(result))if(name.toUpperCase()===key.toUpperCase())delete result[name];
+    result[key]=value;
+  }
+  return result;
+}
+
 export async function serviceHealthy(app) {
   return (await probeServiceHealth(app)).ok;
 }
@@ -30,7 +41,7 @@ export async function startAppServices(applications,{root=ROOT,env=process.env}=
       await access(app.start.command);await access(app.start.cwd);
       const artifacts=path.join(root,'artifacts');await mkdir(artifacts,{recursive:true});
       const logDirectory=await mkdtemp(path.join(artifacts,'service-'+id+'-'));
-      const child=spawnService(app.start.command,app.start.args,{cwd:app.start.cwd,env:{...env,PYTHONDONTWRITEBYTECODE:'1',PYTHONIOENCODING:'utf-8',PYTHONUNBUFFERED:'1'},logDirectory});
+      const child=spawnService(app.start.command,app.start.args,{cwd:app.start.cwd,env:serviceEnvironment(app.start,env),logDirectory});
       children.push(child);
       let failed=false;child.on('error',()=>{failed=true;});child.on('exit',()=>{failed=true;});
       let ready=false;

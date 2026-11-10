@@ -10,6 +10,10 @@ async function json(filename, fallback) {
 function relativeFile(value) {
   return typeof value==='string' && value.length>0 && !value.includes('\\') && !value.includes(':') && !value.startsWith('/') && value.split('/').filter(Boolean).every(p=>p!=='.'&&p!=='..'&&!p.startsWith('.'));
 }
+// A probe is an explicit local endpoint, never an origin, query or traversal path.
+export function fixedProbePath(value) {
+  return typeof value==='string' && /^\/(?:[A-Za-z0-9_-]+\/)*[A-Za-z0-9_-]*$/.test(value);
+}
 export function publicFile(app, relative) {
   return app.publicPaths.some(p=>p.endsWith('/')?relative.startsWith(p):relative===p);
 }
@@ -53,14 +57,22 @@ export async function loadAppIntegrations(root) {
       const textMode=typeof app.healthText==='string'&&app.healthText.trim().length>0&&app.healthText.length<=200;
       if(Boolean(app.healthKeys.length)===Boolean(textMode))throw new Error('健康检查须选择 JSON 字段或固定页面标记之一: '+id);
       if(app.healthTimeoutMs!==undefined&&(!Number.isInteger(app.healthTimeoutMs)||app.healthTimeoutMs<1000||app.healthTimeoutMs>10000))throw new Error('健康检查超时必须为1000–10000毫秒: '+id);
-      if(app.healthPath!=='/'&&(typeof app.healthPath!=='string'||!/^\/api\/[a-z][a-z0-9-]*$/.test(app.healthPath)))throw new Error('健康检查路径必须为 / 或 /api/<名称>: '+id);
-      if(app.diagnosticChecks!==undefined&&(!Array.isArray(app.diagnosticChecks)||app.diagnosticChecks.length>5||!app.diagnosticChecks.every(check=>check&&typeof check.name==='string'&&/^\/api\/[a-z][a-z0-9-]*$/.test(check.path)&&Array.isArray(check.keys)&&check.keys.length>0&&check.keys.every(k=>typeof k==='string'&&k.trim()))))throw new Error('无效只读接口诊断配置: '+id);
+      if(!fixedProbePath(app.healthPath))throw new Error('健康检查路径必须为固定站内路径，如 /healthz 或 /api/health: '+id);
+      if(app.diagnosticChecks!==undefined&&(!Array.isArray(app.diagnosticChecks)||app.diagnosticChecks.length>5||!app.diagnosticChecks.every(check=>check&&typeof check.name==='string'&&fixedProbePath(check.path)&&Array.isArray(check.keys)&&check.keys.length>0&&check.keys.every(k=>typeof k==='string'&&k.trim()))))throw new Error('无效只读接口诊断配置: '+id);
       for(const route of app.rootRoutes) {
         if(typeof route!=='string'||!/^\/api\/[a-z][a-z0-9-]*$/.test(route))throw new Error('代理接口必须逐项登记: '+id);
       }
       for(const route of app.rootRoutes){if(routes.has(route))throw new Error('根接口路由冲突: '+route);routes.add(route);}
       if(app.start){
         if(typeof app.start.cwd!=='string'||typeof app.start.command!=='string'||!Array.isArray(app.start.args)||!app.start.args.every(a=>typeof a==='string'))throw new Error('无效独立服务启动参数: '+id);
+        if(app.start.env!==undefined){
+          if(!app.start.env||typeof app.start.env!=='object'||Array.isArray(app.start.env))throw new Error('环境变量须为字符串键值对象: '+id);
+          const keys=new Set();
+          for(const [key,value] of Object.entries(app.start.env)){
+            if(!/^[A-Za-z_][A-Za-z0-9_]*$/.test(key)||['__PROTO__','CONSTRUCTOR','PROTOTYPE'].includes(key.toUpperCase())||keys.has(key.toUpperCase())||typeof value!=='string'||value.includes('\0'))throw new Error('无效或重复的服务环境变量: '+id);
+            keys.add(key.toUpperCase());
+          }
+        }
         app.start={...app.start,cwd:path.resolve(root,app.start.cwd),command:path.resolve(root,app.start.command)};
       }
     } else throw new Error('未知接入类型: '+id);

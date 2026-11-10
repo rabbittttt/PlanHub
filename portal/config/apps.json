@@ -66,13 +66,13 @@
       "apps": [
         {
           "id": "leads",
-          "name": "线索分析",
+          "name": "线索声量",
           "subtitle": "Leads",
-          "description": "追踪线索流转与转化表现，发现增长机会。",
+          "description": "",
           "url": "/leads/",
           "icon": "users",
           "enabled": true,
-          "status": "pending",
+          "status": "ready",
           "version": null,
           "dataUpdatedAt": null,
           "order": 40

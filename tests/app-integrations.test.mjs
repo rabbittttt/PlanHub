@@ -117,3 +117,36 @@ test('page health checks require an explicit identity marker and bounded timeout
   await writeFile(path.join(f.root,'config.local/apps.json'),JSON.stringify({applications:{}}));
   f.config.applications.quicklook.healthTimeoutMs=60000;await save();await assert.rejects(loadAppIntegrations(f.root),/1000–10000/);
 });
+
+
+test('new service probes and private environment settings are independent of business API routes',async t=>{
+  const f=await fixture(t);
+  const proxy={type:'proxy',target:'http://127.0.0.1:8765',stripPrefix:true,rootRoutes:[],healthPath:'/healthz',healthKeys:['ok','app'],start:{cwd:'../service',command:'../.venv/Scripts/python.exe',args:['server.py'],env:{APP_PUBLIC_PREFIX:'/service/',APP_DATA_DIR:'../persistent'}}};
+  const save=()=>writeFile(path.join(f.root,'integration/apps.json'),JSON.stringify(f.config));
+  f.config.applications.service=proxy;await save();
+  const result=(await loadAppIntegrations(f.root)).service;
+  assert.equal(result.healthPath,'/healthz');assert.deepEqual(result.rootRoutes,[]);
+  assert.equal(result.start.env.APP_DATA_DIR,'../persistent','Business env values keep their source application meaning');
+  for(const healthPath of ['//other.test/health','/../health','/health?write=1','/health#test','/%2e%2e/api']){
+    f.config.applications.service={...proxy,healthPath};await save();await assert.rejects(loadAppIntegrations(f.root),/健康检查路径/);
+  }
+  for(const env of [{App:'one',APP:'two'},{APP:1},['oops'],{APP:'null\0value'}]){
+    f.config.applications.service={...proxy,start:{...proxy.start,env}};await save();await assert.rejects(loadAppIntegrations(f.root),/环境变量/);
+  }
+});
+
+test('new nested business APIs work through the existing prefix without a portal allowlist',async t=>{
+  const f=await fixture(t);
+  const upstream=http.createServer(async(req,res)=>{
+    const chunks=[];for await(const chunk of req)chunks.push(chunk);
+    res.setHeader('Content-Type','application/json');res.end(JSON.stringify({url:req.url,method:req.method,body:Buffer.concat(chunks).toString()}));
+  });
+  const target=await listen(t,upstream);
+  f.config.applications.service={type:'proxy',target,stripPrefix:true,rootRoutes:[],healthPath:'/healthz',healthKeys:['ok'],start:null};
+  await writeFile(path.join(f.root,'integration/apps.json'),JSON.stringify(f.config));
+  const origin=await listen(t,createServer({root:f.root,applications:await loadAppIntegrations(f.root)}));
+  const response=await fetch(origin+'/service/api/new-tab/v2/export?format=csv',{method:'POST',headers:{'Content-Type':'application/json'},body:'{"filter":"demo"}'});
+  assert.equal(response.status,200);
+  assert.deepEqual(await response.json(),{url:'/api/new-tab/v2/export?format=csv',method:'POST',body:'{"filter":"demo"}'});
+  assert.equal((await fetch(origin+'/api/new-tab/v2/export')).status,404);
+});

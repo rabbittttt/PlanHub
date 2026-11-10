@@ -13,7 +13,8 @@
     "test": "node --test tests/*.test.mjs",
     "prepare:apps": "node scripts/prepare-apps.mjs",
     "stop": "node scripts/stop-local.mjs",
-    "diagnose": "node scripts/diagnose.mjs"
+    "diagnose": "node scripts/diagnose.mjs",
+    "register:app": "node scripts/register-app.mjs"
   },
   "engines": {
     "node": ">=20"

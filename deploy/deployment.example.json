@@ -1,0 +1,124 @@
+{
+  "deploymentRoot": "../../PlanHub部署",
+  "siteName": "DataPlatform",
+  "applications": {
+    "planhub": {
+      "kind": "portal",
+      "healthUrl": "http://localhost:8080/"
+    },
+    "leads": {
+      "kind": "static",
+      "healthUrl": "http://localhost:8080/leads/"
+    },
+    "forecast": {
+      "kind": "static",
+      "healthUrl": "http://localhost:8080/forecast/"
+    },
+    "orderiq": {
+      "kind": "service",
+      "healthUrl": "http://localhost:8080/orderiq/",
+      "command": "runtime/orderiq/Scripts/python.exe",
+      "arguments": [
+        "-B",
+        "{payload}/server.py",
+        "--host",
+        "127.0.0.1",
+        "--port",
+        "{port}",
+        "--data-dir",
+        "{data}/runtime",
+        "--state-dir",
+        "{data}/annotations",
+        "--web-dir",
+        "{payload}/web",
+        "--allowed-host",
+        "localhost",
+        "--allowed-origin",
+        "http://localhost:8080"
+      ],
+      "environment": {
+        "PYTHONIOENCODING": "utf-8",
+        "PYTHONUNBUFFERED": "1",
+        "PYTHONDONTWRITEBYTECODE": "1"
+      },
+      "dataDirectory": "data/orderiq",
+      "port": 8766,
+      "taskName": "PlanHub-orderiq",
+      "serviceAccount": "MACHINE\\PlanHubService",
+      "backendHealthPath": "/health",
+      "healthExpected": {
+        "application": "order-dashboard"
+      },
+      "proxyMode": "prefix",
+      "stripPrefix": true,
+      "maxRequestBytes": 269484032
+    },
+    "quicklook": {
+      "kind": "service",
+      "healthUrl": "http://localhost:8080/quicklook/",
+      "command": "runtime/quicklook/Scripts/python.exe",
+      "arguments": [
+        "-B",
+        "{payload}/server.py",
+        "--port",
+        "{port}"
+      ],
+      "environment": {
+        "PYTHONIOENCODING": "utf-8",
+        "PYTHONUNBUFFERED": "1",
+        "PYTHONDONTWRITEBYTECODE": "1",
+        "DATA_QUICKLOOK_DATA_DIR": "{data}",
+        "DATA_QUICKLOOK_SOURCE_BASE": "{deployment}/shared",
+        "DATA_QUICKLOOK_PUBLIC_PREFIX": "/quicklook/",
+        "DATA_QUICKLOOK_PUBLIC_ORIGIN": "http://localhost:8080"
+      },
+      "dataDirectory": "data/quicklook",
+      "port": 8765,
+      "taskName": "PlanHub-quicklook",
+      "serviceAccount": "MACHINE\\PlanHubService",
+      "backendHealthPath": "/healthz",
+      "healthExpected": {
+        "ok": true,
+        "app": "quicklook"
+      },
+      "proxyMode": "prefix",
+      "stripPrefix": true,
+      "maxRequestBytes": 269484032
+    },
+    "sop": {
+      "kind": "service",
+      "healthUrl": "http://localhost:8080/sop/api/health",
+      "command": "runtime/sop/Scripts/python.exe",
+      "arguments": [
+        "-B",
+        "{payload}/server.py",
+        "--host",
+        "127.0.0.1",
+        "--port",
+        "{port}",
+        "--gateway-config",
+        "{deployment}/config/sop.json"
+      ],
+      "environment": {
+        "PYTHONIOENCODING": "utf-8",
+        "PYTHONUNBUFFERED": "1",
+        "PYTHONDONTWRITEBYTECODE": "1",
+        "SOP_EXCEL_ENGINE": "python"
+      },
+      "secretEnvironmentFiles": {
+        "SOP_PROXY_SECRET": "config/sop-proxy.secret"
+      },
+      "dataDirectory": "data/sop",
+      "port": 8877,
+      "taskName": "PlanHub-sop",
+      "serviceAccount": "MACHINE\\PlanHubService",
+      "backendHealthPath": "/sop/api/health",
+      "healthExpected": {
+        "app_id": "hima-sop",
+        "launch_mode": "gateway"
+      },
+      "proxyMode": "existing",
+      "backendHealthMode": "public"
+    }
+  }
+}

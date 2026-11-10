@@ -7,11 +7,11 @@
   "RequireReverseProxy": false,
   "StaticApplications": [
     {
-      "Name": "orderiq",
+      "Name": "forecast",
       "Enabled": true
     },
     {
-      "Name": "forecast",
+      "Name": "leads",
       "Enabled": true
     }
   ]

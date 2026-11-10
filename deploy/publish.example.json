@@ -1,0 +1,70 @@
+{
+  "schemaVersion": 1,
+  "inbox": "",
+  "remote": {
+    "computerName": "",
+    "toolsRoot": "",
+    "configPath": "",
+    "inboxLocalPath": ""
+  },
+  "applications": {
+    "planhub": {
+      "kind": "portal"
+    },
+    "sop": {
+      "kind": "sop",
+      "sourceRoot": "../SOP维护",
+      "build": {
+        "command": "../.venv/Scripts/python.exe",
+        "cwd": "../SOP维护",
+        "args": [
+          "-B",
+          "scripts/build_release.py",
+          "--destination",
+          "{output}"
+        ]
+      },
+      "healthPath": "/api/health"
+    },
+    "quicklook": {
+      "kind": "release",
+      "sourceRoot": "../数据速查",
+      "build": {
+        "command": "../.venv/Scripts/python.exe",
+        "cwd": "../数据速查",
+        "args": [
+          "-B",
+          "scripts/build_release.py",
+          "--version",
+          "{version}",
+          "--destination",
+          "{output}"
+        ]
+      }
+    },
+    "orderiq": {
+      "kind": "payload",
+      "sourceRoot": "../订单分析",
+      "type": "service",
+      "entryPoint": "server.py",
+      "dataMode": "external",
+      "healthPath": "/api/health",
+      "build": {
+        "command": "../.venv/Scripts/python.exe",
+        "cwd": "../订单分析",
+        "args": [
+          "-B",
+          "scripts/generate_html/package_release.py",
+          "--output",
+          "{output}"
+        ]
+      }
+    },
+    "forecast": {
+      "kind": "static"
+    },
+    "leads": {
+      "kind": "static"
+    }
+  }
+}

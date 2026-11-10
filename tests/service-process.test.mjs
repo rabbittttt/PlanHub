@@ -5,6 +5,7 @@ import path from 'node:path';
 import os from 'node:os';
 import net from 'node:net';
 import {spawnService,stopService} from '../scripts/service-process.mjs';
+import {startAppServices} from '../scripts/app-services.mjs';
 
 async function fixture(t){
  const root=await realpath(await mkdtemp(path.join(os.tmpdir(),'portal-service-log-')));
@@ -34,4 +35,17 @@ test('Windows shutdown also stops a launcher-owned grandchild listener',{skip:pr
  const probe=net.createServer();
  await new Promise((resolve,reject)=>{probe.once('error',reject);probe.listen(listenPort,'127.0.0.1',resolve);});
  await new Promise(r=>probe.close(r));
+});
+
+
+test('service launcher passes per-application environment without changing its parent environment',async t=>{
+ const root=await fixture(t),listenPort=await port();
+ const code="require('http').createServer((q,r)=>{r.setHeader('Content-Type','application/json');r.end(JSON.stringify({app:'fixture',prefix:process.env.APP_PUBLIC_PREFIX,data:process.env.APP_DATA_DIR}));}).listen("+listenPort+",'127.0.0.1');";
+ const inherited={...process.env,APP_PUBLIC_PREFIX:'/previous/'};
+ const stop=await startAppServices({fixture:{type:'proxy',target:'http://127.0.0.1:'+listenPort,healthPath:'/healthz',healthKeys:['app'],start:{cwd:root,command:process.execPath,args:['-e',code],env:{APP_PUBLIC_PREFIX:'/fixture/',APP_DATA_DIR:'../persistent'}}}},{root,env:inherited});
+ try{
+  const response=await healthy('http://127.0.0.1:'+listenPort+'/healthz');
+  assert.equal(response.prefix,'/fixture/');assert.equal(response.data,'../persistent');
+  assert.equal(inherited.APP_PUBLIC_PREFIX,'/previous/');
+ }finally{stop();await new Promise(r=>setTimeout(r,200));}
 });
