@@ -12,6 +12,11 @@ apps/*.import.json
 !.env.example
 __pycache__/
 *.pyc
+/.venv/
+/.idea/
+/.vscode/
+/.test_outputs/
+.pytest_cache/
 offline/
 config.local/
 # SOP business source belongs to its independent repository; never re-vendor it.
@@ -22,8 +27,15 @@ config.local/
 /data/
 /logs/
 *.secret
+*.pem
+*.key
+*.pfx
+*.p12
 *.sqlite*
 *.db
+*.db-journal
+*.db-wal
+*.db-shm
 *.xlsx
 *.xlsm
 *.xls
