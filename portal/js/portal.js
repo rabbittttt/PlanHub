@@ -78,9 +78,13 @@ function renderNavigation() {
     link.dataset.app = app.id;
     const name = app.status === 'ready' ? app.name : `${app.name} · ${labels[app.status]}`;
     link.setAttribute('aria-label', name);
-    link.title = name;
+    link.title = app.name;
     link.append(icon(app.icon), element('span', 'nav-label', app.name));
-    if (app.status !== 'ready') link.append(element('span', 'nav-pending', labels[app.status]));
+    if (app.status !== 'ready') {
+      const dot = element('span', 'nav-pending');
+      dot.setAttribute('aria-hidden', 'true');
+      link.append(dot);
+    }
     $('app-nav').append(link);
   }
 }

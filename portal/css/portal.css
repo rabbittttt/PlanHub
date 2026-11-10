@@ -37,17 +37,19 @@ h1,h2,h3,h4,p{margin:0}
 .nav-item.active{color:var(--accent-hover);font-weight:650;background:var(--accent-soft)}
 .nav-item.active svg{color:var(--accent)}
 .nav-item.active::before{content:"";position:absolute;inset-block:11px;left:0;width:3px;border-radius:99px;background:var(--accent)}
-.nav-pending{position:absolute;top:8px;right:7px;width:6px;height:6px;border-radius:50%;background:var(--amber);font-size:0}
+.nav-pending{position:absolute;top:8px;right:7px;width:6px;height:6px;border-radius:50%;background:var(--amber)}
 .nav-backdrop{position:fixed;inset:0;z-index:10;background:#0b0d1733}
-.nav-open .sidebar{width:min(232px,calc(100vw - 32px));box-shadow:0 8px 28px #0b0d1726}
-.nav-open .sidebar-heading{flex-direction:row;padding-inline:8px}
-.nav-open .brand{width:auto;min-width:0;flex:1;justify-content:flex-start;gap:8px}
+.nav-open .sidebar{width:min(145px,calc(100vw - 32px));box-shadow:0 8px 28px #0b0d1726}
+.nav-open .sidebar-heading{align-items:flex-start;padding-inline:8px}
+.nav-open .brand{width:100%;justify-content:flex-start;gap:5px}
+.nav-open .brand-mark{width:28px;height:28px}
+.nav-open .brand strong{font-size:13px}
 .nav-open .brand-copy,.nav-open .nav-label{display:block}
 .nav-open .nav-toggle{background:var(--accent-soft);color:var(--accent-hover)}
 .nav-open .nav-toggle svg{transform:scaleX(-1)}
-.nav-open .primary-navigation{padding-inline:8px;scrollbar-width:thin}
-.nav-open .nav-item{width:100%;justify-content:flex-start;gap:9px;padding:7px 10px;overflow-wrap:anywhere}
-.nav-open .nav-pending{position:static;width:auto;height:auto;margin-left:auto;border-radius:999px;padding:2px 6px;background:var(--surface-soft);color:var(--amber);font-size:11px;white-space:nowrap}
+.nav-open .primary-navigation{padding-inline:6px;scrollbar-width:thin}
+.nav-open .nav-item{width:100%;justify-content:flex-start;gap:7px;padding:7px 8px;overflow-wrap:anywhere}
+.nav-open .nav-item:has(.nav-pending){padding-inline-end:16px}
 .sr-only{position:absolute;width:1px;height:1px;padding:0;margin:-1px;overflow:hidden;clip-path:inset(50%);white-space:nowrap}
 main{min-width:0}
 /* The cycle workspace is a portal-only demo; application frames keep their own UI. */
