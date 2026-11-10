@@ -1,12 +1,24 @@
 {
   "applications": {
     "orderiq": {
-      "type": "static",
-      "root": "../订单分析/output_file",
-      "entry": "鸿蒙智行订单分析汇总.html",
-      "publicPaths": [
-        "鸿蒙智行订单分析汇总.html"
-      ]
+      "type": "proxy",
+      "target": "http://127.0.0.1:8766",
+      "stripPrefix": true,
+      "rootRoutes": [],
+      "healthPath": "/api/health",
+      "healthKeys": [
+        "status",
+        "application",
+        "dataset_id"
+      ],
+      "start": {
+        "cwd": "../订单分析/scripts/generate_html",
+        "command": "../.venv/Scripts/python.exe",
+        "args": [
+          "-B",
+          "server.py"
+        ]
+      }
     },
     "forecast": {
       "type": "static",
