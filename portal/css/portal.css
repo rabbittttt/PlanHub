@@ -38,8 +38,7 @@ h1,h2,h3,h4,p{margin:0}
 .nav-item.active svg{color:var(--accent)}
 .nav-item.active::before{content:"";position:absolute;inset-block:11px;left:0;width:3px;border-radius:99px;background:var(--accent)}
 .nav-pending{position:absolute;top:8px;right:7px;width:6px;height:6px;border-radius:50%;background:var(--amber)}
-.nav-backdrop{position:fixed;inset:0;z-index:10;background:#0b0d1733}
-.nav-open .sidebar{width:min(145px,calc(100vw - 32px));box-shadow:0 8px 28px #0b0d1726}
+.shell.nav-open{--sidebar-width:145px}
 .nav-open .sidebar-heading{align-items:flex-start;padding-inline:8px}
 .nav-open .brand{width:100%;justify-content:flex-start;gap:5px}
 .nav-open .brand-mark{width:28px;height:28px}
@@ -155,6 +154,11 @@ main{min-width:0}
   .cycle-app-links{gap:6px;width:100%}
   .app-view{padding:6px}
   .secondary-button{min-height:44px}.frame-overlay{padding:22px}.frame-overlay h2{font-size:20px}.frame-overlay p{font-size:13px}
+}
+@media(max-width:360px){
+  .nav-open .home-heading-meta{min-width:0;max-width:100%}
+  .nav-open #today{white-space:normal}
+  .nav-open .cycle-stages{grid-template-columns:minmax(0,1fr)}
 }
 @media(pointer:coarse){.cycle-action,.cycle-app-link,.cycle-app-unavailable,.cycle-window{min-height:44px}}
 @media(prefers-reduced-motion:reduce){*,*::before,*::after{animation:none!important;transition:none!important;scroll-behavior:auto!important}}

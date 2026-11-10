@@ -39,31 +39,29 @@ function element(tag, className, text) {
 const shell = document.querySelector('.shell');
 const sidebar = document.querySelector('.sidebar');
 const navToggle = $('nav-toggle');
-const navBackdrop = $('nav-backdrop');
+const sidebarPreferenceKey = 'planhub:sidebar';
 
-function setNavigationOpen(open, restoreFocus = false) {
+function setNavigationOpen(open) {
   shell.classList.toggle('nav-open', open);
-  navBackdrop.hidden = !open;
   const label = open ? '收起应用导航' : '展开应用导航';
   navToggle.setAttribute('aria-expanded', String(open));
   navToggle.setAttribute('aria-label', label);
   navToggle.title = label;
-  if (restoreFocus) navToggle.focus();
 }
 
-navToggle.addEventListener('click', () => setNavigationOpen(!shell.classList.contains('nav-open')));
-navBackdrop.addEventListener('mousedown', event => event.preventDefault());
-navBackdrop.addEventListener('click', () => setNavigationOpen(false, true));
-sidebar.addEventListener('click', event => {
-  if (shell.classList.contains('nav-open') && event.target.closest('a')) setNavigationOpen(false, true);
-});
-sidebar.addEventListener('focusout', event => {
-  if (shell.classList.contains('nav-open') && !sidebar.contains(event.relatedTarget)) setNavigationOpen(false);
-});
-document.addEventListener('keydown', event => {
-  if (event.key === 'Escape' && shell.classList.contains('nav-open')) {
-    event.preventDefault();
-    setNavigationOpen(false, true);
+try {
+  setNavigationOpen(localStorage.getItem(sidebarPreferenceKey) === 'expanded');
+} catch {
+  // The sidebar still works when the browser blocks storage.
+}
+
+navToggle.addEventListener('click', () => {
+  const open = !shell.classList.contains('nav-open');
+  setNavigationOpen(open);
+  try {
+    localStorage.setItem(sidebarPreferenceKey, open ? 'expanded' : 'collapsed');
+  } catch {
+    // Keep the selection for the current page.
   }
 });
 
@@ -176,7 +174,6 @@ function navigate() {
     link.classList.toggle('active', active);
     if (active) link.setAttribute('aria-current', 'page'); else link.removeAttribute('aria-current');
   });
-  setNavigationOpen(false);
   if (app) openApp(app); else stopLoading();
 }
 async function boot() {
