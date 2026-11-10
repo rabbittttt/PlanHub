@@ -188,18 +188,25 @@ test('preview executes independent source with a separate writable snapshot with
   await writeFile(path.join(seed,'input_file','SOP计划维护.xlsx'),'selected project plan');
   const rules=path.join(base,'business-rules.py');await writeFile(rules,'MERGE_GROUPS = {}\n');
   const serverFile=path.join(original,'server.py');
-  await writeFile(serverFile,`import argparse,json,os,sys
+  await writeFile(serverFile,`import argparse,base64,json,os,sys
 from pathlib import Path
 from http.server import BaseHTTPRequestHandler,HTTPServer
 p=argparse.ArgumentParser();p.add_argument('--port',type=int);p.add_argument('--gateway-config');a=p.parse_args()
 config=json.loads(Path(a.gateway_config).read_text(encoding='utf-8'))
 class Handler(BaseHTTPRequestHandler):
+ probe_identity=None
  def log_message(self,*args):pass
  def send(self,status,body):
   raw=json.dumps(body).encode();self.send_response(status);self.send_header('Content-Type','application/json');self.send_header('Content-Length',str(len(raw)));self.end_headers();self.wfile.write(raw)
  def do_GET(self):
   if self.headers.get('X-SOP-Proxy-Key')!=os.environ[config['proxy_secret_env']]:return self.send(403,{'error':'key'})
-  if self.path=='/sop/api/session':return self.send(200,{'mode':'gateway','user':self.headers.get('X-SOP-User'),'canWrite':config['allow_writes']})
+  if self.path=='/sop/api/session':
+   header=self.headers.get('X-SOP-User','')
+   if not header.startswith('b64:'):return self.send(400,{'error':'expected encoded identity'})
+   identity=base64.b64decode(header[4:],validate=True).decode('utf-8')
+   if Handler.probe_identity is None:Handler.probe_identity=identity
+   if Handler.probe_identity!=identity:return self.send(400,{'error':'identity changed after readiness probe'})
+   return self.send(200,{'mode':'gateway','user':identity,'canWrite':config['allow_writes']})
   return self.send(200,{'codeRoot':str(Path(__file__).parent),'cwd':os.getcwd(),'executable':sys.executable,'configuredPython':os.environ.get('SOP_PYTHON_PATH'),'pathFirst':os.environ['PATH'].split(os.pathsep)[0],'virtualEnv':os.environ.get('VIRTUAL_ENV'),'sourceData':json.loads((Path(config['data_dir'])/'sales.json').read_text()),'dataPath':config['data_dir'],'inputPath':config['source_dir'],'planPath':config['plan_file'],'readonly':not config['allow_writes'],'bytecodeDisabled':os.environ.get('PYTHONDONTWRITEBYTECODE')=='1'})
  def do_POST(self):
   if not config['allow_writes']:return self.send(403,{'error':'paused'})
@@ -212,6 +219,12 @@ HTTPServer(('127.0.0.1',a.port),Handler).serve_forever()
   const port=await freePort();let backendPort=await freePort();while(backendPort===port)backendPort=await freePort();
   const server=await runPreview(['--sop-source',original,'--snapshot','--seed-from',seed,'--shared-config',rules,'--port',String(port),'--backend-port',String(backendPort)],{root,env:{SOP_PYTHON_PATH:python,SOP_PYTHON:'obsolete-python-command',SHARED_DATA_ROOT:path.dirname(shared)}});
   try {
+    const sessionResponse=await fetch(`http://127.0.0.1:${port}/sop/api/session`,{headers:{'X-SOP-User':'FORGED\\browser'}});
+    assert.equal(sessionResponse.status,200);
+    const session=await sessionResponse.json();
+    assert.match(session.user,/^[^\\@]+\\[^\\@]+$/u);
+    assert.notEqual(session.user,'DEV\\local-preview');
+    assert.notEqual(session.user,'FORGED\\browser');
     const result=await fetch(`http://127.0.0.1:${port}/sop/api/provenance`).then(r=>r.json());
     assert.equal(result.codeRoot,original);assert.equal(result.cwd,original);
     assert.equal(path.normalize(result.executable),python);assert.equal(result.configuredPython,python);

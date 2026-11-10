@@ -2,6 +2,7 @@
 import {mkdir,mkdtemp,writeFile,copyFile,readdir,stat,readFile,realpath} from 'node:fs/promises';
 import {existsSync} from 'node:fs';
 import {spawnSync} from 'node:child_process';
+import {hostname,userInfo} from 'node:os';
 import {spawnService,stopService} from './service-process.mjs';
 import crypto from 'node:crypto';
 import path from 'node:path';
@@ -15,6 +16,28 @@ import {startAppServices,serviceHealthy} from './app-services.mjs';
 import {probePortal,workspaceId,configurationId,createPortalInstance,registerPortal,unregisterPortal} from './portal-instance.mjs';
 
 const ROOT=path.resolve(path.dirname(fileURLToPath(import.meta.url)),'..');
+
+function localSopUserHeader() {
+  let account;
+  if(process.platform==='win32') {
+    const systemRoot=process.env.SystemRoot;
+    if(!systemRoot||!path.isAbsolute(systemRoot))throw new Error('无法确定 Windows 系统目录。');
+    const powershell=path.join(systemRoot,'System32','WindowsPowerShell','v1.0','powershell.exe');
+    // Encode inside PowerShell so the Windows console code page cannot corrupt the account name.
+    const command='[Console]::Write([Convert]::ToBase64String([Text.Encoding]::UTF8.GetBytes([Security.Principal.WindowsIdentity]::GetCurrent().Name)))';
+    const result=spawnSync(powershell,['-NoLogo','-NoProfile','-NonInteractive','-Command',command],
+      {encoding:'utf8',windowsHide:true,timeout:10000});
+    const encoded=result.stdout?.trim()||'';
+    if(result.error||result.status!==0||!encoded)throw new Error('无法读取当前 Windows 登录账户。');
+    account=Buffer.from(encoded,'base64').toString('utf8');
+    if(Buffer.from(account,'utf8').toString('base64')!==encoded)throw new Error('当前 Windows 登录账户编码无效。');
+  } else {
+    account=hostname()+'\\'+userInfo().username;
+  }
+  if(!/^(?:[^\\@]+\\[^\\@]+|[^\\@]+@[^\\@]+)$/.test(account)||account!==account.trim()||
+      Array.from(account).length>100||/[\x00-\x1f\x7f,]/.test(account))throw new Error('当前登录账户格式无效。');
+  return 'b64:'+Buffer.from(account,'utf8').toString('base64');
+}
 
 export function previewOptions(args=process.argv.slice(2)) {
   const {values}=parseArgs({args,options:{
@@ -133,7 +156,8 @@ export async function runPreview(args=process.argv.slice(2),options={}) {
   const applications=await loadAppIntegrations(root);
   for(const [id,app] of Object.entries(applications))if(app.type==='proxy'&&[port,backendPort].includes(Number(new URL(app.target).port||80)))throw new Error(id+' 服务端口不能与门户或 SOP 端口相同');
   const python=resolveSopPython({root,sourceRoot,env:runtimeEnv});
-  const configId=await configurationId(settings,applications,python);
+  const userHeader=localSopUserHeader();
+  const configId=await configurationId({...settings,userHeader},applications,python);
   if(existing){
     if(existing.configId!==configId)throw new Error('已有门户使用不同代码版本或配置；请先运行“停止本地门户.cmd”再启动。');
     try {
@@ -198,7 +222,7 @@ export async function runPreview(args=process.argv.slice(2),options={}) {
   let ready=false;
   for(let i=0;i<100&&!failed;i++) {
     try {
-      const response=await fetch(`http://127.0.0.1:${backendPort}/sop/api/session`,{headers:{'X-SOP-Proxy-Key':secret,'X-SOP-User':'DEV\\local-preview'},signal:AbortSignal.timeout(1500)});
+      const response=await fetch(`http://127.0.0.1:${backendPort}/sop/api/session`,{headers:{'X-SOP-Proxy-Key':secret,'X-SOP-User':userHeader},signal:AbortSignal.timeout(1500)});
       if(response.ok){await response.arrayBuffer();ready=true;break;}
       await response.arrayBuffer();
     } catch {}
@@ -207,7 +231,7 @@ export async function runPreview(args=process.argv.slice(2),options={}) {
   if(!ready){stopService(child);throw new Error(`独立 SOP 服务未启动；请查看日志：${child.serviceLogs.stderr}`);}
   const stopApplications=await startAppServices(applications,{root,env:runtimeEnv});
   if(failed){stopApplications();stopService(child);throw new Error('SOP 在其他应用启动期间已退出，请检查原项目日志。');}
-  const server=createServer({root,applications,runtime,sopProxy:{port:backendPort,secret,user:'DEV\\local-preview'}});
+  const server=createServer({root,applications,runtime,sopProxy:{port:backendPort,secret,user:userHeader}});
   const closeChild=()=>{stopping=true;stopService(child);stopApplications();process.removeListener('SIGINT',stop);process.removeListener('SIGTERM',stop);};
   function stop(){stopping=true;stopService(child);stopApplications();server.close();setTimeout(()=>server.closeAllConnections?.(),1000).unref();}
   runtime.stop=stop;
