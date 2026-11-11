@@ -25,6 +25,8 @@
         "127.0.0.1",
         "--port",
         "{port}",
+        "--input",
+        "{deployment}/shared/订单汇总",
         "--data-dir",
         "{data}/runtime",
         "--state-dir",
@@ -70,7 +72,8 @@
         "DATA_QUICKLOOK_DATA_DIR": "{data}",
         "DATA_QUICKLOOK_SOURCE_BASE": "{deployment}/shared",
         "DATA_QUICKLOOK_PUBLIC_PREFIX": "/quicklook/",
-        "DATA_QUICKLOOK_PUBLIC_ORIGIN": "http://localhost:8080"
+        "DATA_QUICKLOOK_PUBLIC_ORIGIN": "http://localhost:8080",
+        "SHARED_DATA_ROOT": "{deployment}/shared"
       },
       "dataDirectory": "data/quicklook",
       "port": 8765,
@@ -103,7 +106,9 @@
         "PYTHONIOENCODING": "utf-8",
         "PYTHONUNBUFFERED": "1",
         "PYTHONDONTWRITEBYTECODE": "1",
-        "SOP_EXCEL_ENGINE": "python"
+        "SOP_EXCEL_ENGINE": "python",
+        "SHARED_DATA_ROOT": "{deployment}/shared",
+        "SOP_RECONCILE_DIR": "{deployment}/shared/对账资料"
       },
       "secretEnvironmentFiles": {
         "SOP_PROXY_SECRET": "config/sop-proxy.secret"

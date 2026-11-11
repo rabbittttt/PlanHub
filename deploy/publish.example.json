@@ -44,17 +44,17 @@
     },
     "orderiq": {
       "kind": "payload",
-      "sourceRoot": "../订单分析",
+      "sourceRoot": "../订单分析/scripts",
       "type": "service",
       "entryPoint": "server.py",
       "dataMode": "external",
-      "healthPath": "/api/health",
+      "healthPath": "/health",
       "build": {
         "command": "../.venv/Scripts/python.exe",
-        "cwd": "../订单分析",
+        "cwd": "../订单分析/scripts",
         "args": [
           "-B",
-          "scripts/generate_html/package_release.py",
+          "generate_html/package_release.py",
           "--output",
           "{output}"
         ]

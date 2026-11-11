@@ -40,6 +40,8 @@ test('default portal saves through the original SOP service and survives a full 
  const workbook=path.join(dataRoot,'input_file','SOP计划维护.xlsx');
  const initialized=spawnSync(python,['-B','-c',"import sys,pathlib; sys.path.insert(0,sys.argv[1]); from sop.store import SOPStore; from sop.workbook import WorkbookSync; p=pathlib.Path(sys.argv[2]); store=SOPStore(p/'data/sop.sqlite3',p/'data/sales.json'); result=WorkbookSync(store,sys.argv[3]).sync(force_export=True); store.close(); assert result['status']=='synced',result",sourceRoot,dataRoot,workbook],{env:{...process.env,PYTHONDONTWRITEBYTECODE:'1',SOP_EXCEL_ENGINE:'python'},encoding:'utf8',windowsHide:true});
  assert.equal(initialized.status,0,initialized.stderr);
+ // Current SOP keeps server-side maintenance workbooks as archives; plans persist in SQLite.
+ const archivedWorkbook=await readFile(workbook);
  const configured=['--sop-source',sourceRoot,'--data-root',dataRoot,'--shared-config',rules];
  const settings=await resolvePreviewSettings(configured,{root,env});
  assert.equal(settings.snapshot,false);assert.equal(settings.dataDirectory,path.join(dataRoot,'data'));
@@ -68,12 +70,14 @@ test('default portal saves through the original SOP service and survives a full 
  }finally{await close(instance.server);}
  const db=path.join(dataRoot,'data/sop.sqlite3');
  assert.ok((await stat(db)).size>0);assert.ok((await stat(workbook)).size>0);
- const check=spawnSync(python,['-B','-c',"import sqlite3,pathlib,sys,json; from openpyxl import load_workbook; db=sqlite3.connect(pathlib.Path(sys.argv[1]).as_uri()+'?mode=ro',uri=True); value=db.execute('select sop from plans where product_id=? and month=?',('persistent-fixture',sys.argv[3])).fetchone()[0]; db.close(); book=load_workbook(sys.argv[2],read_only=True,data_only=True); found=any(246 in row for sheet in book for row in sheet.iter_rows(values_only=True)); book.close(); print(json.dumps([value,found]))",db,workbook,month],{encoding:'utf8',windowsHide:true});
- assert.equal(check.status,0,check.stderr);assert.deepEqual(JSON.parse(check.stdout),[246,true]);
+ const check=spawnSync(python,['-B','-c',"import sqlite3,pathlib,sys,json; db=sqlite3.connect(pathlib.Path(sys.argv[1]).as_uri()+'?mode=ro',uri=True); value=db.execute('select sop from plans where product_id=? and month=?',('persistent-fixture',sys.argv[2])).fetchone()[0]; db.close(); print(json.dumps(value))",db,month],{encoding:'utf8',windowsHide:true});
+ assert.equal(check.status,0,check.stderr);assert.equal(JSON.parse(check.stdout),246);
+ assert.deepEqual(await readFile(workbook),archivedWorkbook,'Saving plans must not overwrite the archived workbook');
  instance=await start();
  try{
   const state=await fetch(instance.origin+'/sop/api/state').then(r=>r.json());
   assert.equal(state.plans.find(p=>p.product_id==='persistent-fixture'&&p.month===month)?.sop,246);
+  assert.deepEqual(await readFile(workbook),archivedWorkbook,'Restart must not rewrite the archived workbook');
   for(const folder of (await readdir(path.join(root,'artifacts'))).filter(name=>name!=='portal-instances')){
    assert.ok(folder.startsWith('sop-runtime-'),'Default mode must not create data snapshots');
    const gateway=JSON.parse(await readFile(path.join(root,'artifacts',folder,'config/gateway.json'),'utf8'));

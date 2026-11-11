@@ -22,7 +22,7 @@
 |---|---|---|---|
 | SOP计划管理 | 动态 | `../SOP维护` | `/sop/` |
 | 订单分析 | 动态 | `../订单分析/scripts/generate_html` | `/orderiq/` |
-| 销量预测 | 静态 | `../销量预测/output_file` | `/forecast/` |
+| 销量预测 | 静态（动态版待完成接入契约） | `../销量预测/output_file/static` | `/forecast/` |
 | 线索声量 | 静态 | `../线索声量/lead-dashboard.html` | `/leads/` |
 | 数据速查 | 动态 | `../数据速查` | `/quicklook/` |
 

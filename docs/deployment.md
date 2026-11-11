@@ -61,12 +61,16 @@ PlanHub部署/
 
 ### 现有应用必须核对的设置
 
-- **订单分析**：服务包使用原项目 `package_release.py`；显式配置 `--data-dir`、`--state-dir`、`--web-dir` 和公共 Host/Origin。第一次迁移完整 runtime 数据批次及批注数据库，升级保持原持久路径。模板将它们放在 data/orderiq 下。
-- **数据速查**：使用原项目新发布包，设置 `DATA_QUICKLOOK_DATA_DIR`、`DATA_QUICKLOOK_SOURCE_BASE`、`DATA_QUICKLOOK_PUBLIC_PREFIX`、`DATA_QUICKLOOK_PUBLIC_ORIGIN`。正式前缀 `/quicklook/`，健康接口 `/healthz`。保留原 workspace.json 中数据来源含义，迁移后逐项核对。
+- **订单分析**：服务包使用原项目 `package_release.py`；显式配置 `--input`、`--data-dir`、`--state-dir`、`--web-dir` 和公共 Host/Origin。模板从 shared/订单汇总 读取 Excel，持久批次及批注放 data/orderiq。首次可由原服务自动生成批次；已有数据则停服备份后迁入，升级复用原路径。不要依赖发布目录下的默认输入。
+- **数据速查**：使用原项目新发布包，设置 `DATA_QUICKLOOK_DATA_DIR`、`DATA_QUICKLOOK_SOURCE_BASE`、`DATA_QUICKLOOK_PUBLIC_PREFIX`、`DATA_QUICKLOOK_PUBLIC_ORIGIN`、`SHARED_DATA_ROOT`。模板共享根为 {deployment}/shared，供新版后台自动扫描；SOURCE_BASE 仅解析已保存来源路径，不能代替共享根。正式前缀 `/quicklook/`，健康接口 `/healthz`。保留原 workspace.json 中数据来源含义，迁移后逐项核对。
 - **SOP**：保留既有 SOP 网关和 IIS 身份桥接，先用专用 `Configure-SopProxy.ps1` 完成首次接入及匹配身份配置。新版部署绑定设 `proxyMode: existing`，提供 `--gateway-config` 和秘密文件环境绑定；不能当成普通无身份代理。旧 SOP 任务不会被通用工具接管，第一次迁移先正常停止并确认端口释放，再使用新任务。
 - **静态应用**：入口与资源完整交付。线索声量当前为替代样例，内网正式页面仍需验收；仅文件名相同不能证明资源与行为一致。
 
 `Configure-QuicklookProxy.ps1` 等旧专用 Quicklook 工具属于旧版接入，含根 API 和 HTTP 限制。新包使用本手册的通用前缀代理，不再套用旧脚本。原完整包工具仍保留供既有环境使用，日常单应用升级优先使用新发布入口。
+
+已有 config.local/publish.json、config.local/deployment.json 和 config.local/apps.json 不会被 Git 更新覆盖。此次升级按模板逐项核对：订单 sourceRoot/build.cwd 指向原项目 scripts，构建参数为 generate_html/package_release.py，正式启动增加 --input；数据速查增加 SHARED_DATA_ROOT；SOP 增加共享根和 SOP_RECONCILE_DIR；销量预测静态目录改为 output_file/static。保留本机真实账号、端口和路径，不整份覆盖。
+
+销量预测暂发布新版静态产物；其动态版还缺前缀、外置运行目录和独立构建契约，详见[接入手册](child-app-developer-guide.md#current-contracts)。
 
 ## 首次部署的执行顺序
 
@@ -139,7 +143,7 @@ $serviceAccount = Read-Host '输入 B 实际运行 SOP 的 计算机或域名\�
 
 ### 4. B 准备数据、运行环境和公共地址
 
-按上文迁入各应用持久数据，准备独立 Python 环境及依赖。SOP 原规则文件需另放到 B 的 config/shared_config.py，数据库放 data/sop，销售来源和计划表使用上面实际配置的路径。SOP 启动时会检查真实规则和数据。
+按上文迁入各应用持久数据，准备独立 Python 环境及依赖。SOP 原规则文件需另放到 B 的 config/shared_config.py，数据库放 data/sop，销售来源使用上面实际配置的路径。新版计划由网页保存或前台 Excel 导入，不再自动同步服务器维护表；plan_file 仅保留旧版兼容路径，不作为新环境必需业务文件。资料对账目录由 SOP_RECONCILE_DIR 指定为 shared/对账资料。SOP 启动时会检查真实规则和数据。
 
 在 B 工具目录双击部署新版本.bat 生成 config.local/deployment.json 后，先填写实际配置。三个动态应用的 command 应指向 B 已安装依赖的解释器。原 Install-SopDependencies.ps1 默认创建 runtime/sop-venv，而新模板为 runtime/sop；使用旧依赖安装器时应把 command 改为实际解释器位置。
 

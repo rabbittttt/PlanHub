@@ -88,3 +88,16 @@ node scripts/register-app.mjs --config config.local/new-app.json
 ## 发给门户维护 AI
 
 > 使用本手册登记内网应用。仅修改门户配置及通用工具，优先复用 register-app 和发布工具；不修改业务源码、页面、权限或数据规则。路径保持可迁移，不把实际数据与本机配置提交 Git。无法访问真实网页时说明已验证范围，不把替代样例验收当成正式业务验收。
+
+<a id="current-contracts"></a>
+## 当前版本核对（2026-11-11）
+
+- **SOP计划管理**：继续使用原网关、整段 /sop/ 代理与原构建器；业务新增标签不需门户逐项登记。新版计划保存在数据库，Excel 从页面导出、修改后导入；服务器旧维护表仅归档，不再自动同步。正式资料对账来源通过 SOP_RECONCILE_DIR 指向 shared/对账资料。
+- **订单分析**：动态服务 /orderiq/，健康接口 /health。本地沿用原项目的数据选择；正式部署显式传 --input、--data-dir、--state-dir、--web-dir。原 Git 仓库在订单分析/scripts，构建入口 generate_html/package_release.py。
+- **数据速查**：动态服务 /quicklook/，健康接口 /healthz；新版自动扫描使用 SHARED_DATA_ROOT，工作区来源的相对路径仍由 DATA_QUICKLOOK_SOURCE_BASE 解释。
+- **线索声量**：当前可见交付仍是 lead-dashboard.html 静态样例。若内网已改动态，在内网重新运行接入向导更新同一 leads ID，再配置该项目发布包；不能将样例当作正式动态验收。
+- **销量预测**：静态产物已移到 output_file/static，门户先使用此目录。dynamic/serve.py 动态服务默认端口 8780，但尚不能直接接入 /forecast/。
+
+给销量预测项目 AI 的具体任务：
+
+> 仅在销量预测项目完成动态版交付：core/live_server.py 当前插入根路径 /__forecast_live.js，templates/forecast-live.js 请求根路径 /api/status，请改为支持可配置公共前缀 /forecast/，保持独立根路径运行。提供轻量健康接口，区分服务存活、首次生成等待和生成失败。将动态页面、缓存与日志支持外置持久目录，保留共享输入及销量汇总现有业务规则。提供原项目构建命令，输出同版前后端及依赖清单，排除 Excel、缓存、日志和数据库；说明启动参数与路径基准。验证经前缀访问的页面、实时脚本、状态轮询、资源、等待与更新，以及重启持久化。不要修改门户。完成后交付契约，由门户将 forecast 的预览、发布和部署配置一起切成动态。

@@ -256,7 +256,7 @@ export async function runPreview(args=process.argv.slice(2),options={}) {
     console.log(`测试数据仅保存在 ${preview}，不回写原项目。`);
   } else {
     console.log(`持久数据：${data}；维护结果直接保存，重启继续使用。`);
-    console.log(`销售来源：${source}；计划维护表：${plan}`);
+    console.log(`销售来源：${source}；计划保存于上述持久数据库，Excel 通过业务页面导入导出。`);
     console.log('共享规则：'+rules);
   }
   console.log('当前为本机入口，代理身份不代表 Windows 域认证。Ctrl+C 停止。');
