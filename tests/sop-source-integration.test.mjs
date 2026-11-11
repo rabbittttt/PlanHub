@@ -7,6 +7,7 @@ import os from 'node:os';
 import path from 'node:path';
 import net from 'node:net';
 import {localPreviewArgs} from '../scripts/start-local.mjs';
+import {configureSopRules} from '../scripts/configure-sop-rules.mjs';
 import {resolvePreviewSettings,runPreview} from '../scripts/dev-sop.mjs';
 import {resolveSopPython} from '../scripts/sop-python.mjs';
 import {fileURLToPath} from 'node:url';
@@ -262,4 +263,53 @@ HTTPServer(('127.0.0.1',a.port),Handler).serve_forever()
   assert.equal(await readFile(path.join(shared,'SOP计划维护.xlsx'),'utf8'),'shared plan must not be used');
   assert.equal(await readFile(path.join(seed,'input_file','SOP计划维护.xlsx'),'utf8'),'selected project plan');
   assert.equal(await readFile(sharedPlan,'utf8'),'formal shared plan');
+});
+
+
+test('missing private shared rules explain the Git omission and the available configuration entry', async t => {
+  const {base, root} = await fixture(t);
+  const original = await source(path.join(base, 'SOP维护'));
+  await data(original);
+  await assert.rejects(resolvePreviewSettings([], {root, env: {}}), error => {
+    assert.match(error.message, /共享业务规则不存在/);
+    assert.match(error.message, /\nSOP 需要/);
+    assert.match(error.message, /不随 Git 下载/);
+    assert.match(error.message, /配置SOP规则\.bat/);
+    assert.match(error.message, /--shared-config/);
+    return true;
+  });
+});
+
+test('SOP rules configuration preserves existing settings and rule bytes and keeps explicit precedence', async t => {
+  const {base, root} = await fixture(t);
+  const original = await source(path.join(base, 'SOP维护'));
+  await data(original);
+  const rules = path.join(base, '共享数据', '业务规则', 'shared_config.py');
+  const content = 'MERGE_GROUPS = {"fixture": ["member"]}\n';
+  await mkdir(path.dirname(rules), {recursive: true});
+  await writeFile(rules, content);
+  await mkdir(path.join(root, 'config.local'));
+  const configFile = path.join(root, 'config.local', 'sop.json');
+  const before = JSON.stringify({sourceRoot: '../SOP维护', dataRoot: '../SOP维护', sharedConfig: '../old-rules.py'});
+  await writeFile(configFile, before);
+  const result = await configureSopRules(root, rules);
+  const configured = JSON.parse(await readFile(configFile, 'utf8'));
+  assert.equal(configured.sharedConfig, '../共享数据/业务规则/shared_config.py');
+  assert.equal(configured.sourceRoot, '../SOP维护');
+  assert.equal(configured.dataRoot, '../SOP维护');
+  assert.equal(await readFile(result.backup, 'utf8'), before);
+  assert.equal(await readFile(rules, 'utf8'), content);
+  assert.equal((await resolvePreviewSettings([], {root, env: {}})).sharedConfig, rules);
+  const second = await configureSopRules(root, rules);
+  assert.equal(second.backup, null, 'Selecting the same path must be idempotent');
+  const activeConfig = await readFile(configFile, 'utf8');
+  await assert.rejects(configureSopRules(root, path.join(base, 'absent-rules.py')), {code: 'ENOENT'});
+  assert.equal(await readFile(configFile, 'utf8'), activeConfig);
+  const missingExplicit = path.join(base, 'explicit-but-missing.py');
+  await assert.rejects(resolvePreviewSettings(['--shared-config', missingExplicit], {root, env: {}}), /explicit-but-missing\.py/);
+  await assert.rejects(resolvePreviewSettings([], {root, env: {SOP_SHARED_CONFIG: missingExplicit}}), /explicit-but-missing\.py/);
+  await writeFile(configFile, '{ malformed');
+  await assert.rejects(configureSopRules(root, rules), SyntaxError);
+  assert.equal(await readFile(configFile, 'utf8'), '{ malformed');
+  assert.equal(await readFile(rules, 'utf8'), content);
 });
