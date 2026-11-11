@@ -93,7 +93,7 @@ export async function collectDiagnostics({root=ROOT,port=4173,fetcher=fetch,run=
         if(!result.backend.ok)result.issues.push('后端健康检查失败：'+(result.backend.reason||'HTTP '+result.backend.status));
         result.dataChecks=[];
         if(result.backend.ok)for(const check of binding.diagnosticChecks||[]){
-          const state=await probeServiceHealth({...binding,healthPath:check.path,healthKeys:check.keys,healthText:undefined,healthTimeoutMs:10000},{fetcher});
+          const state=await probeServiceHealth({...binding,healthPath:check.path,healthKeys:check.keys,healthExpected:undefined,healthText:undefined,healthTimeoutMs:10000},{fetcher});
           result.dataChecks.push({name:check.name,timeoutMs:10000,...state});
           if(!state.ok)result.issues.push(check.name+'异常（与进程存活不同）：'+(state.status?'HTTP '+state.status:state.reason));
         }

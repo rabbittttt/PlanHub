@@ -20,13 +20,35 @@
       }
     },
     "forecast": {
-      "type": "static",
-      "root": "../销量预测/output_file/static",
-      "entry": "鸿蒙智行销量预测.html",
-      "publicPaths": [
-        "鸿蒙智行销量预测.html",
-        "forecast_assets/"
-      ]
+      "type": "proxy",
+      "target": "http://127.0.0.1:8780",
+      "stripPrefix": true,
+      "rootRoutes": [],
+      "healthPath": "/healthz",
+      "healthKeys": [
+        "ok",
+        "app"
+      ],
+      "start": {
+        "cwd": "../销量预测",
+        "command": "../.venv/Scripts/python.exe",
+        "args": [
+          "-B",
+          "dynamic/serve.py",
+          "--host",
+          "127.0.0.1",
+          "--port",
+          "8780",
+          "--no-open",
+          "--public-prefix",
+          "/forecast/"
+        ]
+      },
+      "healthExpected": {
+        "ok": true,
+        "app": "sales-forecast-live",
+        "public_prefix": "/forecast/"
+      }
     },
     "quicklook": {
       "type": "proxy",

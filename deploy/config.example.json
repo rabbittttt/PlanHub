@@ -7,10 +7,6 @@
   "RequireReverseProxy": false,
   "StaticApplications": [
     {
-      "Name": "forecast",
-      "Enabled": true
-    },
-    {
       "Name": "leads",
       "Enabled": true
     }

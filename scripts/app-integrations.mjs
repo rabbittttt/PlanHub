@@ -63,6 +63,7 @@ export async function loadAppIntegrations(root) {
       if(target.protocol!=='http:'||target.hostname!=='127.0.0.1'||target.username||target.password||target.pathname!=='/'||target.search||target.hash)throw new Error('本地代理只允许固定的 HTTP 回环服务: '+id);
       if(typeof app.stripPrefix!=='boolean'||!Array.isArray(app.rootRoutes)||!Array.isArray(app.healthKeys)||!app.healthKeys.every(k=>typeof k==='string'&&k.trim()))throw new Error('无效代理配置: '+id);
       const textMode=typeof app.healthText==='string'&&app.healthText.trim().length>0&&app.healthText.length<=200;
+      if(app.healthExpected!==undefined&&(!app.healthExpected||Array.isArray(app.healthExpected)||typeof app.healthExpected!=='object'||!app.healthKeys.length||!Object.entries(app.healthExpected).every(([key,value])=>key.trim()&&['string','boolean','number'].includes(typeof value)&&(typeof value!=='number'||Number.isFinite(value)))))throw new Error('健康检查期望值须为 JSON 标量对象: '+id);
       if(Boolean(app.healthKeys.length)===Boolean(textMode))throw new Error('健康检查须选择 JSON 字段或固定页面标记之一: '+id);
       if(app.healthTimeoutMs!==undefined&&(!Number.isInteger(app.healthTimeoutMs)||app.healthTimeoutMs<1000||app.healthTimeoutMs>10000))throw new Error('健康检查超时必须为1000–10000毫秒: '+id);
       if(!fixedProbePath(app.healthPath))throw new Error('健康检查路径必须为固定站内路径，如 /healthz 或 /api/health: '+id);

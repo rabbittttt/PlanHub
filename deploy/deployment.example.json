@@ -11,8 +11,41 @@
       "healthUrl": "http://localhost:8080/leads/"
     },
     "forecast": {
-      "kind": "static",
-      "healthUrl": "http://localhost:8080/forecast/"
+      "kind": "service",
+      "healthUrl": "http://localhost:8080/forecast/healthz",
+      "command": "runtime/forecast/Scripts/python.exe",
+      "arguments": [
+        "-B",
+        "{payload}/dynamic/serve.py",
+        "--host",
+        "127.0.0.1",
+        "--port",
+        "{port}",
+        "--no-open",
+        "--data-dir",
+        "{data}",
+        "--public-prefix",
+        "/forecast/"
+      ],
+      "environment": {
+        "PYTHONIOENCODING": "utf-8",
+        "PYTHONUNBUFFERED": "1",
+        "PYTHONDONTWRITEBYTECODE": "1",
+        "SHARED_DATA_ROOT": "{deployment}/shared"
+      },
+      "dataDirectory": "data/forecast",
+      "port": 8780,
+      "taskName": "PlanHub-forecast",
+      "serviceAccount": "MACHINE\\PlanHubService",
+      "backendHealthPath": "/healthz",
+      "healthExpected": {
+        "ok": true,
+        "app": "sales-forecast-live",
+        "public_prefix": "/forecast/"
+      },
+      "proxyMode": "prefix",
+      "stripPrefix": true,
+      "maxRequestBytes": 269484032
     },
     "orderiq": {
       "kind": "service",

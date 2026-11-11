@@ -6,7 +6,9 @@ export async function probeServiceHealth(app,{fetcher=fetch}={}){
     if(app.healthKeys?.length){
       let body;try{body=await response.json();}catch(error){if(['TimeoutError','AbortError'].includes(error.name))throw error;return {ok:false,status:response.status,reason:'NOT_JSON'};}
       const missing=app.healthKeys.filter(key=>!body||!Object.hasOwn(body,key));
-      return {ok:missing.length===0,status:response.status,...(missing.length?{reason:'MISSING_HEALTH_KEYS',missing}:{})};
+      if(missing.length)return {ok:false,status:response.status,reason:'MISSING_HEALTH_KEYS',missing};
+      const matches=Object.entries(app.healthExpected??{}).every(([key,value])=>Object.hasOwn(body,key)&&Object.is(body[key],value));
+      return matches?{ok:true,status:response.status}:{ok:false,status:response.status,reason:'SERVICE_IDENTITY_MISMATCH'};
     }
     const html=await response.text();
     return html.includes(app.healthText)?{ok:true,status:response.status}:{ok:false,status:response.status,reason:'SERVICE_IDENTITY_MISMATCH'};

@@ -61,7 +61,20 @@
       }
     },
     "forecast": {
-      "kind": "static"
+      "kind": "release",
+      "sourceRoot": "../销量预测",
+      "build": {
+        "command": "../.venv/Scripts/python.exe",
+        "cwd": "../销量预测",
+        "args": [
+          "-B",
+          "scripts/build_release.py",
+          "--version",
+          "{version}",
+          "--destination",
+          "{output}"
+        ]
+      }
     },
     "leads": {
       "kind": "static"

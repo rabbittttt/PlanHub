@@ -68,9 +68,13 @@ PlanHub部署/
 
 `Configure-QuicklookProxy.ps1` 等旧专用 Quicklook 工具属于旧版接入，含根 API 和 HTTP 限制。新包使用本手册的通用前缀代理，不再套用旧脚本。原完整包工具仍保留供既有环境使用，日常单应用升级优先使用新发布入口。
 
-已有 config.local/publish.json、config.local/deployment.json 和 config.local/apps.json 不会被 Git 更新覆盖。此次升级按模板逐项核对：订单 sourceRoot/build.cwd 指向原项目 scripts，构建参数为 generate_html/package_release.py，正式启动增加 --input；数据速查增加 SHARED_DATA_ROOT；SOP 增加共享根和 SOP_RECONCILE_DIR；销量预测静态目录改为 output_file/static。保留本机真实账号、端口和路径，不整份覆盖。
+已有 config.local/publish.json、config.local/deployment.json 和 config.local/apps.json 不会被 Git 更新覆盖。此次升级按模板逐项核对：订单 sourceRoot/build.cwd 指向原项目 scripts，构建参数为 generate_html/package_release.py，正式启动增加 --input；数据速查增加 SHARED_DATA_ROOT；SOP 增加共享根和 SOP_RECONCILE_DIR；销量预测按下段切换动态配置。保留本机真实账号、端口和路径，不整份覆盖。
 
-销量预测暂发布新版静态产物；其动态版还缺前缀、外置运行目录和独立构建契约，详见[接入手册](child-app-developer-guide.md#current-contracts)。
+销量预测静态转动态：A 更新销量预测原项目和门户；本机 apps.json 若有旧 forecast 覆盖，按 integration/apps.json 替换该项；publish.json 的 forecast 改为模板中的 release 构建配置。B 的 deployment.json 按模板改为 service，准备 runtime/forecast 的 Python 与 requirements.txt，--data-dir 指向 data/forecast，SHARED_DATA_ROOT 指向 shared；已有部署/config.local.json 的 StaticApplications 移除 forecast。只更新 forecast 项并保留本机参数。
+
+B 尚未建站时直接使用新模板。若此前已在 IIS 建立静态 /forecast 应用，先备份 IIS 配置、记录原物理路径，在维护窗口由管理员移除该应用映射，再运行部署新版本.bat 创建动态前缀代理；保留全部原目录和数据。工具会拒绝覆盖已有非工具代理。跨类型恢复需恢复原配置及映射，不能直接用动态配置回滚静态包。
+
+销量预测健康检查访问 /forecast/healthz；页面首次等待输入稳定一分钟后生成。/forecast/readyz 返回 200 才表示有可用页面且没有生成错误，验收时还需检查页面与 /forecast/api/status。共享原始文件只读，预测服务按原规则更新 shared/订单汇总 中的销量汇总；账号需有该派生文件的写入权限。
 
 ## 首次部署的执行顺序
 
@@ -85,7 +89,7 @@ $ErrorActionPreference = 'Stop'
 $firstVersion = Get-Date -Format 'yyyyMMdd-HHmmss'
 $sopRelease = Join-Path (Get-Location).Path ('staging/sop-first-' + $firstVersion)
 $firstPackage = Join-Path (Get-Location).Path ('staging/first-install-' + $firstVersion)
-npm run prepare:apps -- forecast leads
+npm run prepare:apps -- leads
 if ($LASTEXITCODE -ne 0) { throw '静态网页收集失败。' }
 & '../.venv/Scripts/python.exe' -B '../SOP维护/scripts/build_release.py' --destination $sopRelease
 if ($LASTEXITCODE -ne 0) { throw 'SOP 原格式发布物构建失败。' }
@@ -93,7 +97,7 @@ if ($LASTEXITCODE -ne 0) { throw 'SOP 原格式发布物构建失败。' }
 if ($LASTEXITCODE -ne 0) { throw '首次引导包生成失败。' }
 ```
 
-将生成的 first-install 目录完整传到 B，放到选定的正式部署根。引导包提供 portal/、静态 apps/、SOP 原格式 services/sop/ 及 config/。此时 orderiq、quicklook 显示 EXTERNAL 是因为稍后单独发布。该引导包不加 RequireComplete。
+将生成的 first-install 目录完整传到 B，放到选定的正式部署根。引导包提供 portal/、静态 apps/、SOP 原格式 services/sop/ 及 config/。此时 orderiq、quicklook、forecast 显示 EXTERNAL 是因为稍后单独发布。该引导包不加 RequireComplete。
 
 SOP 首次身份接入需要 services/sop/sop-release.json。发布 BAT 生成的通用 SOP 包用于后续切版，首次引导使用上面的原格式产物。
 

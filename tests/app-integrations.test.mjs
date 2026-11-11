@@ -150,3 +150,24 @@ test('new nested business APIs work through the existing prefix without a portal
   assert.deepEqual(await response.json(),{url:'/api/new-tab/v2/export?format=csv',method:'POST',body:'{"filter":"demo"}'});
   assert.equal((await fetch(origin+'/api/new-tab/v2/export')).status,404);
 });
+
+
+test('service identity expectations reject a standalone instance with the wrong public prefix',async t=>{
+  const {probeServiceHealth}=await import('../scripts/health-check.mjs');
+  const f=await fixture(t);
+  const proxy={type:'proxy',target:'http://127.0.0.1:8780',stripPrefix:true,rootRoutes:[],healthPath:'/healthz',healthKeys:['ok','app'],healthExpected:{ok:true,app:'example-service',public_prefix:'/service/'}};
+  f.config.applications.service=proxy;
+  await writeFile(path.join(f.root,'integration/apps.json'),JSON.stringify(f.config));
+  const app=(await loadAppIntegrations(f.root)).service;
+  for(const prefix of ['/','/service/']){
+    const result=await probeServiceHealth(app,{fetcher:async()=>new Response(JSON.stringify({ok:true,app:'example-service',public_prefix:prefix,privateField:'do-not-log'}))});
+    assert.equal(result.ok,prefix==='/service/');
+    if(!result.ok)assert.equal(result.reason,'SERVICE_IDENTITY_MISMATCH');
+    assert.doesNotMatch(JSON.stringify(result),/do-not-log/);
+  }
+  for(const healthExpected of [[],null,{ok:{nested:true}},{ok:[] }]){
+    f.config.applications.service={...proxy,healthExpected};
+    await writeFile(path.join(f.root,'integration/apps.json'),JSON.stringify(f.config));
+    await assert.rejects(loadAppIntegrations(f.root),/期望值/);
+  }
+});

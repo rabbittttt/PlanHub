@@ -25,7 +25,7 @@
 
 单 HTML 没有额外资源时留空。向导会核对文件，登记导航、挂载与静态打包配置，并在 `artifacts/registration-*` 保存原配置。重启本地门户，打开 `/#/app/capacity` 检查。
 
-动态网页选择类型 2，填写原服务端口、健康地址（例如 `/healthz`）、返回 JSON 字段、工作目录、解释器、启动参数及必要环境变量。参数按数组填写，例如 `["-B","server.py","--port","8891"]`。原服务尚未验收时保留 pending，验收后再次运行向导更新同一 ID。
+动态网页选择类型 2，填写原服务端口、健康地址（例如 `/healthz`）、返回 JSON 字段、工作目录、解释器、启动参数及必要环境变量。默认启动探针只检查稳定字段；需要复用已有服务时，可在 apps.json 设置 healthExpected 核对身份、公共前缀等固定值，避免误用其他实例。参数按数组填写，例如 `["-B","server.py","--port","8891"]`。原服务尚未验收时保留 pending，验收后再次运行向导更新同一 ID。
 
 动态配置中的路径相对门户根目录；环境变量值由原应用解释，通常相对业务工作目录。不要填写某个开发者的盘符和用户名。向导登记不会构建、启动或修改业务源码。
 
@@ -96,8 +96,4 @@ node scripts/register-app.mjs --config config.local/new-app.json
 - **订单分析**：动态服务 /orderiq/，健康接口 /health。本地沿用原项目的数据选择；正式部署显式传 --input、--data-dir、--state-dir、--web-dir。原 Git 仓库在订单分析/scripts，构建入口 generate_html/package_release.py。
 - **数据速查**：动态服务 /quicklook/，健康接口 /healthz；新版自动扫描使用 SHARED_DATA_ROOT，工作区来源的相对路径仍由 DATA_QUICKLOOK_SOURCE_BASE 解释。
 - **线索声量**：当前可见交付仍是 lead-dashboard.html 静态样例。若内网已改动态，在内网重新运行接入向导更新同一 leads ID，再配置该项目发布包；不能将样例当作正式动态验收。
-- **销量预测**：静态产物已移到 output_file/static，门户先使用此目录。dynamic/serve.py 动态服务默认端口 8780，但尚不能直接接入 /forecast/。
-
-给销量预测项目 AI 的具体任务：
-
-> 仅在销量预测项目完成动态版交付：core/live_server.py 当前插入根路径 /__forecast_live.js，templates/forecast-live.js 请求根路径 /api/status，请改为支持可配置公共前缀 /forecast/，保持独立根路径运行。提供轻量健康接口，区分服务存活、首次生成等待和生成失败。将动态页面、缓存与日志支持外置持久目录，保留共享输入及销量汇总现有业务规则。提供原项目构建命令，输出同版前后端及依赖清单，排除 Excel、缓存、日志和数据库；说明启动参数与路径基准。验证经前缀访问的页面、实时脚本、状态轮询、资源、等待与更新，以及重启持久化。不要修改门户。完成后交付契约，由门户将 forecast 的预览、发布和部署配置一起切成动态。
+- **销量预测**：动态服务 /forecast/，默认端口 8780，原项目 dynamic/serve.py 启动；scripts/build_release.py 构建标准包。--public-prefix 配置公共前缀，--data-dir 或 SALES_FORECAST_DATA_DIR 外置页面、缓存和日志，SHARED_DATA_ROOT 指定共享输入。/healthz 只检测服务，/readyz 区分首次等待、就绪与生成失败；/api/status 提供更新状态。首次生成前页面自动等待，不把尚无报表当成进程启动失败。静态入口仍可在原项目独立使用。
