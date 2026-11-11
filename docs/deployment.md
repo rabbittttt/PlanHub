@@ -2,6 +2,8 @@
 
 适用两台 Windows 电脑：A 同步代码、开发和构建，B 长期开机给部门使用。整个流程可留在内网，无需 GitHub、云平台或 Jenkins。当前提交提供工具，未替你安装 IIS、启用远程管理或在内网实际上线。
 
+第一次部署先完成“首次准备一次”和“首次部署的执行顺序”，之后使用下表。
+
 ## 日常只做这几步
 
 | 场景 | A 开发电脑 | B 部署电脑 |
@@ -39,9 +41,9 @@
 
 首次由目标机管理员安装 IIS、URL Rewrite/ARR、准备站点绑定及部门访问边界。动态代理要求 ARR enabled、preserveHostHeader，上传/长任务需核对超时；工具不更改服务器全局安全设置。原 `Install-IisSite.ps1` 可用于首次站点准备，先用 `-PlanOnly` 检查其 `config.example.json` 格式配置。该旧站点配置与新的 deployment.json 用途不同，不要互换。
 
-准备各应用匹配版本的 Python 环境和依赖。离线环境提前准备适配 Windows/Python 的 wheel；可用 `New-OfflineWheelhouse.ps1` 按原 requirements 下载，再按原项目说明离线安装。不要复制开发电脑虚拟环境。新依赖环境使用新目录，保留旧环境用于恢复。
+准备各应用匹配版本的 Python 环境和依赖。离线环境提前准备适配 Windows/Python 的 wheel；可用 `New-OfflineWheelhouse.ps1` 按原 requirements 下载，再按原项目说明离线安装。A 无可达依赖源时，通过公司允许的来源准备离线 wheel。不要复制开发电脑虚拟环境。新依赖环境使用新目录，保留旧环境用于恢复。
 
-正式数据先单独迁移并核对，**发布包不迁移数据库或 Excel**。服务使用本工具计划任务时为 S4U，不保存密码，无法访问网络共享或映射盘；因此业务数据放 B 本机，或另行采用公司允许的可访问共享数据的服务身份方案。服务账号需要批处理登录和相关目录读写权限。
+正式数据先按原项目一致性备份流程迁移并核对，**发布包不迁移数据库或 Excel**。服务使用本工具计划任务时为 S4U，不保存密码，无法访问网络共享或映射盘；因此业务数据放 B 本机，或另行采用公司允许的可访问共享数据的服务身份方案。服务账号需要批处理登录和相关目录读写权限。
 
 建议布局：
 
@@ -65,6 +67,91 @@ PlanHub部署/
 - **静态应用**：入口与资源完整交付。线索声量当前为替代样例，内网正式页面仍需验收；仅文件名相同不能证明资源与行为一致。
 
 `Configure-QuicklookProxy.ps1` 等旧专用 Quicklook 工具属于旧版接入，含根 API 和 HTTP 限制。新包使用本手册的通用前缀代理，不再套用旧脚本。原完整包工具仍保留供既有环境使用，日常单应用升级优先使用新发布入口。
+
+## 首次部署的执行顺序
+
+B 首次安装先完成本节，之后按日常发布表操作。每步报错时先处理该错误，再继续下一步。首次采用 A 传包、B 本机执行。B 上使用 64 位管理员 Windows PowerShell，执行脚本的位置为 B 的工具根目录，包含 deploy/ 和部署 BAT。
+
+### 1. A 生成首次引导包
+
+在 A 的门户根目录执行。下面使用当前默认同级项目布局，路径不同时按 A 的实际配置调整。
+
+```powershell
+$ErrorActionPreference = 'Stop'
+$firstVersion = Get-Date -Format 'yyyyMMdd-HHmmss'
+$sopRelease = Join-Path (Get-Location).Path ('staging/sop-first-' + $firstVersion)
+$firstPackage = Join-Path (Get-Location).Path ('staging/first-install-' + $firstVersion)
+npm run prepare:apps -- forecast leads
+if ($LASTEXITCODE -ne 0) { throw '静态网页收集失败。' }
+& '../.venv/Scripts/python.exe' -B '../SOP维护/scripts/build_release.py' --destination $sopRelease
+if ($LASTEXITCODE -ne 0) { throw 'SOP 原格式发布物构建失败。' }
+& ./deploy/New-DeploymentPackage.ps1 -ConfigPath ./deploy/config.example.json -Destination $firstPackage -IncludeSop -SopReleasePath $sopRelease
+if ($LASTEXITCODE -ne 0) { throw '首次引导包生成失败。' }
+```
+
+将生成的 first-install 目录完整传到 B，放到选定的正式部署根。引导包提供 portal/、静态 apps/、SOP 原格式 services/sop/ 及 config/。此时 orderiq、quicklook 显示 EXTERNAL 是因为稍后单独发布。该引导包不加 RequireComplete。
+
+SOP 首次身份接入需要 services/sop/sop-release.json。发布 BAT 生成的通用 SOP 包用于后续切版，首次引导使用上面的原格式产物。
+
+### 2. B 准备配置并创建站点
+
+B 另放一份工具目录，包含门户仓库的 deploy/ 和部署新版本.bat。以后更新工具时从已验证版本取得。保留工具目录与正式部署目录的分工。
+
+先在 B 工具根目录取得实际部署路径。
+
+```powershell
+$ErrorActionPreference = 'Stop'
+$deploymentRoot = (Resolve-Path -LiteralPath (Read-Host '输入 B 的首次引导包最终目录')).ProviderPath
+```
+
+修改正式部署根的 config/iis.json，将 SiteName、HostName、Port 设为实际值，RequireReverseProxy 设为 true，DeploymentRoot 保持相对配置目录的 ..。SiteName 须与 config.local/deployment.json 一致。
+
+```powershell
+$iisConfig = Join-Path $deploymentRoot 'config/iis.json'
+& ./deploy/Install-IisSite.ps1 -ConfigPath $iisConfig -PlanOnly
+# 核对站点、端口和目录后执行
+& ./deploy/Install-IisSite.ps1 -ConfigPath $iisConfig -Apply
+```
+
+此时站点为停止状态。安装器会检查 IIS、Windows Authentication、URL Rewrite 和 ARR；SOP 还需要 IIS ASP.NET 4.x 及相应 .NET Framework 模块。相关组件和 ARR 全局配置由 B 的管理员先准备。
+
+### 3. B 初始化 SOP 身份接入
+
+将 deploy/sop-iis.example.json 复制到正式部署根的 config/sop-iis.json，填写实际 SiteName、PublicOrigin 和部署根。BackendPort 与 config.local/deployment.json 的 SOP port 对齐，例如两处统一 8877。ProxySecretPath 与 SOP 的 secretEnvironmentFiles.SOP_PROXY_SECRET 对齐。
+
+首次生成 SOP 的私有运行配置，按本手册目录布局指定四个路径。原有正式环境升级时沿用已有配置。
+
+```powershell
+. ./deploy/Sop.Common.ps1
+$gateway = Resolve-SopGatewayTemplate -Path ./deploy/sop.example.json -DeploymentRoot $deploymentRoot
+$gateway.data_dir = Join-Path $deploymentRoot 'data/sop'
+$gateway.source_dir = Join-Path $deploymentRoot 'shared/订单汇总'
+$gateway.shared_config = Join-Path $deploymentRoot 'config/shared_config.py'
+$gateway.plan_file = Join-Path $deploymentRoot 'shared/SOP计划/SOP计划维护.xlsx'
+Write-SopJson -Path (Join-Path $deploymentRoot 'config/sop.json') -Value $gateway
+$sopConfig = Join-Path $deploymentRoot 'config/sop-iis.json'
+& ./deploy/Configure-SopProxy.ps1 -ConfigPath $sopConfig -PlanOnly
+$serviceAccount = Read-Host '输入 B 实际运行 SOP 的 计算机或域名\服务账号'
+& ./deploy/Configure-SopProxy.ps1 -ConfigPath $sopConfig -ServiceAccount $serviceAccount -Apply
+```
+
+脚本保留已有 config/sop.json 中的业务路径，并生成匹配的身份配置和秘密。deploy/sop.example.json 原默认使用部署根外的 ../shared；只修改 config/sop.example.json 不会影响该初始化脚本。因此首次按上面显式写入 config/sop.json，并检查生成结果。服务账号与 deployment.json 中 SOP 的 serviceAccount 保持一致，首次使用新通用任务。
+
+### 4. B 准备数据、运行环境和公共地址
+
+按上文迁入各应用持久数据，准备独立 Python 环境及依赖。SOP 原规则文件需另放到 B 的 config/shared_config.py，数据库放 data/sop，销售来源和计划表使用上面实际配置的路径。SOP 启动时会检查真实规则和数据。
+
+在 B 工具目录双击部署新版本.bat 生成 config.local/deployment.json 后，先填写实际配置。三个动态应用的 command 应指向 B 已安装依赖的解释器。原 Install-SopDependencies.ps1 默认创建 runtime/sop-venv，而新模板为 runtime/sop；使用旧依赖安装器时应把 command 改为实际解释器位置。
+
+healthUrl、SOP PublicOrigin、订单 allowed-host/allowed-origin 和数据速查 DATA_QUICKLOOK_PUBLIC_ORIGIN，统一使用部门实际访问的 B 内网地址及端口。模板中的 localhost、示例域名和 MACHINE\PlanHubService 都需按 B 的实际值替换。
+
+### 5. 开始发布并验收
+
+B 在 IIS 管理器启动已经配置好部门访问范围的站点，先确认能打开引导门户。单应用发布会通过该站点做健康检查，因此站点需要运行。
+
+A 双击发布应用.bat，依次生成并发送 planhub、forecast、leads、orderiq、quicklook、sop 的版本包。B 对每个收到的包双击部署新版本.bat，核对目标后执行。首次初始化无需再注册旧 Register-SopTask 或旧 Quicklook 任务。
+
+验收各网页、关键查询、保存、导入导出及 B 重启后的服务恢复。发布完成后，同事统一访问 B 的内网地址；A 关闭后，B 应继续正常提供页面和业务操作。
 
 ## 发布包是什么
 
