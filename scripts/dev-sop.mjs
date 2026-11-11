@@ -124,7 +124,7 @@ export async function resolvePreviewSettings(args=process.argv.slice(2),{root=RO
     } catch(error) {throw new Error(`${error.message}\n--sop-source 选择运行代码，--data-root 选择持久数据项目，--snapshot --seed-from 仅用于测试；请核对实际路径。不会自动改用演示数据。`);}
     try { await requirePath(sharedConfig, '共享业务规则'); }
     catch (error) {
-      throw new Error(error.message + '\nSOP 需要原项目的真实规则文件。订单仓库的本机 config 目录不随 Git 下载，请先在内网迁入原文件，再双击“配置SOP规则.bat”选择它。\n也可用 --shared-config 或 SOP_SHARED_CONFIG 指定现有文件，相对路径以门户根目录为准。');
+      throw new Error(error.message + '\nSOP 需要原项目的真实规则文件。订单仓库的本机 config 目录不随 Git 下载，请核对原规则文件是否存在。\n也可用 --shared-config 或 SOP_SHARED_CONFIG 指定现有文件，相对路径以门户根目录为准。');
     }
   }
   return {root,sourceRoot:resolvedSource,dataRoot,dataDirectory,dataRootExplicit,snapshot:Boolean(values.snapshot),demo:Boolean(values.demo),salesSourceDir,planSourceFile,sharedConfig,port:values.port,backendPort:values.backendPort};
