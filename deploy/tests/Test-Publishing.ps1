@@ -12,7 +12,10 @@ $scratch=Join-Path $root ('artifacts/publish-test-'+[Guid]::NewGuid().ToString('
 $workspace=Join-Path $scratch '工作区 含空格'
 $fixtureDeploy=Join-Path $workspace 'deploy'
 [IO.Directory]::CreateDirectory($fixtureDeploy)|Out-Null
-foreach($file in @('App.Release.ps1','Sop.Release.ps1','Deployment.Common.ps1','Publish.Common.ps1','New-AppRelease.ps1','Publish-App.ps1','Send-AppRelease.ps1','publish.example.json','portal.web.config')) {Copy-Item -LiteralPath (Join-Path $deploy $file) -Destination $fixtureDeploy}
+foreach($file in @('App.Release.ps1','Sop.Release.ps1','Deployment.Common.ps1','Publish.Common.ps1','New-AppRelease.ps1','Publish-App.ps1','Send-AppRelease.ps1','New-LocalBundle.ps1','publish.example.json','portal.web.config')) {Copy-Item -LiteralPath (Join-Path $deploy $file) -Destination $fixtureDeploy}
+Copy-Item -LiteralPath (Join-Path $deploy 'local-bundle') -Destination $fixtureDeploy -Recurse
+[IO.Directory]::CreateDirectory((Join-Path $workspace 'scripts'))|Out-Null
+foreach($file in @('start-release.mjs','dev-server.mjs','app-integrations.mjs','proxy-request.mjs','portal-instance.mjs','service-process.mjs','health-check.mjs')) {Copy-Item -LiteralPath (Join-Path $root ('scripts/'+$file)) -Destination (Join-Path $workspace 'scripts')}
 Put (Join-Path $workspace 'portal/index.html') '<title>Portal fixture</title>'
 Put (Join-Path $workspace 'portal/config/apps.json') '{"groups":[{"apps":[{"id":"alpha","name":"Alpha","enabled":true},{"id":"localstatic","name":"Local Static","enabled":true},{"id":"sop","name":"SOP","enabled":true}]}]}'
 $configFile=Join-Path $workspace 'config.local/publish.json'
@@ -133,6 +136,11 @@ function Read-Host {throw 'Noninteractive batch must not ask for paths or action
 try {
     $batch=@(& $publish -All -Version batch1 -ConfigPath $configFile -NonInteractive)
     Check ($batch.Count -eq 4) 'Batch did not return all enabled apps plus the portal.'
+    $bundleDirectories=@(Get-ChildItem -LiteralPath (Join-Path $workspace 'staging/bundles') -Directory)
+    Check ($bundleDirectories.Count -eq 1) 'Successful batch did not produce one local bundle.'
+    $bundleManifest=Get-Content -LiteralPath (Join-Path $bundleDirectories[0].FullName 'bundle.json') -Raw -Encoding UTF8 | ConvertFrom-Json
+    Check (@($bundleManifest.applications.PSObject.Properties).Count -eq 4) 'Local bundle is missing successful batch applications.'
+    Check (Test-Path -LiteralPath (Join-Path $bundleDirectories[0].FullName '启动发布版工作台.cmd')) 'Local bundle has no launch CMD.'
     Check ((@($batch.appId | Sort-Object) -join ',') -eq 'alpha,localstatic,planhub,sop') 'Batch included the wrong applications.'
     foreach($item in $batch){
         $valid=Assert-AppRelease $item.releasePath
@@ -153,6 +161,7 @@ foreach($action in @('Send','Deploy','SendExisting','DeployExisting')){
 }
 Put $builderFile 'param($Destination); exit 3'
 Reject {& $publish -All -Version partial -ConfigPath $configFile -NonInteractive}
+Check (@(Get-ChildItem -LiteralPath (Join-Path $workspace 'staging/bundles') -Directory).Count -eq 2) 'An incomplete batch was published as a local bundle.'
 Check (-not(Test-Path -LiteralPath (Join-Path $workspace 'staging/releases/alpha-partial'))) 'A failed batch builder produced a release.'
 foreach($id in @('planhub','localstatic','sop')){
     $valid=Assert-AppRelease (Join-Path $workspace ('staging/releases/'+$id+'-partial'))

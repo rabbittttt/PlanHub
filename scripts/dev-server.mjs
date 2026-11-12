@@ -27,7 +27,7 @@ export function parseRequestPath(rawUrl) {
 }
 
 /** Local-only preview; the optional loopback SOP bridge does not provide Windows authentication. */
-export function createServer({ root = PROJECT_ROOT, sopProxy = null, applications = null, runtime = null } = {}) {
+export function createServer({ root = PROJECT_ROOT, portalRoot = path.join(root, 'portal'), sopProxy = null, applications = null, runtime = null } = {}) {
   if (sopProxy && (!Number.isInteger(sopProxy.port) || sopProxy.port < 1 || sopProxy.port > 65535 || typeof sopProxy.secret !== 'string' || sopProxy.secret.length < 32 || typeof sopProxy.user !== 'string' || /[\r\n]/.test(sopProxy.user))) throw new Error('Invalid local SOP preview configuration');
   return http.createServer(async (request, response) => {
     const headers = { 'Cache-Control': 'no-store', 'X-Content-Type-Options': 'nosniff', 'X-Frame-Options': 'SAMEORIGIN' };
@@ -69,7 +69,7 @@ export function createServer({ root = PROJECT_ROOT, sopProxy = null, application
     if (!['GET', 'HEAD'].includes(request.method)) return send(405, 'Method not allowed', { Allow: 'GET, HEAD' });
     const configured = applications?.[parts[0]];
     const mount = configured?.type === 'static' ? configured : null;
-    const base = mount?.root ?? path.join(root, 'portal');
+    const base = mount?.root ?? portalRoot;
     let relativeParts = mount ? parts.slice(1) : parts;
     if (mount) {
       if (relativeParts.length === 0 && !pathname.endsWith('/')) return send(308, 'Redirecting', {Location: pathname + '/' + (request.url.includes('?') ? request.url.slice(request.url.indexOf('?')) : '')});

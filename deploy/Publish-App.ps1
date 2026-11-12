@@ -58,6 +58,10 @@ if($All) {
     foreach($item in $failures){Write-Host ("失败 {0}：{1}" -f $item.appId,$item.message)}
     Write-Host '仅生成独立版本包，尚未传送或部署。失败项修复后可单独选择重试。'
     if($failures.Count){throw 'Some applications could not be packaged. See the summary above; this batch is incomplete.'}
+    $bundleDestination=Join-Path $root ('staging/bundles/PlanHub-'+(Get-Date -Format 'yyyyMMdd-HHmmss-fff'))
+    $bundle=& (Join-Path $PSScriptRoot 'New-LocalBundle.ps1') -ReleasePaths @($completed.releasePath) -Destination $bundleDestination
+    Write-Host ('整套本地运行包：'+$bundle.bundlePath)
+    Write-Host '打开整套目录，双击“启动发布版工作台.cmd”；数据和日志在版本目录外。'
     return $completed
 }
 Assert-PublishId $AppId
