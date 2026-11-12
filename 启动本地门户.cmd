@@ -8,12 +8,12 @@ if errorlevel 1 (
   pause
   exit /b 1
 )
-echo 正在启动本地门户及已配置的业务服务，请保留此窗口。
-node scripts\start-local.mjs %*
+echo 正在后台启动本地门户及已配置的业务服务...
+node scripts\start-background.mjs %*
 set "portal_exit=%errorlevel%"
 if not "%portal_exit%"=="0" (
   echo.
-  echo 启动未完成，请根据上方提示处理后重新打开。
+  echo 启动存在异常，请查看上方提示和日志；此窗口不会自动关闭。
   pause
 )
 endlocal & exit /b %portal_exit%

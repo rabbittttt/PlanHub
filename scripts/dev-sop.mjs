@@ -219,6 +219,9 @@ export async function runPreview(args=process.argv.slice(2),options={}) {
   await writeFile(gatewayFile,JSON.stringify(gateway,null,2));
   const env={...pythonEnv,SOP_DEV_PROXY_SECRET:secret,SOP_EXCEL_ENGINE:'python',PYTHONUNBUFFERED:'1'};
   const child=spawnService(python,[path.join(sourceRoot,'server.py'),'--port',String(backendPort),'--gateway-config',gatewayFile],{cwd:sourceRoot,env,logDirectory:path.join(preview,'logs')});
+  let stopApplications=()=>{};
+  const cleanupOwned=()=>{stopService(child);stopApplications();};
+  process.once('exit',cleanupOwned);
   let failed=false,stopping=false;
   child.on('error',error=>{console.error(error.message);failed=true;});
   child.on('exit',()=>{failed=true;});
@@ -231,11 +234,15 @@ export async function runPreview(args=process.argv.slice(2),options={}) {
     } catch {}
     await new Promise(resolve=>setTimeout(resolve,250));
   }
-  if(!ready){stopService(child);throw new Error(`独立 SOP 服务未启动；请查看日志：${child.serviceLogs.stderr}`);}
-  const stopApplications=await startAppServices(applications,{root,env:runtimeEnv});
-  if(failed){stopApplications();stopService(child);throw new Error('SOP 在其他应用启动期间已退出，请检查原项目日志。');}
-  const server=createServer({root,applications,runtime,sopProxy:{port:backendPort,secret,user:userHeader}});
-  const closeChild=()=>{stopping=true;stopService(child);stopApplications();process.removeListener('SIGINT',stop);process.removeListener('SIGTERM',stop);};
+  let server;
+  try {
+    if(!ready)throw new Error(`独立 SOP 服务未启动；请查看日志：${child.serviceLogs.stderr}`);
+    stopApplications=await startAppServices(applications,{root,env:runtimeEnv});
+    if(failed)throw new Error('SOP 在其他应用启动期间已退出，请检查原项目日志。');
+    server=createServer({root,applications,runtime,sopProxy:{port:backendPort,secret,user:userHeader}});
+  } catch(error) {cleanupOwned();process.removeListener('exit',cleanupOwned);throw error;}
+  server.startupWarnings=stopApplications.failures??[];
+  const closeChild=()=>{stopping=true;cleanupOwned();process.removeListener('exit',cleanupOwned);process.removeListener('SIGINT',stop);process.removeListener('SIGTERM',stop);};
   function stop(){stopping=true;stopService(child);stopApplications();server.close();setTimeout(()=>server.closeAllConnections?.(),1000).unref();}
   runtime.stop=stop;
   server.once('close',()=>{closeChild();void unregisterPortal(root,runtime);});

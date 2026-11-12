@@ -30,8 +30,9 @@ async function portFree(app) {
 }
 // Only processes created here are stopped; already-running independent apps stay running.
 export async function startAppServices(applications,{root=ROOT,env=process.env}={}) {
-  const children=[];
+  const children=[],failures=[];
   const stop=()=>{for(const child of children)stopService(child);};
+  stop.failures=failures;
   for(const [id,app] of Object.entries(applications)) {
     if(app.type!=='proxy')continue;
     try {
@@ -51,7 +52,10 @@ export async function startAppServices(applications,{root=ROOT,env=process.env}=
       }
       if(!ready){stopService(child);throw new Error('独立服务未通过健康检查，日志：'+child.serviceLogs.stderr);}
       console.log(id+': 已从独立项目启动；数据仍由原项目管理；日志：'+child.serviceLogs.stderr);
-    } catch(error) {console.warn(id+' 接入暂不可用：'+error.message+'。可修正 config.local/apps.json 后重启；其他入口继续可用。');}
+    } catch(error) {
+      const message=id+' 接入暂不可用：'+error.message+'。可修正 config.local/apps.json 后重启；其他入口继续可用。';
+      failures.push(message);console.warn(message);
+    }
   }
   return stop;
 }

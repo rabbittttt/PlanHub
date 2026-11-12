@@ -49,3 +49,19 @@ test('service launcher passes per-application environment without changing its p
   assert.equal(inherited.APP_PUBLIC_PREFIX,'/previous/');
  }finally{stop();await new Promise(r=>setTimeout(r,200));}
 });
+
+test('partial startup reports warnings and stopping the portal preserves a reused independent service',async t=>{
+ const root=await fixture(t),listenPort=await port(),missingPort=await port();
+ const code="require('http').createServer((q,r)=>r.end(JSON.stringify({app:'reused-fixture'}))).listen("+listenPort+",'127.0.0.1');";
+ const independent=spawnService(process.execPath,['-e',code],{cwd:root,logDirectory:root});
+ try{
+  await healthy('http://127.0.0.1:'+listenPort);
+  const stop=await startAppServices({
+   reused:{type:'proxy',target:'http://127.0.0.1:'+listenPort,healthPath:'/',healthKeys:['app']},
+   missing:{type:'proxy',target:'http://127.0.0.1:'+missingPort,healthPath:'/',healthKeys:['app']}
+  },{root});
+  assert.equal(stop.failures.length,1);assert.match(stop.failures[0],/missing.*暂不可用/);
+  stop();
+  assert.equal((await healthy('http://127.0.0.1:'+listenPort)).app,'reused-fixture');
+ }finally{stopService(independent);await new Promise(r=>setTimeout(r,200));}
+});
