@@ -89,7 +89,7 @@ test('static packaging preserves original bytes, excludes unrelated data and bac
 test('configured navigation order removes inventory and keeps quicklook last even before pending apps become ready',async()=>{
   const raw=JSON.parse(await readFile(new URL('../portal/config/apps.json',import.meta.url),'utf8'));
   const config=validateConfig(raw);
-  assert.deepEqual(orderedApps(config.apps).map(a=>a.id),['sop','orderiq','forecast','leads','quicklook']);
+  assert.deepEqual(orderedApps(config.apps).map(a=>a.id),['sop','orderiq','forecast','leads','vehicle-config','quicklook']);
   assert.equal(config.apps.find(a=>a.id==='forecast').status,'ready');
 });
 

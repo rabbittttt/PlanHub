@@ -96,6 +96,38 @@
       "publicPaths": [
         "lead-dashboard.html"
       ]
+    },
+    "vehicle-config": {
+      "type": "proxy",
+      "target": "http://127.0.0.1:8790",
+      "stripPrefix": true,
+      "rootRoutes": [],
+      "healthPath": "/healthz",
+      "healthKeys": [
+        "ok",
+        "app",
+        "public_prefix"
+      ],
+      "healthText": null,
+      "start": {
+        "cwd": "../配置管理",
+        "command": "../.venv/Scripts/python.exe",
+        "args": [
+          "-B",
+          "server.py",
+          "--host",
+          "{host}",
+          "--port",
+          "{port}",
+          "--public-prefix",
+          "{basePath}"
+        ]
+      },
+      "healthExpected": {
+        "ok": true,
+        "app": "vehicle-config",
+        "public_prefix": "{basePath}"
+      }
     }
   }
 }

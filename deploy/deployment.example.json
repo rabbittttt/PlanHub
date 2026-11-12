@@ -155,6 +155,45 @@
         "shared_config": "{deployment}/config/shared_config.py",
         "plan_file": "{shared}/SOP计划/SOP计划维护.xlsx"
       }
+    },
+    "vehicle-config": {
+      "kind": "service",
+      "command": "runtime/vehicle-config/Scripts/python.exe",
+      "arguments": [
+        "-B",
+        "{payload}/server.py",
+        "--host",
+        "127.0.0.1",
+        "--port",
+        "{port}",
+        "--data-dir",
+        "{data}",
+        "--public-prefix",
+        "{basePath}",
+        "--public-origin",
+        "{publicOrigin}",
+        "--require-proxy-identity"
+      ],
+      "environment": {
+        "PYTHONIOENCODING": "utf-8",
+        "PYTHONUNBUFFERED": "1",
+        "PYTHONDONTWRITEBYTECODE": "1"
+      },
+      "secretEnvironmentFiles": {
+        "VEHICLE_CONFIG_PROXY_SECRET": "config/vehicle-config-proxy.secret"
+      },
+      "dataDirectory": "{shared}/车型配置",
+      "port": 8790,
+      "taskName": "PlanHub-vehicle-config",
+      "backendHealthPath": "/healthz",
+      "healthExpected": {
+        "ok": true,
+        "app": "vehicle-config",
+        "public_prefix": "{basePath}"
+      },
+      "proxyMode": "existing",
+      "stripPrefix": true,
+      "maxRequestBytes": 8000000
     }
   }
 }

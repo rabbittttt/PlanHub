@@ -74,6 +74,21 @@
     },
     "leads": {
       "kind": "static"
+    },
+    "vehicle-config": {
+      "kind": "release",
+      "sourceRoot": "../配置管理",
+      "build": {
+        "command": "../.venv/Scripts/python.exe",
+        "args": [
+          "-B",
+          "scripts/build_release.py",
+          "--version",
+          "{version}",
+          "--destination",
+          "{output}"
+        ]
+      }
     }
   }
 }

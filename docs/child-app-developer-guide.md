@@ -92,6 +92,8 @@ node scripts/register-app.mjs --config config.local/new-app.json
 <a id="current-contracts"></a>
 ## 当前版本核对（2026-11-12）
 
+- **车型配置**：动态服务 `/vehicle-config/`，开发源码 `../配置管理`，健康接口 `/healthz`；`scripts/build_release.py` 生成独立通用包。`--port`、`--public-prefix` 与 `--data-dir` 配置运行位置；共享持久目录为 `共享数据/车型配置`。草稿/发布分离，业务报表尚未接入。生产必须启用 `--require-proxy-identity`，外置 `VEHICLE_CONFIG_PROXY_SECRET`，由 Windows 认证代理覆盖 `X-Config-User` 与 `X-Config-Proxy-Key`；模板 `proxyMode=existing`，先在目标机配置可信身份桥，不能仅凭健康检查判定上线。开发模式记录本机操作人。详见原项目 README。
+
 - **SOP计划管理**：继续使用原网关、整段 /sop/ 代理与原构建器；业务新增标签不需门户逐项登记。新版计划保存在数据库，Excel 从页面导出、修改后导入；服务器旧维护表仅归档，不再自动同步。正式资料对账来源通过 SOP_RECONCILE_DIR 指向 shared/对账资料。
 - **订单分析**：动态服务 /orderiq/，健康接口 /health。本地沿用原项目的数据选择；正式部署显式传 --input、--data-dir、--state-dir、--web-dir。原 Git 仓库在订单分析/scripts，构建入口 generate_html/package_release.py；A 打包前须先由原项目生成同版 runtime 前端及批次，不能仅复制源码后直接发布。
 - **数据速查**：动态服务 /quicklook/，健康接口 /healthz；新版自动扫描使用 SHARED_DATA_ROOT，工作区来源的相对路径仍由 DATA_QUICKLOOK_SOURCE_BASE 解释。

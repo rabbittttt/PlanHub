@@ -95,6 +95,15 @@
           "order": 50,
           "version": null,
           "dataUpdatedAt": null
+        },
+        {
+          "id": "vehicle-config",
+          "name": "车型配置",
+          "url": "/vehicle-config/",
+          "icon": "grid",
+          "enabled": true,
+          "status": "ready",
+          "order": 45
         }
       ]
     }
