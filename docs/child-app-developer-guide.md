@@ -76,7 +76,7 @@ node scripts/register-app.mjs --config config.local/new-app.json
 
 ## 发布与验收
 
-双击 `发布应用.bat`，具体操作见 [部署手册](deployment.md)。发布包不可覆盖，版本与数据分开；程序更新和数据刷新是两条流程。正式版本只使用已验收产物。
+更新代码后双击 `发布应用.bat`，选择应用，工具自动调用原项目构建入口并校验版本包，具体操作见 [部署手册](deployment.md)。构建入口应直接从当前源码生成同版前后端，不依赖开发机历史报表或正式业务数据；静态应用收集首次已登记的真实发布文件。发布包不可覆盖，版本与数据分开；程序更新和数据刷新是两条流程。正式版本只使用已验收产物。
 
 验收至少检查页面、全部资源、子路径、同源嵌入、关键查询与下载；动态应用再检查保存、导入导出和重启持久化。门户侧执行 `npm run check`、`npm test`。配置检查通过不代表业务验收或内网部署完成。
 
@@ -95,7 +95,7 @@ node scripts/register-app.mjs --config config.local/new-app.json
 - **车型配置**：动态服务 `/vehicle-config/`，开发源码 `../配置管理`，健康接口 `/healthz`；`scripts/build_release.py` 生成独立通用包。`--port`、`--public-prefix` 与 `--data-dir` 配置运行位置；共享持久目录为 `共享数据/车型配置`。草稿/发布分离，业务报表尚未接入。生产必须启用 `--require-proxy-identity`，外置 `VEHICLE_CONFIG_PROXY_SECRET`，由 Windows 认证代理覆盖 `X-Config-User` 与 `X-Config-Proxy-Key`；模板 `proxyMode=existing`，先在目标机用 `Configure-IdentityProxy.ps1 -AppId vehicle-config -DeploymentConfigPath config.local/deployment.json` 规划并显式配置可信身份桥，不能仅凭健康检查判定上线。开发模式记录本机操作人。详见原项目 README。
 
 - **SOP计划管理**：继续使用原网关、整段 /sop/ 代理与原构建器；业务新增标签不需门户逐项登记。新版计划保存在数据库，Excel 从页面导出、修改后导入；服务器旧维护表仅归档，不再自动同步。正式资料对账来源通过 SOP_RECONCILE_DIR 指向 shared/对账资料。
-- **订单分析**：动态服务 /orderiq/，健康接口 /health。本地沿用原项目的数据选择；正式部署显式传 --input、--data-dir、--state-dir、--web-dir。原 Git 仓库在订单分析/scripts，构建入口 generate_html/package_release.py；A 打包前须先由原项目生成同版 runtime 前端及批次，不能仅复制源码后直接发布。
+- **订单分析**：动态服务 /orderiq/，健康接口 /health。本地沿用原项目的数据选择；正式部署显式传 --input、--data-dir、--state-dir、--web-dir。原 Git 仓库在订单分析/scripts，构建入口 generate_html/package_release.py；直接从同版模板生成发布前端，不依赖 Excel、旧 runtime 或已生成批次。业务数据由部署后的原服务处理，打包无需先运行 main.py。
 - **数据速查**：动态服务 /quicklook/，健康接口 /healthz；新版自动扫描使用 SHARED_DATA_ROOT，工作区来源的相对路径仍由 DATA_QUICKLOOK_SOURCE_BASE 解释。
 - **线索声量**：当前可见交付仍是 lead-dashboard.html 静态样例。若内网已改动态，在内网重新运行接入向导更新同一 leads ID，再配置该项目发布包；不能将样例当作正式动态验收。
 - **销量预测**：动态服务 /forecast/，默认端口 8780，原项目 dynamic/serve.py 启动；scripts/build_release.py 构建标准包。--public-prefix 配置公共前缀，--data-dir 或 SALES_FORECAST_DATA_DIR 外置页面、缓存和日志，SHARED_DATA_ROOT 指定共享输入。/healthz 只检测服务，/readyz 区分首次等待、就绪与生成失败；/api/status 提供更新状态。首次生成前页面自动等待，不把尚无报表当成进程启动失败。静态入口仍可在原项目独立使用。

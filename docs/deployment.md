@@ -2,15 +2,15 @@
 
 你负责在 A 电脑准备程序包，部署同事负责 B 电脑的运行环境、账号权限和上线。你的操作到第四步交付完成，第五步是协助验收。
 
-**当前后台是 Python，交付的是版本发布目录，可压缩为 ZIP，不是 Java 的 JAR。** 如果同事所说的“JAR”只是泛指程序包，交付下述 ZIP 即可；如果他们的平台只支持 `java -jar`，现有 Python 程序不能直接运行，需要先由同事确认支持 Python 的部署方式。改后缀不能转换程序类型。
+当前按 Python 方案交付：版本目录包含同版前端、Python 后端及依赖清单，可完整压缩为 ZIP；运行环境由部署同事准备。
 
 ## 第一步：准备本次要交付的代码
 
 在 A 同步门户和需要发布的原项目，先确认本地网页功能正常。A 需已有 Node.js 20+、Python 和各项目的构建依赖。
 
-首次交付共七个独立包：门户 `planhub`、SOP `sop`、订单分析 `orderiq`、销量预测 `forecast`、线索声量 `leads`、数据速查 `quicklook`、车型配置 `vehicle-config`。后续只交付改动的应用；新增门户导航入口时还需更新门户包。
+所有应用使用同一个操作：**更新代码 → 双击“发布应用.bat”选择应用 → 获取版本包**。工具调用各应用的构建入口，自动生成并校验同版前端、后端和资源，不需要先手动生成业务报表。首次配置好项目路径、构建环境和静态页面来源，后续沿用。
 
-订单分析首次打包或修改前端模板后，须先在订单原项目完成一次成功生成，再打包；其发布工具会检查生成结果与当前前端源码一致。线索声量须使用内网真实页面，不能把接入用样例作为正式业务页。具体构建前置条件见下方同事附录，或原项目说明。
+首次依次选择门户 `planhub`、SOP `sop`、订单分析 `orderiq`、销量预测 `forecast`、线索声量 `leads`、数据速查 `quicklook`、车型配置 `vehicle-config`，生成七个独立包。后续只选择改动的应用；新增门户导航入口时还需更新门户包。线索声量按已登记的真实静态页面收集，首次接入时核对来源，不能以接入样例代替正式页面。
 
 ## 第二步：双击“发布应用.bat”，选择应用
 
@@ -116,14 +116,7 @@ if ($LASTEXITCODE -ne 0) { throw 'SOP 原格式发布物构建失败。' }
 & ./deploy/New-DeploymentPackage.ps1 -ConfigPath ./deploy/config.example.json -Destination $firstPackage -IncludeSop -SopReleasePath $sopRelease
 ```
 
-订单分析首次发布或前端模板修改后，先在订单原项目完成一次成功生成，再打包。package_release.py 要求 output_file/runtime 中已有 current.json、index.html、web-build.json，且前端哈希匹配当前源码；门户不会自动替业务项目生成数据。默认同级布局可从门户根执行：
-
-```powershell
-& '../.venv/Scripts/python.exe' -B '../订单分析/scripts/generate_html/main.py' --input '../共享数据/订单汇总' --no-open
-if ($LASTEXITCODE -ne 0) { throw '订单生成失败，请先查看原项目日志。' }
-```
-
-输入不在默认共享目录时，使用原项目已确认的实际输入；若生成时 --output 指向自定义 HTML 文件，打包器的 --runtime 应指向该 HTML 父目录下的 runtime/，不能填 HTML 文件本身。不要把 B 首次可自动生成数据批次，误认为 A 打包前无需生成前端。
+订单分析须同步包含直接源码构建能力的新版 `generate_html/package_release.py`。门户原有构建命令无需调整；打包不读取 `output_file/runtime`、Excel 或旧批次，旧 `--runtime` 参数仅兼容接受并提示忽略。B 上仍需配置真实输入和外置持久目录，启动后由原服务生成业务数据；程序包完成不代表首批业务数据已就绪。
 
 按正文五步接收 planhub、leads、orderiq、forecast、quicklook、sop、vehicle-config 的独立包，先不要激活；已有的包无需重复构建。将 B 收到的包保留在收件目录；B 下一步从 payload/requirements.txt 准备依赖，因此无需业务源码。
 
