@@ -101,7 +101,7 @@ if ($PSCmdlet.ShouldProcess($target, 'Create new portal deployment package')) {
     foreach ($template in @('quicklook.example.json', 'quicklook-iis.example.json')) {
         Copy-Item -LiteralPath (Join-Path $PSScriptRoot $template) -Destination (Join-Path $target ('config\' + $template))
     }
-    Get-ChildItem -LiteralPath $PSScriptRoot -File | Where-Object { $_.Extension -in @('.ps1', '.xml', '.config', '.json') -and $_.Name -notlike '*.local.*' } | ForEach-Object {
+    Get-ChildItem -LiteralPath $PSScriptRoot -File | Where-Object { $_.Extension -in @('.ps1', '.xml', '.config', '.json', '.cs') -and $_.Name -notlike '*.local.*' } | ForEach-Object {
         Copy-Item -LiteralPath $_.FullName -Destination (Join-Path $target 'deploy')
     }
     Get-ChildItem -LiteralPath (Join-Path $PSScriptRoot '..\docs') -File -Filter '*.md' | ForEach-Object {

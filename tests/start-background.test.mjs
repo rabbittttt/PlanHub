@@ -128,7 +128,8 @@ async function fixture(t){
     },'Test-owned workers did not stop after the fixture cleanup flag',{timeout:5000});
     assert.equal(path.dirname(await realpath(temporary)),await realpath(os.tmpdir()));
     assert.ok(path.basename(temporary).startsWith('portal background 测试-'));
-    await rm(temporary,{recursive:true,force:true});
+    // Windows may release directory handles shortly after the verified worker exit.
+    await rm(temporary,{recursive:true,force:true,maxRetries:5,retryDelay:100});
   });
   return {
     root,temporary,workerPath,children,

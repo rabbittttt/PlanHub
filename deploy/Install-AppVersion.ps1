@@ -55,6 +55,15 @@ try {
         }elseif(-not(Test-PortFree $plan.Definition.port)){throw 'Backend port belongs to another process. Stop or migrate the old service separately.'}
         if($plan.Definition.proxyMode -eq 'existing'){
             if($null -eq $application){throw 'The application requires its existing IIS proxy/identity bridge.'}
+            if($null -ne (Get-Setting $plan.Definition 'identityProxy')) {
+                $identityBinding=Resolve-IdentityProxyBinding $plan.Root $plan.Id $plan.Definition $plan.SiteName ''
+                $identityPool=$manager.ApplicationPools[$identityBinding.ApplicationPool]
+                if($application.ApplicationPoolName -cne $identityBinding.ApplicationPool -or $null -eq $identityPool -or $identityPool.ManagedRuntimeVersion -ne 'v4.0' -or $identityPool.ManagedPipelineMode.ToString() -ne 'Integrated'){throw 'Existing IIS identity application uses a different pool or managed runtime. No service was switched.'}
+            }
+            if($plan.Id -eq 'sop' -or $null -ne (Get-Setting $plan.Definition 'identityProxy')) {
+                $expectedProxy=Join-Path $plan.Root ('proxy\'+$plan.Id)
+                if($application.VirtualDirectories['/'].PhysicalPath -ine $expectedProxy){throw 'Existing IIS identity application points to a different physical directory. No service was switched.'}
+            }
         } else {
             $proxyRoot=Join-Path $plan.Root ('proxy\'+$plan.Id)
             if($application -and $application.VirtualDirectories['/'].PhysicalPath -ine $proxyRoot){throw 'Existing IIS application is not this tool owned proxy. Migrate explicitly first.'}
@@ -129,11 +138,9 @@ try {
         }
         Start-ScheduledTask -TaskName $plan.Definition.taskName;$started=$true
     }
-    $healthy=$false
-    for($i=0;$i -lt 12;$i++){
-        if(($plan.Kind -ne 'service' -or (Test-BackendHealth $plan.Definition)) -and (Test-PublicHealth $plan.HealthUrl)){$healthy=$true;break}
-        Start-Sleep -Milliseconds 500
-    }
+    $healthDefinition=if($plan.Kind -eq 'service'){$plan.Definition}else{$null}
+    $startupTimeout=[int](Get-Setting $plan.Definition 'startupTimeoutSeconds' 60)
+    $healthy=Wait-DeploymentHealth -Definition $healthDefinition -HealthUrl $plan.HealthUrl -TimeoutSeconds $startupTimeout
     if(-not $healthy){throw 'Published version failed health checks. See application logs. No data or database was rolled back.'}
     $previous=Get-Setting $record 'version'
     if($previous -ceq $plan.Release.Manifest.version){$previous=Get-Setting $record 'previous'}

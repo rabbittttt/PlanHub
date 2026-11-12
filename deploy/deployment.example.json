@@ -4,6 +4,7 @@
   "publicOrigin": "http://localhost:8080",
   "sharedDirectory": "shared",
   "serviceAccount": "MACHINE\\PlanHubService",
+  "startupTimeoutSeconds": 60,
   "applications": {
     "planhub": {
       "kind": "portal"
@@ -193,7 +194,12 @@
       },
       "proxyMode": "existing",
       "stripPrefix": true,
-      "maxRequestBytes": 8000000
+      "maxRequestBytes": 8000000,
+      "identityProxy": {
+        "userHeader": "X-Config-User",
+        "keyHeader": "X-Config-Proxy-Key",
+        "secretEnvironment": "VEHICLE_CONFIG_PROXY_SECRET"
+      }
     }
   }
 }

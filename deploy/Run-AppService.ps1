@@ -1,4 +1,4 @@
-#requires -Version 5.1
+﻿#requires -Version 5.1
 [CmdletBinding()]
 param([Parameter(Mandatory=$true)][string]$RuntimeConfig)
 $ErrorActionPreference='Stop'
@@ -9,6 +9,7 @@ if ($release.Manifest.appId -cne $runtime.appId -or $release.Manifest.version -c
 if ($runtime.appId -ceq 'sop') {
     Assert-SopRuntimeConsistency -Root ([string]$runtime.root) -Definition $runtime.definition -RequireInitialized
 }
+if ($null -ne (Get-Setting $runtime.definition 'identityProxy')) { Assert-IdentityProxyConsistency -Root ([string]$runtime.root) -Id ([string]$runtime.appId) -Definition $runtime.definition -RequireInitialized }
 $command = Resolve-LocalDeploymentPath $runtime.definition.command $runtime.root 'command'
 $changed=@{}
 try {

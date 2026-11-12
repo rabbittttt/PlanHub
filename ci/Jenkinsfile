@@ -22,7 +22,7 @@ pipeline {
                     & ./deploy/Publish-App.ps1 -AppId $env:APP_ID -Version $env:VERSION -ConfigPath $env:PLANHUB_PUBLISH_CONFIG -Action Package -NonInteractive
                 '''
                 archiveArtifacts artifacts: "staging/releases/${params.APP_ID}-${params.VERSION}/**", fingerprint: true, onlyIfSuccessful: true
-                stash name: 'verified-release', includes: "staging/releases/${params.APP_ID}-${params.VERSION}/**,deploy/*.ps1", useDefaultExcludes: false
+                stash name: 'verified-release', includes: "staging/releases/${params.APP_ID}-${params.VERSION}/**,deploy/*.ps1,deploy/*.cs", useDefaultExcludes: false
             }
         }
         stage('Publish selected version') {

@@ -29,6 +29,7 @@ B 首次从 deploy/deployment.example.json 复制配置，填写：
 - sharedDirectory：相对正式根的共享数据目录，默认 shared。
 - serviceAccount：默认服务账号；应用可显式设置自己的账号。
 - 每应用 port、command、dataDirectory：后端端口、B 的解释器及持久目录。
+- startupTimeoutSeconds：启动健康检查等待时间，默认 60 秒，范围 1–600；应用可单独覆盖，用于慢机器的服务启动。业务数据首次生成另按应用状态验收。
 
 模板的地址、前缀和数据来源采用占位符：{publicOrigin}、{publicHost}、{basePath}、{shared}。版本切换时再解析 {payload}、{data}、{port}。原始 Excel、数据库、密钥和机器配置均放版本目录外。
 
@@ -74,9 +75,9 @@ if ($LASTEXITCODE -ne 0) { throw '订单生成失败，请先查看原项目日�
 
 输入不在默认共享目录时，使用原项目已确认的实际输入；若生成时 --output 指向自定义 HTML 文件，打包器的 --runtime 应指向该 HTML 父目录下的 runtime/，不能填 HTML 文件本身。不要把 B 首次可自动生成数据批次，误认为 A 打包前无需生成前端。
 
-A 随后用发布应用.bat 为 planhub、leads、orderiq、forecast、quicklook、sop 分别生成并发送包，先不要激活。将 B 收到的包保留在收件目录；B 下一步从 payload/requirements.txt 准备依赖，因此无需业务源码。
+A 随后用发布应用.bat 为 planhub、leads、orderiq、forecast、quicklook、sop、vehicle-config 分别生成并发送包，先不要激活。将 B 收到的包保留在收件目录；B 下一步从 payload/requirements.txt 准备依赖，因此无需业务源码。
 
-将 first-install 目录完整传到 B 的正式根。它包含门户、静态样例及 SOP 首次身份接入所需的原格式 services/sop。订单、预测和速查显示 EXTERNAL，随后分别发布；引导包不加 RequireComplete。引导包中的旧 iis.json 仅供兼容，新流程使用统一部署配置。
+将 first-install 目录完整传到 B 的正式根。它包含门户、静态样例及 SOP 首次身份接入所需的原格式 services/sop。订单、预测、速查和车型配置显示 EXTERNAL，随后分别发布；引导包不加 RequireComplete。引导包中的旧 iis.json 仅供兼容，新流程使用统一部署配置。
 
 B 另保留工具目录，含完整 deploy/、config.local/ 和部署新版本.bat。工具目录与正式根分开维护。
 
@@ -100,11 +101,12 @@ if ($LASTEXITCODE -ne 0) { throw '离线依赖安装失败。' }
 
 上述 python 应为 B 已安装且符合原项目要求的版本；wheel 目录使用已准备的实际位置。已有运行环境先核对，不覆盖；需要新依赖版本时建立新环境并更新 command。
 
-创建模板指定的 data/orderiq、data/forecast、data/quicklook、data/sop 持久目录；首次发布前工具会检查这些目录和解释器文件已存在。已有数据按原项目流程停服备份后迁移，发布包不迁移业务数据。
+创建模板指定的 data/orderiq、data/forecast、data/quicklook、data/sop 及 sharedDirectory 下的车型配置持久目录；首次发布前工具会检查这些目录和解释器文件已存在。已有数据按原项目流程停服备份后迁移，发布包不迁移业务数据。
 
 - 订单：输入默认 {shared}/订单汇总；批次和批注在 data/orderiq，由 --input/--data-dir/--state-dir 显式传入；--web-dir 使用当前发布包的 web。
 - 销量预测：SHARED_DATA_ROOT 使用 {shared}，--data-dir 使用 data/forecast。只读原始输入，按原规则更新订单汇总中的销量汇总派生文件，服务账号需能写该文件。
 - 数据速查：数据在 data/quicklook；SHARED_DATA_ROOT 选择共享扫描根，DATA_QUICKLOOK_SOURCE_BASE 解析历史工作区相对来源，两者含义不同，迁移后核对 workspace.json。
+- 车型配置：数据在 {shared}/车型配置，草稿、已发布快照及历史记录由同一外置数据库管理。迁移时停服备份整个目录；业务报表当前尚未消费这些配置，不会因为这里发布就自动改变订单或 SOP。
 - SOP：数据库在 data/sop，真实共享规则放 config/shared_config.py，来源和旧维护表兼容路径由 sop.gatewayPaths 配置。计划从网页保存或前台 Excel 导入，不再自动同步服务器旧维护表。已有业务路径应在统一配置中明确保留。
 
 通用任务使用 S4U，不保存密码，不能访问网络共享或映射盘。业务数据应在 B 本机；需要直接访问网络来源时，另用公司允许的运行身份方案。账号需有批处理登录及对应目录权限。
@@ -124,9 +126,14 @@ $deploymentConfig = './config.local/deployment.json'
 ./deploy/Configure-SopProxy.ps1 -DeploymentConfigPath $deploymentConfig -PlanOnly
 # 核对端口、账号及数据路径后，在 B 执行
 ./deploy/Configure-SopProxy.ps1 -DeploymentConfigPath $deploymentConfig -Apply
+./deploy/Configure-IdentityProxy.ps1 -AppId vehicle-config -DeploymentConfigPath $deploymentConfig -PlanOnly
+# 核对可信身份请求头、账号、端口和密钥路径后，在 B 执行
+./deploy/Configure-IdentityProxy.ps1 -AppId vehicle-config -DeploymentConfigPath $deploymentConfig -Apply
 ```
 
-两个初始化工具都读取同一部署配置。SOP 的端口、数据根、公共地址、服务账号和密钥路径由统一配置派生，不再手工复制另一套值。首次生成网关；既有业务路径或密钥路径冲突会拒绝，不能靠自动迁移来消除。修改公共地址或端口后，先重新规划并显式更新 SOP 身份代理，再发布服务；派生产物与运行绑定不一致时发布/启动会停止并指出问题。
+上述初始化工具都读取同一部署配置。SOP 的端口、数据根、公共地址、服务账号和密钥路径由统一配置派生，不再手工复制另一套值。首次生成网关；既有业务路径或密钥路径冲突会拒绝，不能靠自动迁移来消除。修改公共地址或端口后，先重新规划并显式更新 SOP 身份代理，再发布服务；派生产物与运行绑定不一致时发布/启动会停止并指出问题。
+
+车型配置必须先完成通用身份桥初始化，再发布服务。工具从 identityProxy 读取可信用户头、密钥头和外置密钥绑定，在 Windows 认证后覆盖浏览器自报身份；初始化仅在显式 Apply 时创建保护文件、编译模块并配置所属应用。健康检查通过不代表身份边界已验收。现有用户名头为原始文本契约，身份桥支持 ASCII Windows 登录标识（例如域\工号）；非 ASCII 登录名会被拒绝，需由原项目先提供明确编码契约。
 
 新站点保持停止状态。自动首次建站仅提供 HTTP；HTTPS 绑定和证书由管理员单独配置，工具不会降级 HTTPS。旧环境仍可使用 -ConfigPath 的旧格式入口，避免两种入口同时传参。
 
@@ -144,6 +151,7 @@ Git 不覆盖 config.local。本次升级可逐应用调整，先保留本机原
 2. B 的 deployment.json：填写 publicOrigin/sharedDirectory/serviceAccount 默认值，将重复地址、前缀及共享根改成模板占位符；应用有明确不同需求时保留显式覆盖。
 3. SOP 用统一配置执行 PlanOnly。已有数据目录、来源与密钥保持实际值；不一致先核对配置，不移动或覆盖数据。
 4. 用统一配置初始化过的环境无需再维护旧 sop-iis.json；原始旧配置保留作恢复依据，不编辑生成的 auth/gateway/state 文件来凑一致。
+5. 新增车型配置时，A 的 publish.json 与 B 的 deployment.json 分别补入模板中的 vehicle-config 项（含 identityProxy 和 secretEnvironmentFiles），保留其他应用的本机值；先规划并初始化该应用身份桥，再激活程序包。
 
 销量预测若仍为静态接入，按新模板把 A 的 forecast 改为动态预览和 release 构建，B 改为 service。若 IIS 已有静态 /forecast，备份配置并记录原物理路径，由管理员在维护窗口移除旧应用映射，再部署动态包；保留原目录。跨类型恢复需要恢复相应配置与映射。
 

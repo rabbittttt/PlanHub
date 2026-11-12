@@ -1,4 +1,4 @@
-# Environment-owned values are resolved once before any service or IIS mutation.
+﻿# Environment-owned values are resolved once before any service or IIS mutation.
 Set-StrictMode -Version Latest
 . (Join-Path $PSScriptRoot 'Deployment.Common.ps1')
 
@@ -83,6 +83,9 @@ function Read-RuntimeSettings([string]$Path) {
             }
             $definition | Add-Member -NotePropertyName healthUrl -NotePropertyValue ($origin+$healthPath)
         }
+        $startupTimeout = Get-Setting $definition 'startupTimeoutSeconds' (Get-Setting $config 'startupTimeoutSeconds' 60)
+        if (($startupTimeout -isnot [int] -and $startupTimeout -isnot [long]) -or $startupTimeout -lt 1 -or $startupTimeout -gt 600) { throw 'startupTimeoutSeconds must be an integer from 1 to 600.' }
+        $definition | Add-Member -NotePropertyName startupTimeoutSeconds -NotePropertyValue $startupTimeout -Force
         $config.applications.$id = $definition
     }
     return [pscustomobject]@{Config=$config;Root=$root;ConfigFile=$configFile;PublicOrigin=$origin;SharedDirectory=$shared}

@@ -3,6 +3,7 @@ Set-StrictMode -Version Latest
 . (Join-Path $PSScriptRoot 'App.Release.ps1')
 . (Join-Path $PSScriptRoot 'Environment.Config.ps1')
 . (Join-Path $PSScriptRoot 'Sop.Common.ps1')
+. (Join-Path $PSScriptRoot 'Identity.Proxy.ps1')
 function Test-Within([string]$Root, [string]$Path) {
     return $Path.Equals($Root,[StringComparison]::OrdinalIgnoreCase) -or $Path.StartsWith($Root.TrimEnd('\')+'\',[StringComparison]::OrdinalIgnoreCase)
 }
@@ -67,6 +68,7 @@ function Read-InstallPlan([string]$ReleasePath, [string]$ConfigPath) {
                 }
             }
         }
+        if ($null -ne (Get-Setting $definition 'identityProxy')) { Assert-IdentityProxyConsistency -Root $root -Id $id -Definition $definition -RequireInitialized }
         if ($id -eq 'sop') {
             if ('--gateway-config' -notin $definition.arguments -or $null -eq (Get-Setting (Get-Setting $definition 'secretEnvironmentFiles') 'SOP_PROXY_SECRET')) { throw 'SOP needs --gateway-config and its existing SOP_PROXY_SECRET file binding.' }
             Assert-SopRuntimeConsistency -Root $root -Definition $definition -PublicOrigin $settings.PublicOrigin -RequireInitialized
@@ -107,4 +109,16 @@ function Test-PortFree([int]$Port) {
 }
 function Assert-OwnedTask($Task, [string]$Id, [string]$Root) {
     if ($Task.Description -cne ('PlanHub managed '+$Id+' '+$Root)) { throw 'Refusing to replace or stop an unrelated scheduled task.' }
+}
+
+function Wait-DeploymentHealth {
+    param($Definition, [string]$HealthUrl, [ValidateRange(1,600)][int]$TimeoutSeconds = 60, [ValidateRange(1,1000)][int]$IntervalMilliseconds = 500)
+    $watch = [Diagnostics.Stopwatch]::StartNew()
+    do {
+        if (($null -eq $Definition -or (Test-BackendHealth $Definition)) -and (Test-PublicHealth $HealthUrl)) { return $true }
+        $remaining = $TimeoutSeconds * 1000 - $watch.Elapsed.TotalMilliseconds
+        if ($remaining -le 0) { break }
+        Start-Sleep -Milliseconds ([int][Math]::Min($IntervalMilliseconds,$remaining))
+    } while ($watch.Elapsed.TotalSeconds -lt $TimeoutSeconds)
+    return $false
 }
