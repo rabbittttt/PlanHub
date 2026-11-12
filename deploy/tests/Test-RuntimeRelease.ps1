@@ -52,12 +52,62 @@ $config.applications | Add-Member -NotePropertyName beta -NotePropertyValue $def
 Write-AppReleaseJson $configPath $config
 $servicePlan=Read-InstallPlan $serviceRelease $configPath
 Check ($servicePlan.Kind -eq 'service') 'Service validation failed.'
+foreach($folder in @('portal','apps','proxy','releases')){
+    $privateCandidate=Join-Path $plan.Root ($folder+'\private')
+    New-Item -ItemType Directory -Path $privateCandidate -Force|Out-Null
+    $definition.dataDirectory=$folder+'/private';Write-AppReleaseJson $configPath $config
+    Reject {Read-InstallPlan $serviceRelease $configPath}
+    $definition.dataDirectory='data/beta'
+    $candidateCommand=Join-Path $privateCandidate 'runtime.exe';Put $candidateCommand 'never executed'
+    $definition.command=$candidateCommand;Write-AppReleaseJson $configPath $config
+    Reject {Read-InstallPlan $serviceRelease $configPath}
+    $definition.command=$shell
+    $candidateSecret=Join-Path $privateCandidate 'fixture-secret.txt';Put $candidateSecret 'fixture-not-a-real-secret'
+    $definition | Add-Member -NotePropertyName secretEnvironmentFiles -NotePropertyValue ([pscustomobject]@{FIXTURE_SECRET=$candidateSecret}) -Force
+    Write-AppReleaseJson $configPath $config
+    Reject {Read-InstallPlan $serviceRelease $configPath}
+    $definition.PSObject.Properties.Remove('secretEnvironmentFiles')
+}
+$definition.dataDirectory='data/../PoRtAl/private';Write-AppReleaseJson $configPath $config
+Reject {Read-InstallPlan $serviceRelease $configPath}
+$definition.dataDirectory='portal./private';Write-AppReleaseJson $configPath $config
+Reject {Read-InstallPlan $serviceRelease $configPath}
+$allowedSibling=Join-Path $plan.Root 'portal-extra\private';New-Item -ItemType Directory -Path $allowedSibling -Force|Out-Null
+$definition.dataDirectory=$allowedSibling;Write-AppReleaseJson $configPath $config
+$null=Read-InstallPlan $serviceRelease $configPath;Check $true 'A private sibling prefix was incorrectly treated as a web directory.'
 $definition.dataDirectory='releases/beta/v1';Write-AppReleaseJson $configPath $config;Reject {Read-InstallPlan $serviceRelease $configPath}
 $definition.dataDirectory='proxy/beta';Write-AppReleaseJson $configPath $config;Reject {Read-InstallPlan $serviceRelease $configPath}
 $definition.dataDirectory='data/beta';$definition.environment | Add-Member -NotePropertyName PATH -NotePropertyValue 'changed';Write-AppReleaseJson $configPath $config;Reject {Read-InstallPlan $serviceRelease $configPath};$definition.environment.PSObject.Properties.Remove('PATH')
 Write-AppReleaseJson $configPath $config
 Reject {Assert-OwnedTask ([pscustomobject]@{Description='unrelated'}) 'beta' $plan.Root}
 Assert-OwnedTask ([pscustomobject]@{Description=('PlanHub managed beta '+$plan.Root)}) 'beta' $plan.Root;Check $true 'Owned task not accepted.'
+# Capture bound task settings without contacting the system CIM provider. These
+# regressions must also run under an ordinary A account without scheduler access.
+function New-ScheduledTaskSettingsSet {
+    param([string]$MultipleInstances,[TimeSpan]$ExecutionTimeLimit,[switch]$StartWhenAvailable,[switch]$AllowStartIfOnBatteries,[switch]$DontStopIfGoingOnBatteries,[int]$RestartCount,[TimeSpan]$RestartInterval)
+    return [pscustomobject]$PSBoundParameters
+}
+$newSettings=New-ManagedServiceTaskSettings
+Check ($newSettings.RestartCount -eq 3 -and $newSettings.RestartInterval -eq (New-TimeSpan -Minutes 1)) 'New tasks do not retry failures.'
+Check ($newSettings.ExecutionTimeLimit -eq [TimeSpan]::Zero -and $newSettings.MultipleInstances -ceq 'IgnoreNew' -and $newSettings.StartWhenAvailable -and $newSettings.AllowStartIfOnBatteries -and $newSettings.DontStopIfGoingOnBatteries) 'Service lifetime, startup or battery policy changed.'
+$script:taskUpdates=0
+function Set-ScheduledTask {
+    param($TaskName,$TaskPath,$Settings,$ErrorAction)
+    $script:taskUpdates++
+    Check ($TaskName -ceq 'PlanHub-fixture' -and $TaskPath -ceq '\') 'Unexpected task selected for retry update.'
+    Check ($Settings.RestartCount -eq 3 -and $Settings.RestartInterval -eq 'PT1M') 'Retry policy was not passed to Task Scheduler.'
+    Check ($Settings.Priority -eq 7 -and $Settings.ExecutionTimeLimit -eq 'PT0S') 'Other task settings were overwritten.'
+}
+$oldSettings=[pscustomobject]@{RestartCount=0;RestartInterval='';Priority=7;ExecutionTimeLimit='PT0S'}
+$ownedTask=[pscustomobject]@{Description=('PlanHub managed beta '+$plan.Root);TaskName='PlanHub-fixture';TaskPath='\';Settings=$oldSettings;Principal='preserved-identity';Actions='preserved-action';Triggers='preserved-trigger'}
+$unownedTask=[pscustomobject]@{Description='unrelated';Settings=$oldSettings}
+Reject {Update-OwnedTaskRestartPolicy $unownedTask 'beta' $plan.Root}
+Check ($script:taskUpdates -eq 0) 'Unrelated scheduled task was updated.'
+Update-OwnedTaskRestartPolicy $ownedTask 'beta' $plan.Root
+Check ($script:taskUpdates -eq 1) 'Existing owned task retry policy was not repaired.'
+Check ($ownedTask.Principal -eq 'preserved-identity' -and $ownedTask.Actions -eq 'preserved-action' -and $ownedTask.Triggers -eq 'preserved-trigger') 'Task identity/action/trigger changed.'
+Update-OwnedTaskRestartPolicy $ownedTask 'beta' $plan.Root
+Check ($script:taskUpdates -eq 1) 'Applying the same retry policy was not idempotent.'
 $runtime=[ordered]@{schemaVersion=1;appId='beta';version='v1';payload=(Join-Path $serviceRelease 'payload');root=$plan.Root;dataDirectory=$data;definition=$definition}
 $runtimePath=Join-Path $scratch 'active.json';Write-AppReleaseJson $runtimePath $runtime
 $original=[Environment]::GetEnvironmentVariable('PLANHUB_TEST_DATA','Process')

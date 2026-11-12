@@ -28,6 +28,7 @@ Write-Output ('Install: '+$plan.Destination)
 Write-Output ('Verify: '+$plan.HealthUrl)
 if($plan.Kind -eq 'service'){
     Write-Output ('Task: '+$plan.Definition.taskName+'; persistent data: '+$plan.Definition.dataDirectory)
+    Write-Output 'Failure recovery: up to 3 retries, 1 minute apart; Apply also updates this policy on an existing owned task.'
     Write-Output 'Wait for saves, imports and background writes to finish before Apply. Only this application is stopped.'
 }
 if(-not $Apply){Write-Output 'Plan only. No IIS, task, process, release directory or data was changed.';return}
@@ -117,6 +118,10 @@ try {
                 Start-Sleep -Milliseconds 250
             }
             if(-not $stopped){throw 'Old service has not fully stopped. No new instance was started. Inspect task and port.'}
+            $task=Get-ScheduledTask -TaskName $plan.Definition.taskName -ErrorAction Stop
+            Assert-OwnedTask $task $plan.Id $plan.Root
+            if($task.Principal.UserId -ine $plan.Definition.serviceAccount){throw 'Task service account changed while stopping. Review it separately.'}
+            Update-OwnedTaskRestartPolicy $task $plan.Id $plan.Root
         }
         if(-not(Test-PortFree $plan.Definition.port)){throw 'Backend port is not free; no new service will be started.'}
         if(Test-Path -LiteralPath $runtimePath){Copy-Item -LiteralPath $runtimePath -Destination (Join-Path $plan.StateRoot ('runtime-'+[guid]::NewGuid().ToString('N')+'.json'))}
@@ -132,7 +137,7 @@ try {
             $launcher=Join-Path $PSScriptRoot 'Run-AppService.ps1'
             $arguments='-NoProfile -NonInteractive -WindowStyle Hidden -ExecutionPolicy RemoteSigned -File "'+$launcher+'" -RuntimeConfig "'+$runtimePath+'"'
             $action=New-ScheduledTaskAction -Execute $shell -Argument $arguments -WorkingDirectory $plan.StateRoot
-            $settings=New-ScheduledTaskSettingsSet -MultipleInstances IgnoreNew -ExecutionTimeLimit ([TimeSpan]::Zero) -StartWhenAvailable -AllowStartIfOnBatteries -DontStopIfGoingOnBatteries
+            $settings=New-ManagedServiceTaskSettings
             $principal=New-ScheduledTaskPrincipal -UserId $plan.Definition.serviceAccount -LogonType S4U -RunLevel Limited
             Register-ScheduledTask -TaskName $plan.Definition.taskName -Description ('PlanHub managed '+$plan.Id+' '+$plan.Root) -Action $action -Settings $settings -Principal $principal -Trigger (New-ScheduledTaskTrigger -AtStartup) | Out-Null
         }

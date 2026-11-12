@@ -1,4 +1,5 @@
-#requires -Version 5.1
+﻿#requires -Version 5.1
+# Keep this file in UTF-8 with BOM: Windows PowerShell 5.1 reads -File as ANSI otherwise.
 [CmdletBinding()]
 param([string]$ReleasePath='', [string]$ConfigPath='')
 $ErrorActionPreference='Stop'

@@ -13,6 +13,14 @@ function Assert-LocalPath([string]$Path) {
     while (-not (Test-Path -LiteralPath $ancestor)) { $ancestor = Split-Path -Parent $ancestor }
     Assert-NoReparsePoint $ancestor
 }
+function Assert-PrivateRuntimePath([string]$Root, [string]$Path, [string]$Name) {
+    Assert-LocalPath $Path
+    $resolved = [IO.Path]::GetFullPath($Path)
+    if (@($resolved.Substring(3).Split('\') | Where-Object { $_ -match '[. ]$' }).Count) { throw "$Name contains an ambiguous Windows directory name." }
+    foreach ($folder in @('portal','apps','proxy','releases')) {
+        if (Test-Within (Join-Path $Root $folder) $resolved) { throw "$Name must stay outside portal, apps, proxy and release directories." }
+    }
+}
 function Read-InstallPlan([string]$ReleasePath, [string]$ConfigPath) {
     $release = Assert-AppRelease $ReleasePath
     $settings = Read-RuntimeSettings $ConfigPath
@@ -49,8 +57,7 @@ function Read-InstallPlan([string]$ReleasePath, [string]$ConfigPath) {
         $data = Resolve-LocalDeploymentPath $definition.dataDirectory $root 'dataDirectory'
         $command = Resolve-LocalDeploymentPath $definition.command $root 'command'
         foreach ($item in @($data,$command)) {
-            Assert-LocalPath $item
-            if ((Test-Within (Join-Path $root 'releases') $item) -or (Test-Within (Join-Path $root 'proxy') $item)) { throw 'Runtime and data must live outside versions and proxy web roots.' }
+            Assert-PrivateRuntimePath $root $item 'Runtime and data'
         }
         if (-not (Test-Path -LiteralPath $command -PathType Leaf)) { throw "Runtime missing: $command. Prepare runtime and dependencies on the deployment computer." }
         if (-not (Test-Path -LiteralPath $data -PathType Container)) { throw "Persistent directory missing: $data. Initialize or migrate it before publishing." }
@@ -62,8 +69,7 @@ function Read-InstallPlan([string]$ReleasePath, [string]$ConfigPath) {
                 if ($property.Name -match '^(?i:PATH|PATHEXT|COMSPEC|WINDIR|SYSTEMROOT|PSMODULEPATH|HOME|USERPROFILE|CODEX_HOME)$') { throw "Reserved environment variable: $($property.Name)" }
                 if ($name -eq 'secretEnvironmentFiles') {
                     $secret = Resolve-LocalDeploymentPath $property.Value $root 'secret file'
-                    Assert-LocalPath $secret
-                    if ((Test-Within (Join-Path $root 'releases') $secret) -or (Test-Within (Join-Path $root 'proxy') $secret)) { throw 'Secrets must be outside versions and proxy web roots.' }
+                    Assert-PrivateRuntimePath $root $secret 'Secrets'
                     if (-not (Test-Path -LiteralPath $secret -PathType Leaf)) { throw 'A secret file is missing.' }
                 }
             }
@@ -109,6 +115,19 @@ function Test-PortFree([int]$Port) {
 }
 function Assert-OwnedTask($Task, [string]$Id, [string]$Root) {
     if ($Task.Description -cne ('PlanHub managed '+$Id+' '+$Root)) { throw 'Refusing to replace or stop an unrelated scheduled task.' }
+}
+function New-ManagedServiceTaskSettings {
+    # Create settings only. Registration remains behind the installer's explicit Apply.
+    return New-ScheduledTaskSettingsSet -MultipleInstances IgnoreNew -ExecutionTimeLimit ([TimeSpan]::Zero) -StartWhenAvailable -AllowStartIfOnBatteries -DontStopIfGoingOnBatteries -RestartCount 3 -RestartInterval (New-TimeSpan -Minutes 1)
+}
+function Update-OwnedTaskRestartPolicy($Task, [string]$Id, [string]$Root) {
+    Assert-OwnedTask $Task $Id $Root
+    $settings = $Task.Settings
+    if ([int]$settings.RestartCount -eq 3 -and [string]$settings.RestartInterval -ceq 'PT1M') { return }
+    # Preserve the existing account, actions, triggers and every other task setting.
+    $settings.RestartCount = 3
+    $settings.RestartInterval = 'PT1M'
+    Set-ScheduledTask -TaskName $Task.TaskName -TaskPath $Task.TaskPath -Settings $settings -ErrorAction Stop | Out-Null
 }
 
 function Wait-DeploymentHealth {

@@ -31,6 +31,8 @@ B 首次从 deploy/deployment.example.json 复制配置，填写：
 - 每应用 port、command、dataDirectory：后端端口、B 的解释器及持久目录。
 - startupTimeoutSeconds：启动健康检查等待时间，默认 60 秒，范围 1–600；应用可单独覆盖，用于慢机器的服务启动。业务数据首次生成另按应用状态验收。
 
+模板的 `http://localhost:8080` 仅用于本机测试，正式使用须改成部门电脑能够访问的 B 电脑域名或地址；`MACHINE\PlanHubService` 须替换为 B 上实际存在的专用本机或域账号。账号、端口、解释器和数据路径都由 B 管理员确认，不能原样沿用占位值。
+
 模板的地址、前缀和数据来源采用占位符：{publicOrigin}、{publicHost}、{basePath}、{shared}。版本切换时再解析 {payload}、{data}、{port}。原始 Excel、数据库、密钥和机器配置均放版本目录外。
 
 ```text
@@ -81,25 +83,55 @@ A 随后用发布应用.bat 为 planhub、leads、orderiq、forecast、quicklook
 
 B 另保留工具目录，含完整 deploy/、config.local/ 和部署新版本.bat。工具目录与正式根分开维护。
 
-### 2. B 准备运行环境和数据
+**B 的部署工具须与 A 本次使用的工具成套同步。** 将 A 已验证版本的完整 `deploy/`（包含 `.ps1`、`.cs`、模板等）与根目录 `部署新版本.bat` 一起交付到 B 工具目录，不能只复制主安装脚本。车型配置身份接入需要同时包含 `Configure-IdentityProxy.ps1`、`Identity.Proxy.ps1`、`Build-IdentityBridge.ps1`、`TrustedIdentityBridge.cs`；SOP 及通用发布工具的其余依赖也保留在该目录。B 自己的 `config.local/` 单独保存，更新工具时保留原本机设置。
 
-在 B 工具目录创建 config.local/deployment.json，按前节填写。先收到 A 发来的全部程序包，再按各包 payload/requirements.txt 建立对应 Python 环境；SOP 首次引导内也有 services/sop/requirements.txt。不要复制 A 的虚拟环境。离线时用公司允许的来源准备适配 Windows/Python 的 wheel，可使用 New-OfflineWheelhouse.ps1。
+`planhub` 应用发布包只更新门户页面，不更新 B 工具目录。Git 同步也只取得已提交并推送的文件；不要把本机尚未提交的新工具视为已送到 A、B 或 Jenkins。文件交付时核对整套工具版本。已注册任务会引用 B 工具目录中的启动脚本，目录使用稳定路径；不要移动或删除任务仍在引用的工具目录。B 不需要各业务开发仓库，业务程序由对应应用发布包交付。
 
-例如从 B 工具根准备订单解释器（其他应用按模板中的 command 使用自己的目录）：
+### 离线依赖也要单独交付
+
+在有公司允许的软件包来源、且 Windows 架构和 Python 版本与 B 一致的 A 或依赖准备电脑上，对每个动态应用的本次发布包准备依赖。示例从门户根执行；选择包含 `app-release.json` 和 `payload/` 的动态包，目标目录必须不存在：
 
 ```powershell
-. ./deploy/Environment.Config.ps1
-$settings = Read-RuntimeSettings './config.local/deployment.json'
-$receivedPackage = (Resolve-Path -LiteralPath (Read-Host '输入收到的 orderiq 版本包目录')).ProviderPath
-$venv = Join-Path $settings.Root 'runtime/orderiq'
-if (Test-Path -LiteralPath $venv) { throw '该环境已存在，请先核对或选择新的环境目录。' }
-python -m venv $venv
-if ($LASTEXITCODE -ne 0) { throw 'Python 环境创建失败。' }
-& (Join-Path $venv 'Scripts/python.exe') -m pip install --no-index --find-links ./offline/wheels -r (Join-Path $receivedPackage 'payload/requirements.txt')
-if ($LASTEXITCODE -ne 0) { throw '离线依赖安装失败。' }
+$ErrorActionPreference = 'Stop'
+$dependencyPackage = (Resolve-Path -LiteralPath (Read-Host '输入待交付的动态应用版本包目录')).ProviderPath
+$dependencyManifest = Get-Content -LiteralPath (Join-Path $dependencyPackage 'app-release.json') -Raw -Encoding UTF8 | ConvertFrom-Json
+$wheelPython = (Resolve-Path -LiteralPath (Read-Host '输入与 B 版本及架构一致的 Python 可执行文件路径')).ProviderPath
+$wheelOutput = Join-Path (Get-Location).Path ('staging/wheels-' + $dependencyManifest.appId + '-' + $dependencyManifest.version)
+./deploy/New-OfflineWheelhouse.ps1 -RequirementsPath (Join-Path $dependencyPackage 'payload/requirements.txt') -Destination $wheelOutput -PythonPath $wheelPython
 ```
 
-上述 python 应为 B 已安装且符合原项目要求的版本；wheel 目录使用已准备的实际位置。已有运行环境先核对，不覆盖；需要新依赖版本时建立新环境并更新 command。
+对 orderiq、forecast、quicklook、sop、vehicle-config 分别核对并准备；静态 leads 和门户不需要 Python 依赖。尤其数据速查还需要 pandas、streamlit、plotly 等，不能假定 SOP 的 wheel 足够。工具只下载 wheel 并生成 `SHA256SUMS`，不安装业务依赖；已存在的输出目录不会覆盖。
+
+将每个已核对的 wheel 目录连同 `SHA256SUMS` **另行完整传到 B 的本机目录**，记录它与应用版本、Python 版本及架构的对应关系。应用包的发送菜单不发送这些目录；引导包仅可能附带 A 已准备的部分 wheel，也不证明全部应用依赖齐全。B 安装时使用实际收到的目录，不假定工具目录下已有 `offline/wheels`。同一应用需要重建时保留旧目录并另选新目录。
+
+### 2. B 准备运行环境和数据
+
+在 B 工具目录创建 config.local/deployment.json，按前节填写。先收到 A 发来的全部程序包、同版部署工具和各应用离线依赖，再按各包 payload/requirements.txt 建立对应 Python 环境；SOP 首次引导内也有 services/sop/requirements.txt。不要复制 A 的虚拟环境。
+
+以下从 B 工具根执行，对每个动态包分别运行。运行环境位置读取统一配置的 `command`，示例适用于模板中的 `runtime/应用ID/Scripts/python.exe` 虚拟环境布局。先核对所选 wheel 对应当前应用和 B 的 Python，并按随目录交付的 `SHA256SUMS` 核对文件：
+
+```powershell
+$ErrorActionPreference = 'Stop'
+. ./deploy/Environment.Config.ps1
+$settings = Read-RuntimeSettings './config.local/deployment.json'
+$receivedPackage = (Resolve-Path -LiteralPath (Read-Host '输入收到的动态应用版本包目录')).ProviderPath
+$receivedManifest = Get-Content -LiteralPath (Join-Path $receivedPackage 'app-release.json') -Raw -Encoding UTF8 | ConvertFrom-Json
+$binding = Get-Setting $settings.Config.applications $receivedManifest.appId
+if ($null -eq $binding -or $binding.kind -ne 'service') { throw '请选择已登记的动态应用发布包。' }
+$wheelDirectory = (Resolve-Path -LiteralPath (Read-Host '输入 B 实际收到、对应此应用的 wheel 目录')).ProviderPath
+$basePython = (Resolve-Path -LiteralPath (Read-Host '输入 B 已安装的 Python 可执行文件路径')).ProviderPath
+$runtimePython = Resolve-EnvironmentPath $binding.command $settings.Root 'command'
+$venv = Split-Path -Parent (Split-Path -Parent $runtimePython)
+if (Test-Path -LiteralPath $venv) { throw '该环境已存在，请先核对或选择新的环境目录。' }
+& $basePython -m venv $venv
+if ($LASTEXITCODE -ne 0) { throw 'Python 环境创建失败。' }
+& $runtimePython -m pip --isolated install --no-index --find-links $wheelDirectory -r (Join-Path $receivedPackage 'payload/requirements.txt')
+if ($LASTEXITCODE -ne 0) { throw '离线依赖安装失败。' }
+& $runtimePython -m pip check
+if ($LASTEXITCODE -ne 0) { throw '依赖一致性检查失败。' }
+```
+
+`$basePython` 应为 B 已安装且符合原项目要求、与 wheel 匹配的版本。已有运行环境先核对，不覆盖；需要新依赖版本时在统一配置中选择新环境的 `command`，再创建该环境。若使用其他运行环境布局，按管理员已审核的路径准备，不套用上述虚拟环境目录推导。
 
 创建模板指定的 data/orderiq、data/forecast、data/quicklook、data/sop 及 sharedDirectory 下的车型配置持久目录；首次发布前工具会检查这些目录和解释器文件已存在。已有数据按原项目流程停服备份后迁移，发布包不迁移业务数据。
 
@@ -109,7 +141,7 @@ if ($LASTEXITCODE -ne 0) { throw '离线依赖安装失败。' }
 - 车型配置：数据在 {shared}/车型配置，草稿、已发布快照及历史记录由同一外置数据库管理。迁移时停服备份整个目录；业务报表当前尚未消费这些配置，不会因为这里发布就自动改变订单或 SOP。
 - SOP：数据库在 data/sop，真实共享规则放 config/shared_config.py，来源和旧维护表兼容路径由 sop.gatewayPaths 配置。计划从网页保存或前台 Excel 导入，不再自动同步服务器旧维护表。已有业务路径应在统一配置中明确保留。
 
-通用任务使用 S4U，不保存密码，不能访问网络共享或映射盘。业务数据应在 B 本机；需要直接访问网络来源时，另用公司允许的运行身份方案。账号需有批处理登录及对应目录权限。
+通用任务使用 S4U，不保存密码，不能访问网络共享或映射盘。业务数据、输入及运行环境应在 B 本机；需要直接访问网络来源时，另用公司允许的运行身份方案。服务账号需有批处理登录权限、读取 B 工具和版本程序/运行环境的权限，以及修改本应用持久数据、日志和确需写入的来源文件的权限；IIS 应用池另需读取页面和代理文件。外置密钥由身份初始化工具限制为相关应用池及服务账号读取，不向普通成员开放。账号与 ACL 由 B 管理员审核配置。
 
 ### 3. B 创建站点并初始化 SOP
 
@@ -142,6 +174,27 @@ $deploymentConfig = './config.local/deployment.json'
 完成部门访问边界后，在 IIS 管理器启动站点。B 用部署新版本.bat 安装第一步已收到、第二步已准备好运行环境的各应用包；后续更新再由 A 构建和发送。无需额外注册旧版 SOP/Quicklook 任务。
 
 发布工具检查固定版本文件和服务健康。业务验收另检查网页、查询、下载、导入导出、保存及 B 重启后保留数据。销量预测首次等待输入稳定一分钟后生成，/forecast/readyz 返回 200 才表示页面可用且没有生成错误。
+
+### 5. 首次验收后启用重启恢复
+
+首次建站有意设置 `ServerAutoStart=false`。页面和关键业务操作验收通过后，由 B 管理员在工具根的 64 位 Windows PowerShell 中明确执行以下步骤，只为统一配置中指定的目标站点开启自动启动；不要改成遍历所有站点：
+
+```powershell
+$ErrorActionPreference = 'Stop'
+. ./deploy/Environment.Config.ps1
+$settings = Read-RuntimeSettings './config.local/deployment.json'
+Add-Type -Path (Join-Path $env:windir 'System32/inetsrv/Microsoft.Web.Administration.dll')
+$iisManager = New-Object Microsoft.Web.Administration.ServerManager
+try {
+    $site = $iisManager.Sites[$settings.Config.siteName]
+    if ($null -eq $site) { throw '统一配置中的目标 IIS 站点不存在。' }
+    Write-Output ('启用目标站点自动启动：' + $site.Name)
+    $site.ServerAutoStart = $true
+    $iisManager.CommitChanges()
+} finally { $iisManager.Dispose() }
+```
+
+动态应用任务已有开机触发，服务异常退出时最多重试 3 次、间隔 1 分钟；更新任务设置只针对本工具管理的对应任务。B 管理员还需核对 IIS 与任务计划服务按组织设置正常运行，并在约定时间安排一次 B 重启验收。重启后从另一台部门电脑检查公共入口及各应用、可信操作人、保存的数据和任务/服务日志，确认只运行一份正式服务；A 关闭时 B 仍须可用。不能仅凭手工启动成功，就判定开机恢复已完成。
 
 ## 已有环境更新配置
 
