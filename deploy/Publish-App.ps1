@@ -6,7 +6,8 @@ param(
     [string]$ReleasePath='',
     [string]$ConfigPath='',
     [ValidateSet('','Package','Send','Deploy','SendExisting','DeployExisting')][string]$Action='',
-    [switch]$NonInteractive
+    [switch]$NonInteractive,
+    [switch]$All
 )
 $ErrorActionPreference='Stop'
 . (Join-Path $PSScriptRoot 'Publish.Common.ps1')
@@ -24,13 +25,40 @@ $config=Get-Content -LiteralPath $ConfigPath -Raw -Encoding UTF8 | ConvertFrom-J
 $registry=Get-Content -LiteralPath (Join-Path $root 'portal/config/apps.json') -Raw -Encoding UTF8 | ConvertFrom-Json
 $apps=@([pscustomobject]@{id='planhub';name='计划工作台门户'})
 $apps+=@($registry.groups | ForEach-Object {$_.apps} | Where-Object {$_.enabled})
-if (-not $AppId) {
+if (-not $AppId -and -not $All) {
     if($NonInteractive){throw 'AppId is required.'}
+    Write-Host '0. 全部打包'
     for($i=0;$i -lt $apps.Count;$i++){Write-Host ("{0}. {1} ({2})" -f ($i+1),$apps[$i].name,$apps[$i].id)}
     $selected=Read-Host '选择需要发布的应用编号'
     $number=0
-    if(-not[int]::TryParse($selected,[ref]$number) -or $number -lt 1 -or $number -gt $apps.Count){throw 'Invalid selection.'}
-    $AppId=$apps[$number-1].id
+    if(-not[int]::TryParse($selected,[ref]$number) -or $number -lt 0 -or $number -gt $apps.Count){throw 'Invalid selection.'}
+    if($number -eq 0){$All=$true}else{$AppId=$apps[$number-1].id}
+}
+if($All) {
+    if($AppId -or $ReleasePath){throw 'All cannot be combined with AppId or ReleasePath.'}
+    if($Action -and $Action -ne 'Package'){throw 'All supports packaging only. Send or deploy packages individually.'}
+    if($Version){Assert-PublishVersion $Version}
+    $completed=@()
+    $failures=@()
+    foreach($app in $apps) {
+        Write-Host ("`n正在打包：{0} ({1})" -f $app.name,$app.id)
+        $parameters=@{AppId=$app.id;ConfigPath=$ConfigPath;Action='Package';NonInteractive=$true}
+        # Prepared immutable releases retain their own version unless one is requested.
+        if($Version){$parameters.Version=$Version}
+        try {
+            $completed+=& $PSCommandPath @parameters
+        } catch {
+            $message=$_.Exception.Message
+            $failures+=[pscustomobject]@{appId=$app.id;message=$message}
+            Write-Host ("打包失败：{0}；{1}" -f $app.id,$message)
+        }
+    }
+    Write-Host ("`n打包汇总：成功 {0}，失败 {1}。" -f $completed.Count,$failures.Count)
+    foreach($item in $completed){Write-Host ("成功 {0}：{1}" -f $item.appId,$item.releasePath)}
+    foreach($item in $failures){Write-Host ("失败 {0}：{1}" -f $item.appId,$item.message)}
+    Write-Host '仅生成独立版本包，尚未传送或部署。失败项修复后可单独选择重试。'
+    if($failures.Count){throw 'Some applications could not be packaged. See the summary above; this batch is incomplete.'}
+    return $completed
 }
 Assert-PublishId $AppId
 if(-not @($apps | Where-Object {$_.id -ceq $AppId}).Count){throw 'Register the application before publishing it.'}
