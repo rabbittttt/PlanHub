@@ -61,7 +61,7 @@ PlanHub部署/
 
 ### 现有应用必须核对的设置
 
-- **订单分析**：服务包使用原项目 `package_release.py`；显式配置 `--input`、`--data-dir`、`--state-dir`、`--web-dir` 和公共 Host/Origin。模板从 shared/订单汇总 读取 Excel，持久批次及批注放 data/orderiq。首次可由原服务自动生成批次；已有数据则停服备份后迁入，升级复用原路径。不要依赖发布目录下的默认输入。
+- **订单分析**：门户默认后端端口为 8767，本地启动显式传 --port 8767。已有 config.local/apps.json 时，核对 orderiq.target 与 start.args 中的 --port；正式 deployment.json 的 orderiq.port 同步使用实际端口。服务包使用原项目 `package_release.py`；显式配置 `--input`、`--data-dir`、`--state-dir`、`--web-dir` 和公共 Host/Origin。模板从 shared/订单汇总 读取 Excel，持久批次及批注放 data/orderiq。首次可由原服务自动生成批次；已有数据则停服备份后迁入，升级复用原路径。不要依赖发布目录下的默认输入。
 - **数据速查**：使用原项目新发布包，设置 `DATA_QUICKLOOK_DATA_DIR`、`DATA_QUICKLOOK_SOURCE_BASE`、`DATA_QUICKLOOK_PUBLIC_PREFIX`、`DATA_QUICKLOOK_PUBLIC_ORIGIN`、`SHARED_DATA_ROOT`。模板共享根为 {deployment}/shared，供新版后台自动扫描；SOURCE_BASE 仅解析已保存来源路径，不能代替共享根。正式前缀 `/quicklook/`，健康接口 `/healthz`。保留原 workspace.json 中数据来源含义，迁移后逐项核对。
 - **SOP**：保留既有 SOP 网关和 IIS 身份桥接，先用专用 `Configure-SopProxy.ps1` 完成首次接入及匹配身份配置。新版部署绑定设 `proxyMode: existing`，提供 `--gateway-config` 和秘密文件环境绑定；不能当成普通无身份代理。旧 SOP 任务不会被通用工具接管，第一次迁移先正常停止并确认端口释放，再使用新任务。
 - **静态应用**：入口与资源完整交付。线索声量当前为替代样例，内网正式页面仍需验收；仅文件名相同不能证明资源与行为一致。

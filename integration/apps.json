@@ -2,7 +2,7 @@
   "applications": {
     "orderiq": {
       "type": "proxy",
-      "target": "http://127.0.0.1:8766",
+      "target": "http://127.0.0.1:8767",
       "stripPrefix": true,
       "rootRoutes": [],
       "healthPath": "/health",
@@ -15,7 +15,9 @@
         "command": "../.venv/Scripts/python.exe",
         "args": [
           "-B",
-          "server.py"
+          "server.py",
+          "--port",
+          "8767"
         ]
       }
     },

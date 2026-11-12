@@ -77,7 +77,7 @@
         "PYTHONDONTWRITEBYTECODE": "1"
       },
       "dataDirectory": "data/orderiq",
-      "port": 8766,
+      "port": 8767,
       "taskName": "PlanHub-orderiq",
       "serviceAccount": "MACHINE\\PlanHubService",
       "backendHealthPath": "/health",
