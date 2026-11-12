@@ -1,6 +1,7 @@
 import {readFile,writeFile,mkdir,realpath,unlink,readdir} from 'node:fs/promises';
 import path from 'node:path';
 import crypto from 'node:crypto';
+import net from 'node:net';
 import {fileURLToPath} from 'node:url';
 
 export const HEALTH_PATH='/api/portal/health';
@@ -71,6 +72,15 @@ export function handlePortalControl(request,response,runtime,pathname){
   if(!runtime.stop){json(503,{error:'Portal is not ready'});return true;}
   json(202,{stopping:true});setImmediate(()=>runtime.stop());return true;
 }
+function portalPortClosed(port){
+  return new Promise(resolve=>{
+    const socket=net.createConnection({host:'127.0.0.1',port});
+    const finish=closed=>{socket.destroy();resolve(closed);};
+    socket.once('connect',()=>finish(false));
+    socket.once('error',error=>finish(error.code==='ECONNREFUSED'));
+    socket.setTimeout(500,()=>finish(false));
+  });
+}
 export async function stopPortal(root,port){
   const running=await probePortal(port);
   if(!running)throw new Error('未找到可识别的门户；不会结束占用端口的其他程序。');
@@ -82,7 +92,9 @@ export async function stopPortal(root,port){
   await response.arrayBuffer();if(response.status!==202)throw new Error('门户未接受停止请求。');
   for(let attempt=0;attempt<50;attempt++){
     const current=await probePortal(port);
-    if(!current||current.instanceId!==running.instanceId)return;
+    if(current&&current.instanceId!==running.instanceId)return;
+    // A slow shutdown can block health responses while its listener is still open.
+    if(!current&&await portalPortClosed(port))return;
     await new Promise(resolve=>setTimeout(resolve,100));
   }
   throw new Error('门户仍在停止中，请稍后重试。');
