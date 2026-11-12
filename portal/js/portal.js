@@ -13,6 +13,7 @@ const paths = {
   layers: '<path d="m12 3 10 5-10 5L2 8l10-5Zm-10 9 10 5 10-5M2 16l10 5 10-5"/>',
   panel: '<rect x="3" y="4" width="18" height="16" rx="2"/><path d="M9 4v16m4-11 3 3-3 3"/>',
   search: '<circle cx="10.5" cy="10.5" r="6.5"/><path d="m16 16 5 5"/>',
+  sliders: '<path d="M4 21v-7m0-4V3m8 18v-9m0-4V3m8 18v-3m0-4V3"/><path d="M1 14h6m2-6h6m2 10h6"/>',
   info: '<circle cx="12" cy="12" r="9"/><path d="M12 11v6M12 7h.01"/>',
   refresh: '<path d="M20 7v5h-5M4 17v-5h5M6 6a8 8 0 0 1 13 2M18 18A8 8 0 0 1 5 16"/>',
   arrow: '<path d="M5 12h14m-6-6 6 6-6 6"/>'

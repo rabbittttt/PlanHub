@@ -100,10 +100,10 @@
           "id": "vehicle-config",
           "name": "车型配置",
           "url": "/vehicle-config/",
-          "icon": "grid",
+          "icon": "sliders",
           "enabled": true,
           "status": "ready",
-          "order": 45
+          "order": 60
         }
       ]
     }
