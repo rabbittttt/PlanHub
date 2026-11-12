@@ -16,7 +16,7 @@ if(process.argv[1]&&import.meta.url===pathToFileURL(path.resolve(process.argv[1]
   try {
     if(Number(process.versions.node.split('.')[0])<20)throw new Error('请安装 Node.js 20 或更高版本。');
     const args=await localPreviewArgs();
-    if(args===null)console.log('npm start [-- --sop-source <独立SOP项目> --data-root <持久数据项目> --shared-config <规则文件> --port 4173 --backend-port 8877]\n源码优先级：--sop-source > SOP_SOURCE_ROOT > config.local/sop.json > 同级 ../SOP维护。\n默认直接使用原项目数据库及计划表，维护立即持久保存，重启保留。仅显式 --snapshot 进行隔离测试；--seed-from 必须配合 --snapshot。');
+    if(args===null)console.log('npm start [-- --sop-source <独立SOP项目> --data-root <持久数据项目> --shared-config <规则文件> --port 4173 --backend-port 8877]\n源码优先级：--sop-source > SOP_SOURCE_ROOT > config.local/sop.json > 同级 ../SOP维护。\n默认使用原项目持久数据库，维护立即保存且重启保留；Excel 经业务页面导入导出。仅显式 --snapshot 进行隔离测试；--seed-from 必须配合 --snapshot。');
     else await runPreview(args);
   } catch(error) {console.error(`本地门户未启动：${error.message}`);process.exitCode=1;}
 }

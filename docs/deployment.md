@@ -63,15 +63,42 @@ if ($LASTEXITCODE -ne 0) { throw 'SOP 原格式发布物构建失败。' }
 & ./deploy/New-DeploymentPackage.ps1 -ConfigPath ./deploy/config.example.json -Destination $firstPackage -IncludeSop -SopReleasePath $sopRelease
 ```
 
+订单分析首次发布或前端模板修改后，先在订单原项目完成一次成功生成，再打包。package_release.py 要求 output_file/runtime 中已有 current.json、index.html、web-build.json，且前端哈希匹配当前源码；门户不会自动替业务项目生成数据。默认同级布局可从门户根执行：
+
+```powershell
+& '../.venv/Scripts/python.exe' -B '../订单分析/scripts/generate_html/main.py' --input '../共享数据/订单汇总' --no-open
+if ($LASTEXITCODE -ne 0) { throw '订单生成失败，请先查看原项目日志。' }
+```
+
+输入不在默认共享目录时，使用原项目已确认的实际输入；若生成时 --output 指向自定义 HTML 文件，打包器的 --runtime 应指向该 HTML 父目录下的 runtime/，不能填 HTML 文件本身。不要把 B 首次可自动生成数据批次，误认为 A 打包前无需生成前端。
+
+A 随后用发布应用.bat 为 planhub、leads、orderiq、forecast、quicklook、sop 分别生成并发送包，先不要激活。将 B 收到的包保留在收件目录；B 下一步从 payload/requirements.txt 准备依赖，因此无需业务源码。
+
 将 first-install 目录完整传到 B 的正式根。它包含门户、静态样例及 SOP 首次身份接入所需的原格式 services/sop。订单、预测和速查显示 EXTERNAL，随后分别发布；引导包不加 RequireComplete。引导包中的旧 iis.json 仅供兼容，新流程使用统一部署配置。
 
 B 另保留工具目录，含完整 deploy/、config.local/ 和部署新版本.bat。工具目录与正式根分开维护。
 
 ### 2. B 准备运行环境和数据
 
-在 B 工具目录创建 config.local/deployment.json，按前节填写。准备各应用对应的 Python 环境，安装原 requirements.txt；不要复制 A 的虚拟环境。离线时用公司允许的来源准备适配 Windows/Python 的 wheel，可使用 New-OfflineWheelhouse.ps1。
+在 B 工具目录创建 config.local/deployment.json，按前节填写。先收到 A 发来的全部程序包，再按各包 payload/requirements.txt 建立对应 Python 环境；SOP 首次引导内也有 services/sop/requirements.txt。不要复制 A 的虚拟环境。离线时用公司允许的来源准备适配 Windows/Python 的 wheel，可使用 New-OfflineWheelhouse.ps1。
 
-创建或迁入各应用持久目录，并按原项目流程停服备份后迁移数据库和设置。发布包不迁移业务数据。
+例如从 B 工具根准备订单解释器（其他应用按模板中的 command 使用自己的目录）：
+
+```powershell
+. ./deploy/Environment.Config.ps1
+$settings = Read-RuntimeSettings './config.local/deployment.json'
+$receivedPackage = (Resolve-Path -LiteralPath (Read-Host '输入收到的 orderiq 版本包目录')).ProviderPath
+$venv = Join-Path $settings.Root 'runtime/orderiq'
+if (Test-Path -LiteralPath $venv) { throw '该环境已存在，请先核对或选择新的环境目录。' }
+python -m venv $venv
+if ($LASTEXITCODE -ne 0) { throw 'Python 环境创建失败。' }
+& (Join-Path $venv 'Scripts/python.exe') -m pip install --no-index --find-links ./offline/wheels -r (Join-Path $receivedPackage 'payload/requirements.txt')
+if ($LASTEXITCODE -ne 0) { throw '离线依赖安装失败。' }
+```
+
+上述 python 应为 B 已安装且符合原项目要求的版本；wheel 目录使用已准备的实际位置。已有运行环境先核对，不覆盖；需要新依赖版本时建立新环境并更新 command。
+
+创建模板指定的 data/orderiq、data/forecast、data/quicklook、data/sop 持久目录；首次发布前工具会检查这些目录和解释器文件已存在。已有数据按原项目流程停服备份后迁移，发布包不迁移业务数据。
 
 - 订单：输入默认 {shared}/订单汇总；批次和批注在 data/orderiq，由 --input/--data-dir/--state-dir 显式传入；--web-dir 使用当前发布包的 web。
 - 销量预测：SHARED_DATA_ROOT 使用 {shared}，--data-dir 使用 data/forecast。只读原始输入，按原规则更新订单汇总中的销量汇总派生文件，服务账号需能写该文件。
@@ -103,7 +130,7 @@ $deploymentConfig = './config.local/deployment.json'
 
 ### 4. B 开放入口并逐个发布
 
-完成部门访问边界后，在 IIS 管理器启动站点。A 双击发布应用.bat，依次构建并发送 planhub、leads、orderiq、forecast、quicklook、sop；B 用部署新版本.bat 安装每个收到的包。无需额外注册旧版 SOP/Quicklook 任务。
+完成部门访问边界后，在 IIS 管理器启动站点。B 用部署新版本.bat 安装第一步已收到、第二步已准备好运行环境的各应用包；后续更新再由 A 构建和发送。无需额外注册旧版 SOP/Quicklook 任务。
 
 发布工具检查固定版本文件和服务健康。业务验收另检查网页、查询、下载、导入导出、保存及 B 重启后保留数据。销量预测首次等待输入稳定一分钟后生成，/forecast/readyz 返回 200 才表示页面可用且没有生成错误。
 

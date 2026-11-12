@@ -25,7 +25,7 @@
 
 单 HTML 没有额外资源时留空。向导会核对文件，登记导航、挂载与静态打包配置，并在 `artifacts/registration-*` 保存原配置。重启本地门户，打开 `/#/app/capacity` 检查。
 
-动态网页选择类型 2，填写原服务端口、健康地址（例如 `/healthz`）、返回 JSON 字段、工作目录、解释器、启动参数及必要环境变量。默认启动探针只检查稳定字段；需要复用已有服务时，可在 apps.json 设置 healthExpected 核对身份、公共前缀等固定值，避免误用其他实例。参数按数组填写，例如 `["-B","server.py","--port","{port}"]`。{port}/{host} 来自门户 target，{basePath} 为 /应用ID/；可用于启动参数、环境变量和健康身份期望。未知应用的端口参数名称仍按原项目契约填写。原服务尚未验收时保留 pending，验收后再次运行向导更新同一 ID。
+动态网页选择类型 2，填写门户配置的接入端口、健康地址（例如 `/healthz`）、返回 JSON 字段、工作目录、解释器、启动参数及必要环境变量。默认启动探针只检查稳定字段；需要复用已有服务时，可在 apps.json 设置 healthExpected 核对身份、公共前缀等固定值，避免误用其他实例。参数按数组填写，例如 `["-B","server.py","--port","{port}"]`。{port}/{host} 来自门户 target，{basePath} 为 /应用ID/；可用于启动参数、环境变量和健康身份期望。未知应用的端口参数名称仍按原项目契约填写。原服务尚未验收时保留 pending，验收后再次运行向导更新同一 ID。
 
 端口由门户决定并显式传入，不依赖子项目的默认端口。旧本机配置中若仍有数字端口和手写前缀，可一次改成上述占位符，以后只改 target。动态配置中的路径相对门户根目录；环境变量值由原应用解释，通常相对业务工作目录。不要填写某个开发者的盘符和用户名。向导登记不会构建、启动或修改业务源码。
 
@@ -67,7 +67,7 @@ node scripts/register-app.mjs --config config.local/new-app.json
 - 应用 ID 唯一。浏览器访问地址固定；内部新标签、新 API 无需门户逐项登记。
 - 资源、API、跳转和下载均在 `/<id>/` 内。支持前缀配置，不能抢占站点根 `/api/`、`/assets/`。
 - 同源 iframe 可打开。原项目负责合适的 CSP、Cookie Path、来源校验，不强制跳出门户。
-- 健康接口轻量、只读，建议返回固定 JSON；未就绪返回非 2xx。不要用业务标题或重型数据扫描当存活探针。
+- 服务存活接口应轻量、只读，建议返回稳定 JSON，不依赖是否已有业务数据。需要区分数据等待或生成失败时另设就绪接口，未就绪返回非 2xx。不要用业务标题或重型数据扫描当存活探针。
 - 前台启动，监听可配置的回环端口。路径从明确基准解析；允许运行时指定数据目录。
 - 新旧程序切换使用同一份正式数据。不得启动时重置，也不同时启动两版写同一数据库。
 - 静态应用当前支持 HTML/CSS/JS/JSON、常见图片及字体；用明确公开清单。SPA history 回退、WebSocket 等特殊能力需单独确认，不能假定自动支持。
@@ -90,10 +90,12 @@ node scripts/register-app.mjs --config config.local/new-app.json
 > 使用本手册登记内网应用。仅修改门户配置及通用工具，优先复用 register-app 和发布工具；不修改业务源码、页面、权限或数据规则。路径保持可迁移，不把实际数据与本机配置提交 Git。无法访问真实网页时说明已验证范围，不把替代样例验收当成正式业务验收。
 
 <a id="current-contracts"></a>
-## 当前版本核对（2026-11-11）
+## 当前版本核对（2026-11-12）
 
 - **SOP计划管理**：继续使用原网关、整段 /sop/ 代理与原构建器；业务新增标签不需门户逐项登记。新版计划保存在数据库，Excel 从页面导出、修改后导入；服务器旧维护表仅归档，不再自动同步。正式资料对账来源通过 SOP_RECONCILE_DIR 指向 shared/对账资料。
-- **订单分析**：动态服务 /orderiq/，健康接口 /health。本地沿用原项目的数据选择；正式部署显式传 --input、--data-dir、--state-dir、--web-dir。原 Git 仓库在订单分析/scripts，构建入口 generate_html/package_release.py。
+- **订单分析**：动态服务 /orderiq/，健康接口 /health。本地沿用原项目的数据选择；正式部署显式传 --input、--data-dir、--state-dir、--web-dir。原 Git 仓库在订单分析/scripts，构建入口 generate_html/package_release.py；A 打包前须先由原项目生成同版 runtime 前端及批次，不能仅复制源码后直接发布。
 - **数据速查**：动态服务 /quicklook/，健康接口 /healthz；新版自动扫描使用 SHARED_DATA_ROOT，工作区来源的相对路径仍由 DATA_QUICKLOOK_SOURCE_BASE 解释。
 - **线索声量**：当前可见交付仍是 lead-dashboard.html 静态样例。若内网已改动态，在内网重新运行接入向导更新同一 leads ID，再配置该项目发布包；不能将样例当作正式动态验收。
 - **销量预测**：动态服务 /forecast/，默认端口 8780，原项目 dynamic/serve.py 启动；scripts/build_release.py 构建标准包。--public-prefix 配置公共前缀，--data-dir 或 SALES_FORECAST_DATA_DIR 外置页面、缓存和日志，SHARED_DATA_ROOT 指定共享输入。/healthz 只检测服务，/readyz 区分首次等待、就绪与生成失败；/api/status 提供更新状态。首次生成前页面自动等待，不把尚无报表当成进程启动失败。静态入口仍可在原项目独立使用。
+
+SOP 原项目附带的 PORTAL-INTEGRATION.md 仍有旧门户目录、默认隔离快照和维护表同步的历史描述。当前门户默认直接使用持久数据库，Excel 从页面导入导出；部署操作以本手册和部署手册为准，该子项目文档需由其维护任务修正。
