@@ -39,6 +39,18 @@ async function validateStatic(root,app){
   const entry=await lstat(path.join(source,app.entry));
   if(!entry.isFile()||!entry.size)throw new Error('入口不存在或为空');
 }
+function registrationArguments(args,port){
+  if(!Array.isArray(args)||!args.every(value=>typeof value==='string'))throw new Error('启动参数须为 JSON 字符串数组');
+  const result=[...args];
+  for(let i=0;i<result.length;i++){
+    const separate=result[i]==='--port',inline=result[i].startsWith('--port=');
+    if(!separate&&!inline)continue;
+    const value=separate?result[i+1]:result[i].slice('--port='.length);
+    if(value!==String(port)&&value!=='{port}')throw new Error('启动参数 --port 必须使用门户端口或 {port} 占位符');
+    if(separate)result[++i]='{port}';else result[i]='--port={port}';
+  }
+  return result;
+}
 export async function planRegistration(root,input){
   root=path.resolve(root);
   if(!plain(input))throw new Error('接入说明必须是 JSON 对象');
@@ -69,8 +81,9 @@ export async function planRegistration(root,input){
     if(typeof input.stripPrefix!=='boolean')throw new Error('动态应用必须明确 stripPrefix: true 或 false');
     if(!Array.isArray(input.healthKeys)||!input.healthKeys.length)throw new Error('请提供稳定健康接口返回的 JSON 顶层字段');
     integration={type:'proxy',target:`http://127.0.0.1:${port}`,stripPrefix:input.stripPrefix,rootRoutes:[],healthPath:input.healthPath||'/api/health',healthKeys:input.healthKeys,healthText:null,start:null};
+    if(input.healthExpected!==undefined)integration.healthExpected=input.healthExpected;
     if(input.start){
-      integration.start={...input.start,cwd:portable(root,input.start.cwd),command:portable(root,input.start.command)};
+      integration.start={...input.start,cwd:portable(root,input.start.cwd),command:portable(root,input.start.command),args:registrationArguments(input.start.args,port)};
       const cwd=await lstat(path.resolve(root,integration.start.cwd)),command=await lstat(path.resolve(root,integration.start.command));
       if(!cwd.isDirectory()||!command.isFile())throw new Error('启动目录或可执行文件不存在');
     }
@@ -140,12 +153,12 @@ async function interactive(root){
       const resources=await ask('额外公开的文件或目录，用英文逗号分隔，目录以 / 结尾，单 HTML 可留空');
       input.publicPaths=[input.entry,...resources.split(',').map(s=>s.trim()).filter(Boolean)];
     }else{
-      input.port=Number(await ask('原服务监听的本机端口'));
+      input.port=Number(await ask('门户为本应用配置的本机端口'));
       input.stripPrefix=await ask('后端接收路径是否去掉 /应用ID/ 前缀？y/n','y')==='y';
       input.healthPath=await ask('健康接口路径','/api/health');
       input.healthKeys=(await ask('健康接口 JSON 顶层字段，用英文逗号分隔','status')).split(',').map(s=>s.trim()).filter(Boolean);
       if(await ask('由门户启动服务？y/n','y')==='y'){
-        input.start={cwd:await ask('原项目工作目录，相对门户'),command:await ask('解释器/可执行文件，相对门户','../.venv/Scripts/python.exe'),args:JSON.parse(await ask('启动参数 JSON 数组','["-B","server.py"]'))};
+        input.start={cwd:await ask('原项目工作目录，相对门户'),command:await ask('解释器/可执行文件，相对门户','../.venv/Scripts/python.exe'),args:JSON.parse(await ask('启动参数 JSON 数组；支持 {port}、{host}、{basePath}，按原应用 CLI 调整','["-B","server.py","--port","{port}"]'))};
         const env=await ask('环境变量 JSON 对象，可留空');if(env)input.start.env=JSON.parse(env);
       }
       input.status=await ask('原服务已完成页面/接口验收填 ready，否则保持 pending','pending');

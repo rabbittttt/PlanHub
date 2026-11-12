@@ -2,26 +2,48 @@
 [CmdletBinding(SupportsShouldProcess = $true)]
 param(
     [string]$ConfigPath = '',
+    [string]$DeploymentConfigPath = '',
     [string]$ServiceAccount = '',
     [switch]$PlanOnly,
     [switch]$Apply
 )
 $ErrorActionPreference = 'Stop'
-if (-not $ConfigPath) { $ConfigPath = Join-Path $PSScriptRoot 'sop-iis.example.json' }
+if ($ConfigPath -and $DeploymentConfigPath) { throw 'Use ConfigPath or DeploymentConfigPath, not both.' }
+if (-not $ConfigPath -and -not $DeploymentConfigPath) { $ConfigPath = Join-Path $PSScriptRoot 'sop-iis.example.json' }
 . (Join-Path $PSScriptRoot 'Deployment.Common.ps1')
 . (Join-Path $PSScriptRoot 'Sop.Common.ps1')
 . (Join-Path $PSScriptRoot 'Sop.Release.ps1')
 if ($PlanOnly -and $Apply) { throw 'PlanOnly and Apply cannot be combined.' }
-$config = Read-SopIisConfig -Path $ConfigPath
+$binding = $null
+if ($DeploymentConfigPath) {
+    $binding = Read-SopDeploymentBinding -Path $DeploymentConfigPath -ServiceAccount $ServiceAccount
+    $config = $binding.Config
+    $ServiceAccount = $binding.ServiceAccount
+} else { $config = Read-SopIisConfig -Path $ConfigPath }
 $proxyRoot = Join-Path $config.DeploymentRoot 'proxy\sop'
 $configRoot = Join-Path $config.DeploymentRoot 'config'
 $gatewayPath = Join-Path $configRoot 'sop.json'
 $authPath = Join-Path $configRoot 'sop-auth.json'
-$gatewayTemplate = Resolve-SopGatewayTemplate -Path (Join-Path $PSScriptRoot 'sop.example.json') -DeploymentRoot $config.DeploymentRoot
+$gatewayTemplate = if ($null -ne $binding) { $binding.Gateway } else { Resolve-SopGatewayTemplate -Path (Join-Path $PSScriptRoot 'sop.example.json') -DeploymentRoot $config.DeploymentRoot }
 $allowWrites = $config.AllowWrites
+if ($null -ne $binding) {
+    foreach ($item in @(@{Path=$gatewayPath;Field='public_origin';Expected=$config.PublicOrigin},@{Path=$authPath;Field='PublicOrigin';Expected=$config.PublicOrigin},@{Path=$authPath;Field='BackendPort';Expected=$config.BackendPort})) {
+        if (Test-Path -LiteralPath $item.Path) {
+            $prior = Get-Content -LiteralPath $item.Path -Raw -Encoding UTF8 | ConvertFrom-Json
+            if ((Get-SopValue $prior $item.Field) -cne $item.Expected) { Write-Output ('Owned derived setting will be regenerated on Apply: ' + $item.Field) }
+        }
+    }
+}
 Write-Output "SOP proxy: $($config.SiteName)/sop -> http://127.0.0.1:$($config.BackendPort)/sop/ (prefix preserved)"
 Write-Output "Dedicated .NET v4 Integrated pool: $($config.ApplicationPool)"
 Write-Output "Public origin: $($config.PublicOrigin); uniform department access; global writes enabled: $allowWrites"
+if ($null -ne $binding) {
+    Write-Output ('Service account: ' + $ServiceAccount)
+    Write-Output ('Persistent SOP data: ' + $gatewayTemplate.data_dir)
+    Write-Output ('Sales source: ' + $gatewayTemplate.source_dir)
+    Write-Output ('Shared rules file: ' + $gatewayTemplate.shared_config)
+    Write-Output ('Protected secret file (path only): ' + $config.ProxySecretPath)
+}
 Write-Output 'Identity is stamped after Windows Authentication. No LOGON_USER rewrite variable is used.'
 Write-Output 'Secrets are generated only by Apply, never printed, and shared via an ACL-protected file outside web roots.'
 if ($PlanOnly) { Write-Output 'Offline plan validated; IIS and domain accounts were not contacted.'; return }

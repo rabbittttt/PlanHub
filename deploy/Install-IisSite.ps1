@@ -2,14 +2,28 @@
 [CmdletBinding(SupportsShouldProcess = $true)]
 param(
     [string]$ConfigPath = '',
+    [string]$DeploymentConfigPath = '',
     [switch]$PlanOnly,
     [switch]$Apply
 )
 $ErrorActionPreference = 'Stop'
-if (-not $ConfigPath) { $ConfigPath = Join-Path $PSScriptRoot 'config.example.json' }
+if ($ConfigPath -and $DeploymentConfigPath) { throw 'Use ConfigPath or DeploymentConfigPath, not both.' }
+if (-not $ConfigPath -and -not $DeploymentConfigPath) { $ConfigPath = Join-Path $PSScriptRoot 'config.example.json' }
 . (Join-Path $PSScriptRoot 'Deployment.Common.ps1')
 if ($PlanOnly -and $Apply) { throw 'PlanOnly and Apply cannot be combined.' }
-$config = Read-DeploymentConfig -Path $ConfigPath
+if ($DeploymentConfigPath) {
+    . (Join-Path $PSScriptRoot 'Environment.Config.ps1')
+    $settings = Read-RuntimeSettings $DeploymentConfigPath
+    if (-not $settings.PublicOrigin) { throw 'Set publicOrigin for first-time IIS setup.' }
+    $origin = [uri]$settings.PublicOrigin
+    if ($origin.Scheme -ne 'http') { throw 'Automatic first-time site creation supports HTTP only. Configure HTTPS binding and certificate separately; no HTTP downgrade is performed.' }
+    if ($origin.Host -notmatch '^(?=.{1,253}$)[A-Za-z0-9](?:[A-Za-z0-9.-]*[A-Za-z0-9])?$') { throw 'First-time IIS setup requires a DNS hostname or IPv4 host.' }
+    $pool = [string](Get-Setting $settings.Config 'applicationPool' ($settings.Config.siteName + '-Static'))
+    if ($pool -notmatch '^[A-Za-z0-9][A-Za-z0-9_-]{0,63}$') { throw 'Invalid applicationPool.' }
+    $static = @($settings.Config.applications.PSObject.Properties | Where-Object { $_.Value.kind -eq 'static' -and (Get-Setting $_.Value 'enabled' $true) } | ForEach-Object { [pscustomobject]@{Name=$_.Name;Enabled=$true} })
+    $proxyRequired = @($settings.Config.applications.PSObject.Properties | Where-Object { $_.Value.kind -eq 'service' }).Count -gt 0
+    $config = [pscustomobject]@{SiteName=$settings.Config.siteName;ApplicationPool=$pool;DeploymentRoot=$settings.Root;HostName=$origin.Host;Port=$origin.Port;RequireReverseProxy=$proxyRequired;StaticApplications=$static}
+} else { $config = Read-DeploymentConfig -Path $ConfigPath }
 $portal = Join-Path $config.DeploymentRoot 'portal'
 $binding = '*:' + $config.Port + ':' + $config.HostName
 $activeApps = @($config.StaticApplications | Where-Object { $_.Enabled })

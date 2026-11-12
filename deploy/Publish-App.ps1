@@ -117,7 +117,8 @@ if($ReleasePath){
     $builder=Get-PublishValue $profile 'build'
     if(-not $builder){throw 'Provide a prepared releasePath or configure the original project build command.'}
     $command=Resolve-PublishPath ([string]$builder.command) $root
-    $cwd=Resolve-PublishPath ([string]$builder.cwd) $root
+    $cwdValue=[string](Get-PublishValue $builder 'cwd' (Get-PublishValue $profile 'sourceRoot' ''))
+    $cwd=Resolve-PublishPath $cwdValue $root
     if(-not(Test-Path -LiteralPath $command -PathType Leaf)){throw 'Configured build executable is missing.'}
     Assert-NoReparsePoint $cwd
     $prepared=Join-Path $root ("staging/build/"+$AppId+"-"+$Version)

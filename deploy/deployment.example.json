@@ -1,18 +1,18 @@
 {
   "deploymentRoot": "../../PlanHub部署",
   "siteName": "DataPlatform",
+  "publicOrigin": "http://localhost:8080",
+  "sharedDirectory": "shared",
+  "serviceAccount": "MACHINE\\PlanHubService",
   "applications": {
     "planhub": {
-      "kind": "portal",
-      "healthUrl": "http://localhost:8080/"
+      "kind": "portal"
     },
     "leads": {
-      "kind": "static",
-      "healthUrl": "http://localhost:8080/leads/"
+      "kind": "static"
     },
     "forecast": {
       "kind": "service",
-      "healthUrl": "http://localhost:8080/forecast/healthz",
       "command": "runtime/forecast/Scripts/python.exe",
       "arguments": [
         "-B",
@@ -25,23 +25,22 @@
         "--data-dir",
         "{data}",
         "--public-prefix",
-        "/forecast/"
+        "{basePath}"
       ],
       "environment": {
         "PYTHONIOENCODING": "utf-8",
         "PYTHONUNBUFFERED": "1",
         "PYTHONDONTWRITEBYTECODE": "1",
-        "SHARED_DATA_ROOT": "{deployment}/shared"
+        "SHARED_DATA_ROOT": "{shared}"
       },
       "dataDirectory": "data/forecast",
       "port": 8780,
       "taskName": "PlanHub-forecast",
-      "serviceAccount": "MACHINE\\PlanHubService",
       "backendHealthPath": "/healthz",
       "healthExpected": {
         "ok": true,
         "app": "sales-forecast-live",
-        "public_prefix": "/forecast/"
+        "public_prefix": "{basePath}"
       },
       "proxyMode": "prefix",
       "stripPrefix": true,
@@ -49,7 +48,6 @@
     },
     "orderiq": {
       "kind": "service",
-      "healthUrl": "http://localhost:8080/orderiq/",
       "command": "runtime/orderiq/Scripts/python.exe",
       "arguments": [
         "-B",
@@ -59,7 +57,7 @@
         "--port",
         "{port}",
         "--input",
-        "{deployment}/shared/订单汇总",
+        "{shared}/订单汇总",
         "--data-dir",
         "{data}/runtime",
         "--state-dir",
@@ -67,9 +65,9 @@
         "--web-dir",
         "{payload}/web",
         "--allowed-host",
-        "localhost",
+        "{publicHost}",
         "--allowed-origin",
-        "http://localhost:8080"
+        "{publicOrigin}"
       ],
       "environment": {
         "PYTHONIOENCODING": "utf-8",
@@ -79,7 +77,6 @@
       "dataDirectory": "data/orderiq",
       "port": 8767,
       "taskName": "PlanHub-orderiq",
-      "serviceAccount": "MACHINE\\PlanHubService",
       "backendHealthPath": "/health",
       "healthExpected": {
         "application": "order-dashboard"
@@ -90,7 +87,6 @@
     },
     "quicklook": {
       "kind": "service",
-      "healthUrl": "http://localhost:8080/quicklook/",
       "command": "runtime/quicklook/Scripts/python.exe",
       "arguments": [
         "-B",
@@ -103,15 +99,14 @@
         "PYTHONUNBUFFERED": "1",
         "PYTHONDONTWRITEBYTECODE": "1",
         "DATA_QUICKLOOK_DATA_DIR": "{data}",
-        "DATA_QUICKLOOK_SOURCE_BASE": "{deployment}/shared",
-        "DATA_QUICKLOOK_PUBLIC_PREFIX": "/quicklook/",
-        "DATA_QUICKLOOK_PUBLIC_ORIGIN": "http://localhost:8080",
-        "SHARED_DATA_ROOT": "{deployment}/shared"
+        "DATA_QUICKLOOK_SOURCE_BASE": "{shared}",
+        "DATA_QUICKLOOK_PUBLIC_PREFIX": "{basePath}",
+        "DATA_QUICKLOOK_PUBLIC_ORIGIN": "{publicOrigin}",
+        "SHARED_DATA_ROOT": "{shared}"
       },
       "dataDirectory": "data/quicklook",
       "port": 8765,
       "taskName": "PlanHub-quicklook",
-      "serviceAccount": "MACHINE\\PlanHubService",
       "backendHealthPath": "/healthz",
       "healthExpected": {
         "ok": true,
@@ -123,7 +118,6 @@
     },
     "sop": {
       "kind": "service",
-      "healthUrl": "http://localhost:8080/sop/api/health",
       "command": "runtime/sop/Scripts/python.exe",
       "arguments": [
         "-B",
@@ -140,8 +134,8 @@
         "PYTHONUNBUFFERED": "1",
         "PYTHONDONTWRITEBYTECODE": "1",
         "SOP_EXCEL_ENGINE": "python",
-        "SHARED_DATA_ROOT": "{deployment}/shared",
-        "SOP_RECONCILE_DIR": "{deployment}/shared/对账资料"
+        "SHARED_DATA_ROOT": "{shared}",
+        "SOP_RECONCILE_DIR": "{shared}/对账资料"
       },
       "secretEnvironmentFiles": {
         "SOP_PROXY_SECRET": "config/sop-proxy.secret"
@@ -149,14 +143,18 @@
       "dataDirectory": "data/sop",
       "port": 8877,
       "taskName": "PlanHub-sop",
-      "serviceAccount": "MACHINE\\PlanHubService",
       "backendHealthPath": "/sop/api/health",
       "healthExpected": {
         "app_id": "hima-sop",
         "launch_mode": "gateway"
       },
       "proxyMode": "existing",
-      "backendHealthMode": "public"
+      "backendHealthMode": "public",
+      "gatewayPaths": {
+        "source_dir": "{shared}/订单汇总",
+        "shared_config": "{deployment}/config/shared_config.py",
+        "plan_file": "{shared}/SOP计划/SOP计划维护.xlsx"
+      }
     }
   }
 }

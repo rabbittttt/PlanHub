@@ -6,6 +6,9 @@ $ErrorActionPreference='Stop'
 $runtime = Get-Content -LiteralPath $RuntimeConfig -Raw -Encoding UTF8 | ConvertFrom-Json
 $release = Assert-AppRelease (Split-Path -Parent $runtime.payload)
 if ($release.Manifest.appId -cne $runtime.appId -or $release.Manifest.version -cne $runtime.version) { throw 'Active service and release manifest differ.' }
+if ($runtime.appId -ceq 'sop') {
+    Assert-SopRuntimeConsistency -Root ([string]$runtime.root) -Definition $runtime.definition -RequireInitialized
+}
 $command = Resolve-LocalDeploymentPath $runtime.definition.command $runtime.root 'command'
 $changed=@{}
 try {

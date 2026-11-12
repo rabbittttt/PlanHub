@@ -17,7 +17,7 @@
           "-B",
           "server.py",
           "--port",
-          "8767"
+          "{port}"
         ]
       }
     },
@@ -38,18 +38,18 @@
           "-B",
           "dynamic/serve.py",
           "--host",
-          "127.0.0.1",
+          "{host}",
           "--port",
-          "8780",
+          "{port}",
           "--no-open",
           "--public-prefix",
-          "/forecast/"
+          "{basePath}"
         ]
       },
       "healthExpected": {
         "ok": true,
         "app": "sales-forecast-live",
-        "public_prefix": "/forecast/"
+        "public_prefix": "{basePath}"
       }
     },
     "quicklook": {
@@ -67,10 +67,12 @@
         "command": "../.venv/Scripts/python.exe",
         "args": [
           "-B",
-          "server.py"
+          "server.py",
+          "--port",
+          "{port}"
         ],
         "env": {
-          "DATA_QUICKLOOK_PUBLIC_PREFIX": "/quicklook/"
+          "DATA_QUICKLOOK_PUBLIC_PREFIX": "{basePath}"
         }
       },
       "healthTimeoutMs": 5000,

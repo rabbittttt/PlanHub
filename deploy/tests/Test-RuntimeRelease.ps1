@@ -77,4 +77,105 @@ $probe=[pscustomobject]@{backendHealthMode='public';healthUrl='http://localhost:
 Check (Test-BackendHealth $probe) 'SOP public health identity check failed.'
 Check $script:usedPublicIdentity 'Public health bypassed IIS or omitted Windows identity.'
 $probe.healthExpected.app_id='other-app';Check (-not(Test-BackendHealth $probe)) 'Unexpected application passed health verification.'
+# Environment defaults generate all public addresses, prefixes and shared paths once.
+$centralPath=Join-Path $scratch 'machine\single-source.json'
+$central=[pscustomobject]@{
+    deploymentRoot='../single-installed';siteName='Fixture';publicOrigin='https://department.example:9443';sharedDirectory='../business-shared';serviceAccount='MACHINE\Fixture'
+    applications=[pscustomobject]@{
+        planhub=[pscustomobject]@{kind='portal'}
+        alpha=[pscustomobject]@{kind='static'}
+        beta=[pscustomobject]@{kind='service';command=$shell;arguments=@('-NoProfile','-File','{payload}/server.ps1','-Data','{data}');environment=[pscustomobject]@{PLANHUB_TEST_DATA='{data}';PUBLIC_ORIGIN='{publicOrigin}';PUBLIC_HOST='{publicHost}';PUBLIC_PREFIX='{basePath}';SHARED_INPUT='{shared}';CUSTOM_TEXT='{business-owned}'};dataDirectory='data/beta';port=18889;taskName='PlanHub-fixture';backendHealthPath='/healthz';proxyMode='prefix';healthExpected=[pscustomobject]@{public_prefix='{basePath}'}}
+    }
+}
+Write-AppReleaseJson $centralPath $central
+$centralBefore=[IO.File]::ReadAllText($centralPath)
+$resolved=Read-RuntimeSettings $centralPath
+Check ($resolved.Root -eq (Join-Path $scratch 'single-installed')) 'Environment root used the process working directory.'
+Check (-not(Test-Path -LiteralPath $resolved.Root)) 'Environment reader created deployment files.'
+Check ($resolved.Config.applications.planhub.healthUrl -eq 'https://department.example:9443/') 'Portal health URL was not generated from public origin.'
+Check ($resolved.Config.applications.alpha.healthUrl -eq 'https://department.example:9443/alpha/') 'Static health URL was not generated from base path.'
+Check ($resolved.Config.applications.beta.healthUrl -eq 'https://department.example:9443/beta/healthz') 'Backend path was not mapped into the public prefix.'
+Check ($resolved.Config.applications.beta.serviceAccount -eq 'MACHINE\Fixture') 'Service account default was not inherited.'
+Check ($resolved.Config.applications.beta.environment.PUBLIC_HOST -eq 'department.example') 'Allowed public host was not derived from the origin.'
+Check ($resolved.Config.applications.beta.environment.PUBLIC_PREFIX -eq '/beta/') 'Environment prefix was not derived from the application ID.'
+Check ($resolved.Config.applications.beta.healthExpected.public_prefix -eq '/beta/') 'Health identity prefix was not expanded.'
+Check ($resolved.SharedDirectory -eq (Join-Path $scratch 'business-shared')) 'Shared root was not resolved against the deployment root.'
+Check ($resolved.Config.applications.beta.environment.SHARED_INPUT -eq $resolved.SharedDirectory) 'Service does not use the shared root.'
+Check ($resolved.Config.applications.beta.environment.CUSTOM_TEXT -eq '{business-owned}') 'Application-owned braces were rewritten.'
+Check ([IO.File]::ReadAllText($centralPath) -eq $centralBefore) 'Environment reader rewrote the machine configuration.'
+# Relocating a portable config relocates its deployment and shared paths.
+$copiedConfig=Join-Path $scratch 'moved\machine\single-source.json'
+Put $copiedConfig $centralBefore
+$copiedSettings=Read-RuntimeSettings $copiedConfig
+Check ($copiedSettings.Root -eq (Join-Path $scratch 'moved\single-installed')) 'Copied deployment config retained its old machine directory.'
+Check ($copiedSettings.SharedDirectory -eq (Join-Path $scratch 'moved\business-shared')) 'Copied shared config retained its old machine directory.'
+# Explicit per-application settings remain usable; defaults are not destructive migrations.
+$central.applications.beta | Add-Member -NotePropertyName serviceAccount -NotePropertyValue 'DOMAIN\Custom'
+$central.applications.alpha | Add-Member -NotePropertyName healthUrl -NotePropertyValue 'https://alternate.example/alpha/'
+Write-AppReleaseJson $centralPath $central
+$resolved=Read-RuntimeSettings $centralPath
+Check ($resolved.Config.applications.beta.serviceAccount -eq 'DOMAIN\Custom') 'Explicit service identity was overwritten.'
+Check ($resolved.Config.applications.alpha.healthUrl -eq 'https://alternate.example/alpha/') 'Explicit health endpoint was overwritten.'
+# A generated definition is accepted by the actual planning/runner path.
+New-Item -ItemType Directory -Path (Join-Path $resolved.Root 'data\beta') -Force|Out-Null
+$centralPlan=Read-InstallPlan $serviceRelease $centralPath
+$centralRuntime=[ordered]@{schemaVersion=1;appId='beta';version='v1';payload=(Join-Path $serviceRelease 'payload');root=$resolved.Root;dataDirectory=(Join-Path $resolved.Root 'data\beta');definition=$centralPlan.Definition}
+Write-AppReleaseJson $runtimePath $centralRuntime
+& (Join-Path $deploy 'Run-AppService.ps1') -RuntimeConfig $runtimePath
+Check ([IO.File]::ReadAllText((Join-Path $centralRuntime.dataDirectory 'result.txt')) -eq $centralRuntime.dataDirectory) 'Resolved environment definition failed through the actual runner.'
+foreach($badOrigin in @('http://example.test/path','http://example.test/','http://user:password@example.test','ftp://example.test','https://example.test?secret=value','https://example.test#fragment','//example.test')){
+    $bad=$centralBefore | ConvertFrom-Json;$bad.publicOrigin=$badOrigin;Write-AppReleaseJson $centralPath $bad
+    Reject {Read-RuntimeSettings $centralPath}
+}
+foreach($badShared in @('\\server\share','C:relative','\relative','portal/private','apps/private','proxy/private','releases/private','{shared}/nested','{deployment}/shared')){
+    $bad=$centralBefore | ConvertFrom-Json;$bad.sharedDirectory=$badShared;Write-AppReleaseJson $centralPath $bad
+    Reject {Read-RuntimeSettings $centralPath}
+}
+foreach($badName in @('bad/name','with space','')){
+    $bad=$centralBefore | ConvertFrom-Json;$bad.siteName=$badName;Write-AppReleaseJson $centralPath $bad
+    Reject {Read-RuntimeSettings $centralPath}
+}
+$bad=$centralBefore | ConvertFrom-Json;$bad.PSObject.Properties.Remove('publicOrigin');Write-AppReleaseJson $centralPath $bad
+Reject {Read-RuntimeSettings $centralPath}
+# Legacy configurations with explicit addresses continue to parse without new global fields.
+$legacy=Read-RuntimeSettings $configPath
+Check ($legacy.Config.applications.alpha.healthUrl -eq 'http://localhost:8080/alpha/') 'Legacy explicit public address changed.'
+Write-AppReleaseJson $centralPath ($centralBefore | ConvertFrom-Json)
+# SOP planning and boot both validate the same initialized gateway before starting anything.
+$sopPayload=Join-Path $scratch 'sop-source'
+Put (Join-Path $sopPayload 'server.ps1') '[IO.File]::WriteAllText($env:RUN_MARKER,"must not start")'
+$sopRelease=Join-Path $scratch 'sop-v1'
+& (Join-Path $deploy 'New-AppRelease.ps1') -PayloadPath $sopPayload -Destination $sopRelease -AppId sop -Version v1 -Type service -EntryPoint server.ps1 -SourceRevision fixture -DataMode external -HealthPath /api/health | Out-Null
+$sopSettings=Read-RuntimeSettings $centralPath
+$sopData=Join-Path $sopSettings.Root 'data\sop'
+New-Item -ItemType Directory -Path $sopData -Force|Out-Null
+$sopDefinition=[pscustomobject]@{kind='service';command=$shell;arguments=@('-NoProfile','-File','{payload}/server.ps1','--gateway-config','{deployment}/config/sop.json');environment=[pscustomobject]@{RUN_MARKER=(Join-Path $scratch 'sop-started.txt')};dataDirectory='data/sop';port=18890;taskName='PlanHub-sop-fixture';backendHealthPath='/sop/api/health';backendHealthMode='public';proxyMode='existing';secretEnvironmentFiles=[pscustomobject]@{SOP_PROXY_SECRET='config/sop-proxy.secret'}}
+$central=$centralBefore|ConvertFrom-Json
+$central.applications|Add-Member -NotePropertyName sop -NotePropertyValue $sopDefinition
+Write-AppReleaseJson $centralPath $central
+$sopGateway=[pscustomobject]@{base_path='/sop';public_origin=$central.publicOrigin;proxy_secret_env='SOP_PROXY_SECRET';allow_writes=$true;data_dir=$sopData}
+$gatewayPath=Join-Path $sopSettings.Root 'config\sop.json'
+$authPath=Join-Path $sopSettings.Root 'config\sop-auth.json'
+$sopSecret=Join-Path $sopSettings.Root 'config\sop-proxy.secret'
+Put $sopSecret ('a'*48)
+Write-AppReleaseJson $gatewayPath $sopGateway
+$sopAuth=[pscustomobject]@{BackendPort=$sopDefinition.port;PublicOrigin=$central.publicOrigin;ProxySecretPath=$sopSecret;AllowWrites=$true}
+Write-AppReleaseJson $authPath $sopAuth
+$escapedAuth=[Security.SecurityElement]::Escape($authPath)
+$proxy='<configuration><appSettings><add key="SopIdentityBridgeOwner" value="DataPlatform-SOP-v1"/><add key="SopProxyConfigPath" value="'+$escapedAuth+'"/></appSettings><system.webServer><rewrite><rules><rule><action type="Rewrite" url="http://127.0.0.1:'+$sopDefinition.port+'/sop/{R:1}"/></rule></rules></rewrite></system.webServer></configuration>'
+Put (Join-Path $sopSettings.Root 'proxy\sop\web.config') $proxy
+$sopPlan=Read-InstallPlan $sopRelease $centralPath
+Check ($sopPlan.Definition.serviceAccount -eq $central.serviceAccount) 'SOP plan did not inherit the unified service account.'
+$sopGateway.data_dir=Join-Path $sopSettings.Root 'different-data';Write-AppReleaseJson $gatewayPath $sopGateway
+Reject {Read-InstallPlan $sopRelease $centralPath}
+$sopGateway.data_dir=$sopData;Write-AppReleaseJson $gatewayPath $sopGateway
+$sopAuth.BackendPort=18891;Write-AppReleaseJson $authPath $sopAuth
+Reject {Read-InstallPlan $sopRelease $centralPath}
+$sopRuntime=[ordered]@{schemaVersion=1;appId='sop';version='v1';payload=(Join-Path $sopRelease 'payload');root=$sopSettings.Root;dataDirectory=$sopData;definition=$sopPlan.Definition}
+Write-AppReleaseJson $runtimePath $sopRuntime
+Reject {& (Join-Path $deploy 'Run-AppService.ps1') -RuntimeConfig $runtimePath}
+Check (-not(Test-Path -LiteralPath (Join-Path $scratch 'sop-started.txt'))) 'Boot consistency failure still launched the child process.'
+$sopAuth.BackendPort=$sopDefinition.port;Write-AppReleaseJson $authPath $sopAuth
+$sopDefinition.arguments[-1]='{deployment}/config/different-sop.json';Write-AppReleaseJson $centralPath $central
+Reject {Read-InstallPlan $sopRelease $centralPath}
 Write-Output ("Deployment runtime fixtures passed: $script:checks checks; no IIS or scheduled task was modified. Evidence: $scratch")

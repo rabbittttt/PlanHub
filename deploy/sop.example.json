@@ -4,8 +4,8 @@
   "proxy_secret_env": "SOP_PROXY_SECRET",
   "allow_writes": true,
   "data_dir": "data/sop",
-  "source_dir": "data/sop/input_file",
+  "source_dir": "shared/订单汇总",
   "shared_config": "config/shared_config.py",
-  "plan_file": "data/sop/SOP计划维护.xlsx",
-  "storage_root": "../shared"
+  "plan_file": "shared/SOP计划/SOP计划维护.xlsx",
+  "storage_root": "."
 }

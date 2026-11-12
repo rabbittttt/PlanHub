@@ -107,3 +107,37 @@ test('leads integration uses its unchanged standalone placeholder and orderiq st
   assert.equal(defaults.applications.orderiq.type,'proxy');
   assert.equal((await readJson(root,'deploy/config.example.json')).StaticApplications.some(a=>a.Name==='orderiq'),false);
 });
+
+test('dynamic registration stores a single portal port and expands public prefix identity after a target override',async t=>{
+  const f=await fixture(t);
+  const supplied={...dynamic,start:{...dynamic.start,args:['server.py','--port','9881','--public-prefix','{basePath}'],env:{PUBLIC_PREFIX:'{basePath}',OTHER_VALUE:'{businessValue}'}},healthExpected:{prefix:'{basePath}'}};
+  const beforeArgs=[...supplied.start.args];
+  await applyRegistration(await planRegistration(f.root,supplied));
+  const local=await readJson(f.root,'config.local/apps.json');
+  assert.deepEqual(local.applications.sample.start.args,['server.py','--port','{port}','--public-prefix','{basePath}']);
+  assert.equal(local.applications.sample.start.env.PUBLIC_PREFIX,'{basePath}');
+  assert.deepEqual(supplied.start.args,beforeArgs,'Registration must not rewrite caller data');
+  local.applications.sample.target='http://127.0.0.1:9883';
+  await writeFile(path.join(f.root,'config.local/apps.json'),json(local));
+  const effective=(await loadAppIntegrations(f.root)).sample;
+  assert.deepEqual(effective.start.args,['server.py','--port','9883','--public-prefix','/sample/']);
+  assert.equal(effective.start.env.PUBLIC_PREFIX,'/sample/');
+  assert.equal(effective.start.env.OTHER_VALUE,'{businessValue}');
+  assert.deepEqual(effective.healthExpected,{prefix:'/sample/'});
+});
+
+test('registration normalizes known port flags, rejects conflicting ports and leaves custom CLI arguments alone',async t=>{
+  const f=await fixture(t);
+  for(const [args,expected] of [
+    [['server.py','--port=9881'],['server.py','--port={port}']],
+    [['server.py','--port','{port}'],['server.py','--port','{port}']],
+    [['custom.exe','-listen','9881','--custom','{businessValue}'],['custom.exe','-listen','9881','--custom','{businessValue}']],
+  ]){
+    const plan=await planRegistration(f.root,{...dynamic,start:{...dynamic.start,args}});
+    const saved=JSON.parse(plan.files.find(item=>item.file==='config.local/apps.json').content);
+    assert.deepEqual(saved.applications.sample.start.args,expected);
+  }
+  for(const args of [['server.py','--port','9882'],['server.py','--port=9882'],['server.py','--port']]){
+    await assert.rejects(planRegistration(f.root,{...dynamic,start:{...dynamic.start,args}}),/门户端口/);
+  }
+});

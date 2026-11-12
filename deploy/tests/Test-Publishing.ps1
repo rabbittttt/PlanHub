@@ -78,6 +78,8 @@ Reject {& (Join-Path $deploy 'New-AppRelease.ps1') -PayloadPath $badStatic -Dest
 $builderFile=Join-Path $scratch 'fixture-builder.ps1'
 Put $builderFile 'param($Destination); [IO.Directory]::CreateDirectory($Destination)|Out-Null; [IO.File]::WriteAllText((Join-Path $Destination "server.py"),"# built fixture")'
 $builderProfile=[pscustomobject]@{kind='payload';sourceRevision='fixture-build';type='service';entryPoint='server.py';dataMode='external';healthPath='/health';build=[pscustomobject]@{command=(Get-Process -Id $PID).Path;cwd=$scratch;args=@('-NoProfile','-File',$builderFile,'-Destination','{output}')}}
+$builderProfile | Add-Member -NotePropertyName sourceRoot -NotePropertyValue $scratch
+$builderProfile.build.PSObject.Properties.Remove('cwd')
 $config.applications | Add-Member -NotePropertyName alpha -NotePropertyValue $builderProfile -Force
 Write-AppReleaseJson $configFile $config
 $builtResult=& $publish -AppId alpha -Version built1 -ConfigPath $configFile -Action Package -NonInteractive

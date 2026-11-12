@@ -171,3 +171,54 @@ test('service identity expectations reject a standalone instance with the wrong 
     await assert.rejects(loadAppIntegrations(f.root),/期望值/);
   }
 });
+
+
+test('changing only a service target updates launch arguments, environment and identity without altering app literals',async t=>{
+  const f=await fixture(t);
+  const proxy={type:'proxy',target:'http://127.0.0.1:19881',stripPrefix:true,rootRoutes:[],healthPath:'/healthz',healthKeys:['app'],
+    healthExpected:{app:'example',public_prefix:'{basePath}',port:'{port}',unchanged:42},
+    start:{cwd:'../service',command:'../runtime.exe',args:['server.py','--port','{port}','--host={host}','--public-prefix','{basePath}','{businessValue}'],
+      env:{APP_ORIGIN:'http://{host}:{port}',APP_PUBLIC_PREFIX:'{basePath}',APP_JSON:'{"value":"{businessValue}"}',APP_DATA:'../persistent'}}};
+  f.config.applications.service=proxy;
+  await writeFile(path.join(f.root,'integration/apps.json'),JSON.stringify(f.config));
+  for(const port of ['19881','19882']){
+    await writeFile(path.join(f.root,'config.local/apps.json'),JSON.stringify({applications:{service:{target:'http://127.0.0.1:'+port}}}));
+    const app=(await loadAppIntegrations(f.root)).service;
+    assert.deepEqual(app.start.args,['server.py','--port',port,'--host=127.0.0.1','--public-prefix','/service/','{businessValue}']);
+    assert.equal(app.start.env.APP_ORIGIN,'http://127.0.0.1:'+port);
+    assert.equal(app.start.env.APP_PUBLIC_PREFIX,'/service/');
+    assert.equal(app.start.env.APP_JSON,'{"value":"{businessValue}"}');
+    assert.equal(app.start.env.APP_DATA,'../persistent');
+    assert.deepEqual(app.healthExpected,{app:'example',public_prefix:'/service/',port,unchanged:42});
+  }
+  assert.equal(f.config.applications.service.start.args[2],'{port}','Reading config must not mutate template inputs');
+  await writeFile(path.join(f.root,'config.local/apps.json'),JSON.stringify({applications:{service:{target:'http://example.invalid:19883'}}}));
+  await assert.rejects(loadAppIntegrations(f.root),/回环/);
+});
+
+test('a template-launched fixture listens on the portal target and keeps its public prefix in the proxy',async t=>{
+  const f=await fixture(t);
+  const {spawnService,stopService}=await import('../scripts/service-process.mjs');
+  const net=await import('node:net');
+  const probe=net.createServer();await new Promise(r=>probe.listen(0,'127.0.0.1',r));
+  const port=probe.address().port;await new Promise(r=>probe.close(r));
+  const code="require('http').createServer((q,r)=>{r.setHeader('Content-Type','application/json');r.end(JSON.stringify({app:'fixture',prefix:process.env.PUBLIC_PREFIX,port:process.argv[1],path:q.url}));}).listen(Number(process.argv[1]),process.env.LISTEN_HOST);";
+  f.config.applications.service={type:'proxy',target:'http://127.0.0.1:'+port,stripPrefix:true,rootRoutes:[],healthPath:'/healthz',healthKeys:['app'],healthExpected:{app:'fixture',prefix:'{basePath}'},start:{cwd:'.',command:process.execPath,args:['-e',code,'{port}'],env:{PUBLIC_PREFIX:'{basePath}',LISTEN_HOST:'{host}'}}};
+  await writeFile(path.join(f.root,'integration/apps.json'),JSON.stringify(f.config));
+  const app=(await loadAppIntegrations(f.root)).service;
+  const child=spawnService(app.start.command,app.start.args,{cwd:app.start.cwd,env:{...process.env,...app.start.env},logDirectory:path.join(f.root,'fixture-logs')});
+  try{
+    const {probeServiceHealth}=await import('../scripts/health-check.mjs');
+    let healthy=false;
+    for(let i=0;i<60;i++){
+      if((await probeServiceHealth(app)).ok){healthy=true;break;}
+      await new Promise(r=>setTimeout(r,50));
+    }
+    assert.ok(healthy,'Template-launched fixture must be reachable at the target');
+    const origin=await listen(t,createServer({root:f.root,applications:{service:app}}));
+    const body=await (await fetch(origin+'/service/api/new-page')).json();
+    assert.deepEqual(body,{app:'fixture',prefix:'/service/',port:String(port),path:'/api/new-page'});
+  }finally{
+    stopService(child);await new Promise(r=>setTimeout(r,200));
+  }
+});

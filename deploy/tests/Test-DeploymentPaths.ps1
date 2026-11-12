@@ -132,12 +132,19 @@ try {
         }
     }
     Test-Case 'Versioned deployments share persistent storage without changing the child schema' {
-        $template = Join-Path $deploy 'sop.example.json'
+        $template = Join-Path $scratch 'legacy-shared-template.json'
+        $legacyTemplate = Read-Json (Join-Path $deploy 'sop.example.json')
+        $legacyTemplate | Add-Member -NotePropertyName storage_root -NotePropertyValue '../shared' -Force
+        Save-Fixture $template $legacyTemplate
         $first = Resolve-SopGatewayTemplate -Path $template -DeploymentRoot $releaseA
         $second = Resolve-SopGatewayTemplate -Path $template -DeploymentRoot $releaseB
         foreach ($name in $gatewayFields) { Assert-Equal $first.$name $second.$name "Storage changed with release version: $name" }
         Assert-Equal $first.data_dir (Join-Path $scratch 'shared\data\sop') 'Default storage must be outside both releases.'
         Assert-Equal $first.PSObject.Properties['storage_root'] $null 'Portal metadata leaked into child configuration.'
+    }
+    Test-Case 'Current gateway template uses the selected deployment root by default' {
+        $resolved = Resolve-SopGatewayTemplate -Path (Join-Path $deploy 'sop.example.json') -DeploymentRoot $releaseA
+        Assert-Equal $resolved.data_dir (Join-Path $releaseA 'data\sop') 'Current default must match the unified persistent directory.'
     }
     Test-Case 'Gateway relative paths become absolute without rewriting the template' {
         $before = [IO.File]::ReadAllText($gatewayPath)

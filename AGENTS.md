@@ -67,3 +67,11 @@
 - 发布以 BAT/PowerShell 和不可变产物为基础，不依赖外部发布平台；内网 Jenkins 可选。未配置允许的远程通道时，发送产物后需在部署电脑执行，不能把发送成功描述成上线成功。
 - 本机配置留在被忽略的 config.local；公开仓库仅维护通用工具、模板和入口。程序包不覆盖生产数据，首次 IIS/服务身份配置在目标机由部署人员明确完成。
 - 日常说明集中 README、docs/deployment.md 和 docs/child-app-developer-guide.md，从项目首页进入。
+
+## 配置只维护一个来源
+
+- 门户决定接入端口并通过公开启动参数传给服务，不读取或跟随子项目的独立默认端口；订单分析当前门户默认 8767，不另规划独立端口。
+- 本地服务以 integration/apps.json（及本机覆盖）的 target 为端口来源；start.args/env、healthExpected 中使用 {port}/{host}/{basePath}，不再复制端口和固定前缀。新增应用使用相同约定。
+- B 的统一运行配置为 config.local/deployment.json：publicOrigin、sharedDirectory、serviceAccount 提供环境默认值，应用可显式覆盖。前缀由应用 ID 生成，地址、启动参数及环境变量使用派生值；每应用 port 统一驱动启动与代理。
+- 首次建站和 SOP 初始化优先用 -DeploymentConfigPath 读取同一运行配置。旧格式工具只用于兼容已有环境；不要重新引入手工保持两套端口、地址或路径一致的流程。
+- SOP 生成的网关、身份及 IIS 代理文件属于派生产物。发布和启动前核对实际数据路径、来源和身份配置，遇到差异明确报错；不得自动移动数据、轮换密钥或修改服务器设置来消除差异。

@@ -16,7 +16,6 @@
       "sourceRoot": "../SOP维护",
       "build": {
         "command": "../.venv/Scripts/python.exe",
-        "cwd": "../SOP维护",
         "args": [
           "-B",
           "scripts/build_release.py",
@@ -31,7 +30,6 @@
       "sourceRoot": "../数据速查",
       "build": {
         "command": "../.venv/Scripts/python.exe",
-        "cwd": "../数据速查",
         "args": [
           "-B",
           "scripts/build_release.py",
@@ -51,7 +49,6 @@
       "healthPath": "/health",
       "build": {
         "command": "../.venv/Scripts/python.exe",
-        "cwd": "../订单分析/scripts",
         "args": [
           "-B",
           "generate_html/package_release.py",
@@ -65,7 +62,6 @@
       "sourceRoot": "../销量预测",
       "build": {
         "command": "../.venv/Scripts/python.exe",
-        "cwd": "../销量预测",
         "args": [
           "-B",
           "scripts/build_release.py",

@@ -1,9 +1,8 @@
 ﻿# Shared validation for offline deployment. Never run child business code here.
 Set-StrictMode -Version Latest
 . (Join-Path $PSScriptRoot 'App.Release.ps1')
-function Get-Setting($Object, [string]$Name, $Default = $null) {
-    if ($null -ne $Object -and $null -ne $Object.PSObject.Properties[$Name]) { return $Object.$Name }; return $Default
-}
+. (Join-Path $PSScriptRoot 'Environment.Config.ps1')
+. (Join-Path $PSScriptRoot 'Sop.Common.ps1')
 function Test-Within([string]$Root, [string]$Path) {
     return $Path.Equals($Root,[StringComparison]::OrdinalIgnoreCase) -or $Path.StartsWith($Root.TrimEnd('\')+'\',[StringComparison]::OrdinalIgnoreCase)
 }
@@ -15,11 +14,11 @@ function Assert-LocalPath([string]$Path) {
 }
 function Read-InstallPlan([string]$ReleasePath, [string]$ConfigPath) {
     $release = Assert-AppRelease $ReleasePath
-    $configFile = (Get-Item -LiteralPath $ConfigPath).FullName
-    $config = Get-Content -LiteralPath $configFile -Raw -Encoding UTF8 | ConvertFrom-Json
-    $root = Resolve-LocalDeploymentPath ([string]$config.deploymentRoot) (Split-Path -Parent $configFile) 'deploymentRoot'
+    $settings = Read-RuntimeSettings $ConfigPath
+    $configFile = $settings.ConfigFile
+    $config = $settings.Config
+    $root = $settings.Root
     Assert-LocalPath $root
-    if ([string]$config.siteName -notmatch '^[A-Za-z0-9][A-Za-z0-9_-]{0,63}$') { throw 'Invalid siteName.' }
     $id = $release.Manifest.appId
     $definition = Get-Setting $config.applications $id
     if ($null -eq $definition) { throw "No local deployment binding for $id." }
@@ -70,6 +69,7 @@ function Read-InstallPlan([string]$ReleasePath, [string]$ConfigPath) {
         }
         if ($id -eq 'sop') {
             if ('--gateway-config' -notin $definition.arguments -or $null -eq (Get-Setting (Get-Setting $definition 'secretEnvironmentFiles') 'SOP_PROXY_SECRET')) { throw 'SOP needs --gateway-config and its existing SOP_PROXY_SECRET file binding.' }
+            Assert-SopRuntimeConsistency -Root $root -Definition $definition -PublicOrigin $settings.PublicOrigin -RequireInitialized
         }
     }
     return [pscustomobject]@{Release=$release;Root=$root;Definition=$definition;Kind=$kind;SiteName=$config.siteName;Destination=$destination;Id=$id;ConfigFile=$configFile;StateRoot=(Join-Path $root ('state\'+$id));HealthUrl=$healthUrl.AbsoluteUri}
