@@ -25,6 +25,15 @@ $portal=Assert-AppRelease $result.releasePath
 Check ($portal.Manifest.appId -eq 'planhub' -and $portal.Files.Count -eq 3) 'Portal package failed.'
 Check ($portal.Files.ContainsKey('web.config')) 'Portal IIS configuration is absent.'
 Check ((Get-FileHash -LiteralPath $portal.Files['web.config']).Hash -eq (Get-FileHash -LiteralPath (Join-Path $deploy 'portal.web.config')).Hash) 'Portal IIS baseline was changed.'
+# The normal interactive entry packages without an action menu or a transfer,
+# even when a private inbox is already configured. No real deployment is used.
+function Read-Host { throw 'Packaging must not prompt for sending or deployment.' }
+try {
+    $defaultResult=& $publish -AppId planhub -Version default-package -ConfigPath $configFile
+    Check ($defaultResult.action -eq 'Package') 'Default interactive action must only package.'
+    Check (Test-Path -LiteralPath (Join-Path $defaultResult.releasePath 'app-release.json')) 'Default package was not created.'
+    Check (-not(Test-Path -LiteralPath (Join-Path $workspace 'received'))) 'Default packaging unexpectedly sent files.'
+} finally { Remove-Item Function:Read-Host }
 Reject {& $publish -AppId planhub -Version v1 -ConfigPath $configFile -NonInteractive}
 Reject {& $publish -AppId '../bad' -ConfigPath $configFile -NonInteractive}
 Reject {& $publish -AppId unknown -ConfigPath $configFile -NonInteractive}

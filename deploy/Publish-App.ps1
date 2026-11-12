@@ -35,12 +35,7 @@ if (-not $AppId) {
 Assert-PublishId $AppId
 if(-not @($apps | Where-Object {$_.id -ceq $AppId}).Count){throw 'Register the application before publishing it.'}
 if(-not $Action) {
-    if($NonInteractive){$Action='Package'}else{
-        Write-Host '1. 只生成发布包  2. 生成并发送到 B 电脑  3. 生成、发送并远程部署（需已配置 WinRM）'
-        Write-Host '4. 发送已有发布包  5. 发送已有发布包并远程部署（重试时可选）'
-        $choice=Read-Host '选择操作（回车为 1）'
-        $Action=switch($choice){''{'Package'} '1'{'Package'} '2'{'Send'} '3'{'Deploy'} '4'{'SendExisting'} '5'{'DeployExisting'} default{throw 'Invalid action.'}}
-    }
+    $Action='Package'
 }
 if($Action -ne 'Package' -and -not(Get-PublishValue $config 'inbox' '')) {
     if($NonInteractive){throw 'Set inbox in the private publish config before sending.'}
