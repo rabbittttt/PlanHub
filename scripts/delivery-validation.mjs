@@ -6,6 +6,7 @@ import {readRelease} from './release-validation.mjs';
 
 export const DELIVERY_SCHEMA=2;
 export const DELIVERY_PLATFORM='windows/amd64+linux/amd64';
+export const runtimeContract=bindings=>Object.fromEntries(Object.entries(bindings).map(([id,{previewPort,...binding}])=>[id,binding]));
 export const readJson=async file=>JSON.parse((await readFile(file,'utf8')).replace(/^\uFEFF/,''));
 export async function hashFile(file){const hash=crypto.createHash('sha256');for await(const bytes of createReadStream(file))hash.update(bytes);return hash.digest('hex');}
 export function safeName(name){return typeof name==='string'&&name.length>0&&!/[\\:*?"<>|\x00-\x1f]/.test(name)&&!name.startsWith('/')&&name.split('/').every(p=>p&&!p.startsWith('.')&&!/[. ]$/.test(p));}
@@ -41,10 +42,14 @@ export async function validateReleases(releases,{complete=false}={}){
   }
 }
 export function validateBindings(bindings,releases){
-  const ports=new Set();
+  const ports=new Set(),previewPorts=new Set([4173]);
   for(const [id,binding] of Object.entries(bindings)){
-    if(!/^[a-z][a-z0-9-]{0,39}$/.test(id)||!Number.isInteger(binding.port)||binding.port<1024||binding.port>65535||binding.port===4174||ports.has(binding.port))throw new Error('Invalid or duplicate runtime port: '+id);
+    if(!/^[a-z][a-z0-9-]{0,39}$/.test(id)||!Number.isInteger(binding.port)||binding.port<1024||binding.port>65535||ports.has(binding.port))throw new Error('Invalid or duplicate runtime port: '+id);
     ports.add(binding.port);
+    if(binding.previewPort!==undefined){
+      if(id==='planhub'||!Number.isInteger(binding.previewPort)||binding.previewPort<1024||binding.previewPort>65535||previewPorts.has(binding.previewPort))throw new Error('Invalid or duplicate preferred preview port: '+id);
+      previewPorts.add(binding.previewPort);
+    }
   }
   for(const [id,release] of Object.entries(releases)){
     if(!bindings[id]||bindings[id].type!==release.manifest.type)throw new Error('Configure the runtime binding for '+id);
@@ -70,7 +75,7 @@ export async function validateDelivery(packageRoot,{requireComplete=false}={}){
   for(const id of manifest.applications){releases[id]=await readRelease(path.join(root,'releases',id),id);if(manifest.versions?.[id]!==releases[id].manifest.version)throw new Error('Delivery version differs: '+id);}
   await validateReleases(releases,{complete:manifest.complete});
   const bindings=await readJson(path.join(root,'bindings.json'));validateBindings(bindings,releases);
-  if(crypto.createHash('sha256').update(JSON.stringify(bindings)).digest('hex')!==manifest.contractHash)throw new Error('Runtime bindings differ from delivery');
+  if(crypto.createHash('sha256').update(JSON.stringify(runtimeContract(bindings))).digest('hex')!==manifest.contractHash)throw new Error('Runtime bindings differ from delivery');
   for(const file of ['runtime/node/node.exe','launcher/native-preview.mjs','deploy.ps1','compose.json','build-docker.ps1'])if(!Object.hasOwn(manifest.files,file))throw new Error('Required launcher file is missing: '+file);
   if(Object.values(releases).some(release=>release.manifest.type==='service')&&!Object.hasOwn(manifest.files,'runtime/python/python.exe'))throw new Error('Bundled Python is missing');
   return {root,manifest,bindings,releases};

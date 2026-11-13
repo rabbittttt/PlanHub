@@ -70,7 +70,8 @@
 
 ## 配置只维护一个来源
 
-- 门户决定接入端口并通过公开启动参数传给服务，不读取或跟随子项目的独立默认端口；订单分析当前门户默认 8767，不另规划独立端口。
-- 本地服务以 integration/apps.json（及本机覆盖）的 target 为端口来源；start.args/env、healthExpected 中使用 {port}/{host}/{basePath}，不再复制端口和固定前缀。新增应用使用相同约定。
-- Docker 内部绑定集中在 deploy/docker/bindings.json，端口统一驱动启动与代理。B 的唯一环境配置为包外 planhub-runtime/config.json；公共地址、共享根和密钥只在这里维护。
+- 门户决定接入端口并通过公开启动参数传给服务，不读取或跟随子项目的独立默认端口；源码开发联调的订单分析默认 8767，发布包按下方运行绑定分配端口。
+- 源码开发联调以 integration/apps.json（及本机覆盖）的 target 为端口来源；start.args/env、healthExpected 中使用 {port}/{host}/{basePath}，不再复制端口和固定前缀。新增应用使用相同约定。
+- 发布包绑定集中在 deploy/docker/bindings.json：port 为 Docker 内部固定端口，previewPort 为 Windows 本机试运行的优先后台端口（现有应用 43171–43176）。试运行遇到后台端口占用或无法绑定时自动选择空闲回环端口，将实际映射记入快照 native-ports.json，启动、代理和健康检查共用该映射；不复用或停止未知进程，不改子应用默认端口。
+- 本机试运行和正式 Docker 的门户入口默认统一为 4173，切换前停止当前服务；公共入口冲突时明确报错，不自动改成其他端口。B 的唯一环境配置为包外 planhub-runtime/config.json；公共地址、共享根和密钥只在这里维护。试运行映射为派生状态，不是第二份环境配置。
 - SOP 网关文件属于派生产物。发布和启动前核对实际数据路径、来源和身份配置，遇到差异明确报错；不得自动移动数据、轮换密钥或修改服务器设置来消除差异。

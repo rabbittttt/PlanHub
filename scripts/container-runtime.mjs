@@ -10,12 +10,12 @@ import {readRelease} from './release-validation.mjs';
 import {validatePreviewConfig,startLocalPreviewPortal} from './local-preview-gateway.mjs';
 
 export const readJson=async file=>JSON.parse((await readFile(file,'utf8')).replace(/^\uFEFF/,''));
-export function validateRuntime(config){
+export function validateRuntime(config,{allowLegacyPreview=false}={}){
   const origin=new URL(config.publicOrigin);
   if(config.schemaVersion!==1||!['http:','https:'].includes(origin.protocol)||origin.origin!==config.publicOrigin||origin.hostname.endsWith('.invalid'))throw new Error('Set publicOrigin to the company gateway origin, without a path or trailing slash.');
   for(const key of ['proxySecret','sopSecret','vehicleSecret'])if(!/^[a-zA-Z0-9_-]{32,}$/.test(config[key]??''))throw new Error('Missing external secret: '+key);
   for(const key of ['sharedDirectory','sopSharedConfig','quicklookSourceBase'])privatePath('/runtime',config[key]);
-  if(Object.hasOwn(config,'preview'))validatePreviewConfig(config);
+  if(Object.hasOwn(config,'preview'))validatePreviewConfig(config,{allowLegacy:allowLegacyPreview});
   return config;
 }
 export function privatePath(root,value){

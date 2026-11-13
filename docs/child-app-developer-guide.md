@@ -98,7 +98,7 @@ node scripts/register-app.mjs --config config.local/new-app.json
 - **订单分析**：动态服务 /orderiq/，健康接口 /health。本地沿用原项目的数据选择；正式部署显式传 --input、--data-dir、--state-dir、--web-dir。原 Git 仓库在订单分析/scripts，构建入口 generate_html/package_release.py；直接从同版模板生成发布前端，不依赖 Excel、旧 runtime 或已生成批次。业务数据由部署后的原服务处理，打包无需先运行 main.py。
 - **数据速查**：动态服务 /quicklook/，健康接口 /healthz；新版自动扫描使用 SHARED_DATA_ROOT，工作区来源的相对路径仍由 DATA_QUICKLOOK_SOURCE_BASE 解释。
 - **线索声量**：当前可见交付仍是 lead-dashboard.html 静态样例。若内网已改动态，在内网重新运行接入向导更新同一 leads ID，再配置该项目发布包；不能将样例当作正式动态验收。
-- **销量预测**：动态服务 /forecast/，默认端口 8780，原项目 dynamic/serve.py 启动；scripts/build_release.py 构建标准包。--public-prefix 配置公共前缀，--data-dir 或 SALES_FORECAST_DATA_DIR 外置页面、缓存和日志，SHARED_DATA_ROOT 指定共享输入。/healthz 只检测服务，/readyz 区分首次等待、就绪与生成失败；/api/status 提供更新状态。首次生成前页面自动等待，不把尚无报表当成进程启动失败。静态入口仍可在原项目独立使用。
+- **销量预测**：动态服务 /forecast/，原项目独立运行默认端口 8780，dynamic/serve.py 启动；scripts/build_release.py 构建标准包。--public-prefix 配置公共前缀，--data-dir 或 SALES_FORECAST_DATA_DIR 外置页面、缓存和日志，SHARED_DATA_ROOT 指定共享输入。/healthz 只检测服务，/readyz 区分首次等待、就绪与生成失败；/api/status 提供更新状态。首次生成前页面自动等待，不把尚无报表当成进程启动失败。静态入口仍可在原项目独立使用。
 
 SOP 的接入说明与协作约定已同步当前实现：门户默认使用持久数据库，Excel 从页面导入导出，仅显式 --snapshot 才使用测试副本。
 
@@ -109,7 +109,11 @@ SOP 的接入说明与协作约定已同步当前实现：门户默认使用持�
 
 Node.js 完整许可证从运行程序所在目录读取（支持文本和 RTF）；缺失时使用 `deploy/licenses/node/index.json` 登记的同版本官方离线文件，不在内网打包时下载。维护者新增离线版本时须保留完整第三方声明、官方来源和 SHA256；许可证原始字节由 `.gitattributes` 保留。发布前先预检，普通打包人员无需手工补许可证。
 
-完整交付包提供 `prepare.cmd` 创建包外的 `planhub-runtime/`，提供 `preview.cmd` / `stop-preview.cmd` 在 B 本机验收。它们使用随包 Windows 运行环境，不依赖 A 的源码或 B 预装 Node.js、Python、Docker。批处理明确启用快照，将规则、共享输入和应用状态复制到独立的 `planhub-preview/` 后运行；共享输入也需复制，因为销量预测可能写入派生表。原数据服务须先停止，避免复制正在写入的数据库。试运行只监听 `127.0.0.1:4174`，以 B 实际 Windows 用户标识记录操作人（登录名不符合现有传输字符契约时记录该用户的真实 SID）。预览数据与正式目录独立，不合并；停止后保留副本，再次试运行复用，显式 `-RefreshSnapshot` 新建副本并保留旧副本。
+完整交付包提供 `prepare.cmd` 创建包外的 `planhub-runtime/`，提供 `preview.cmd` / `stop-preview.cmd` 在 B 本机验收。它们使用随包 Windows 运行环境，不依赖 A 的源码或 B 预装 Node.js、Python、Docker。批处理明确启用快照，将规则、共享输入和应用状态复制到独立的 `planhub-preview/` 后运行；共享输入也需复制，因为销量预测可能写入派生表。原数据服务须先停止，避免复制正在写入的数据库。试运行公共入口为 `127.0.0.1:4173`，以 B 实际 Windows 用户标识记录操作人（登录名不符合现有传输字符契约时记录该用户的真实 SID）。预览数据与正式目录独立，不合并；停止后保留副本，再次试运行复用，显式 `-RefreshSnapshot` 新建副本并保留旧副本。
+
+本机试运行后台端口也由 `deploy/docker/bindings.json` 统一登记：`previewPort` 是优先端口，依次为 leads `43171`、orderiq `43172`、sop `43173`、forecast `43174`、quicklook `43175`、vehicle-config `43176`。占用或无法绑定时自动选择空闲回环端口；实际端口只记录在当前快照的 `native-ports.json`，启动参数、健康检查和门户代理均使用这份映射，不修改不可变发布包、源配置或子项目默认值。未知进程不复用、不停止。公共入口 `4173` 固定，冲突时应先确认并停止原门户，不自动换号。Docker 的 `port` 仍为容器内固定端口；部署时只发布门户端口，本机试运行和正式服务不可同时占用宿主 `4173`。
+
+`previewPort` 仅是本机分配偏好，不计入正式运行契约的 `contractHash`。仅修改试运行端口策略无需新建数据副本；旧 `4174` 副本先通过归属校验停止，再更新该副本的公共地址与端口为 `4173`，原数据和正式 `planhub-runtime/config.json` 保留。
 
 后续由部署同事安装并检查 Docker，运行包内 `build-docker.cmd` 构建镜像，再用 `start.cmd` 正式部署；构建需要可用的基础镜像及 Python 依赖源。Windows 本机验收不能替代 Linux 容器业务验收。门户和每个应用各自一个镜像、一个容器；网络辅助容器只保留共同网络空间，使现有回环监听与 SOP 回环信任条件保持有效。只有门户端口对宿主开放，应用按整段前缀代理，业务文件按原清单校验并原样装入镜像。
 

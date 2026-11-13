@@ -97,6 +97,12 @@ try{
     if($null -ne $state -and -not $RefreshSnapshot){
         if($state.sourceConfigHash -cne $sourceHash -or $state.contractHash -cne $manifest.contractHash -or (@($state.applications|Sort-Object) -join ',') -cne (@($manifest.applications|Sort-Object) -join ',')){throw 'Source configuration or applications changed. Run preview.cmd -RefreshSnapshot.'}
         Write-Host ('Reusing local snapshot: '+$runtime)
+        if($previewConfig.port -eq 4174 -and $previewConfig.publicOrigin -ceq 'http://127.0.0.1:4174'){
+            Native 'stop' $runtime
+            $previewConfig.port=4173;$previewConfig.publicOrigin='http://127.0.0.1:4173'
+            Save-Json (Join-Path $runtime 'config.json') $previewConfig
+            Write-Host 'Local preview now uses port 4173. Existing trial data retained.'
+        }
         if($previewConfig.preview.user -cne $user){Native 'stop' $runtime;$previewConfig.preview.user=$user;Save-Json (Join-Path $runtime 'config.json') $previewConfig}
     }else{
         if($null -ne $state){
@@ -132,7 +138,7 @@ try{
         $targetRules=Join-Path $runtime $settings.sopSharedConfig
         [void][IO.Directory]::CreateDirectory((Split-Path -Parent $targetRules))
         Copy-Item -LiteralPath $rules -Destination $targetRules -Force
-        $settings.publicOrigin='http://127.0.0.1:4174';$settings.listenAddress='127.0.0.1';$settings.port=4174
+        $settings.publicOrigin='http://127.0.0.1:4173';$settings.listenAddress='127.0.0.1';$settings.port=4173
         $settings.proxySecret=Secret;$settings.sopSecret=Secret;$settings.vehicleSecret=Secret
         $settings|Add-Member -NotePropertyName preview -NotePropertyValue ([pscustomobject]@{schemaVersion=1;user=$user;sourceDirectory=$source;createdAt=[DateTime]::UtcNow.ToString('o')})
         Save-Json (Join-Path $runtime 'config.json') $settings
@@ -141,7 +147,7 @@ try{
         $sourceLock.Dispose();$sourceLock=$null
     }
     Native 'start' $runtime
-    Write-Host 'Open http://127.0.0.1:4174/ in the browser on this computer.'
+    Write-Host 'Open http://127.0.0.1:4173/ in the browser on this computer.'
     Write-Host 'Use stop-preview.cmd to stop. Trial edits remain in the snapshot only.'
 }finally{
     if($null -ne $sourceLock){$sourceLock.Dispose()}

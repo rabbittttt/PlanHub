@@ -9,7 +9,7 @@ import {mkdtemp,mkdir,writeFile,readFile,readdir,rm,cp} from 'node:fs/promises';
 import {buildDelivery} from '../scripts/build-delivery.mjs';
 import {collectWindowsRuntime} from '../scripts/build-delivery.mjs';
 import {spawnSync} from 'node:child_process';
-import {hashFile,validateDelivery} from '../scripts/delivery-validation.mjs';
+import {hashFile,validateDelivery,runtimeContract,validateBindings} from '../scripts/delivery-validation.mjs';
 import {readRelease} from '../scripts/release-validation.mjs';
 import {validateRuntime,containerSpec,createContainerPortal,checkService} from '../scripts/container-runtime.mjs';
 const root=path.resolve(path.dirname(fileURLToPath(import.meta.url)),'..');
@@ -109,6 +109,14 @@ test('container contracts keep original loopback, public prefix, external paths 
   const sop=containerSpec('sop',bindings.sop,config);assert.equal(sop.env.SOP_LOCAL_RELEASE_SECRET,config.sopSecret);
   const vehicle=containerSpec('vehicle-config',bindings['vehicle-config'],config);assert.ok(vehicle.args.includes('--require-proxy-identity'));assert.equal(vehicle.env.VEHICLE_CONFIG_PROXY_SECRET,config.vehicleSecret);
   const quick=containerSpec('quicklook',bindings.quicklook,{...config,quicklookSourceBase:'old-source-base'});assert.equal(quick.env.DATA_QUICKLOOK_SOURCE_BASE,'/runtime/old-source-base');
+});
+test('native port preferences do not change the formal container contract or collide with its public entrance',async()=>{
+  const bindings=JSON.parse(await readFile(path.join(root,'deploy/docker/bindings.json')));
+  const changed=structuredClone(bindings);changed.quicklook.previewPort=43275;
+  assert.deepEqual(runtimeContract(changed),runtimeContract(bindings));
+  assert.equal(bindings.quicklook.previewPort,43175);assert.equal(bindings.quicklook.port,8765);
+  changed.quicklook.previewPort=4173;assert.throws(()=>validateBindings(changed,{}),/preferred preview port/);
+  changed.quicklook.previewPort=changed.sop.previewPort;assert.throws(()=>validateBindings(changed,{}),/preferred preview port/);
 });
 async function listen(t,server){await new Promise(resolve=>server.listen(0,'127.0.0.1',resolve));t.after(()=>new Promise(resolve=>{server.closeAllConnections?.();server.close(resolve);}));return server.address().port;}
 function request(url,headers={}){return new Promise((resolve,reject)=>{const req=http.get(url,{headers},res=>{res.resume();res.on('end',()=>resolve({status:res.statusCode}));});req.on('error',reject);});}

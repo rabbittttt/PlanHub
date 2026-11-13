@@ -55,7 +55,7 @@ try{
     $statePath=Join-Path $scratch 'planhub-preview/active.json';$state=Get-Content -LiteralPath $statePath -Raw|ConvertFrom-Json
     $runtime=Join-Path (Join-Path $scratch 'planhub-preview') $state.snapshot
     $config=Get-Content -LiteralPath (Join-Path $runtime 'config.json') -Raw|ConvertFrom-Json
-    Check ($config.publicOrigin -ceq 'http://127.0.0.1:4174' -and $config.listenAddress -ceq '127.0.0.1') 'Preview did not use the fixed loopback browser origin'
+    Check ($config.publicOrigin -ceq 'http://127.0.0.1:4173' -and $config.port -eq 4173 -and $config.listenAddress -ceq '127.0.0.1') 'Preview did not use the fixed loopback browser origin'
     Check ($config.preview.user -match '^[\x20-\x7e]+$' -and $config.preview.user.Contains('\')) 'Launching Windows identity was not recorded'
     Check ($config.proxySecret -cne $settings.proxySecret) 'Original proxy secret was reused'
     Check (Same-Tree $original (Tree $source)) 'Snapshot creation changed original files'
@@ -63,8 +63,16 @@ try{
     Put (Join-Path $runtime 'data/sop/sop.sqlite3') 'trial edits'
     & $entry -Action Stop
     Check ([IO.File]::ReadAllText((Join-Path $runtime 'data/sop/sop.sqlite3')) -ceq 'trial edits') 'Stopping removed trial data'
+    $config.publicOrigin='http://127.0.0.1:4174';$config.port=4174
+    Save (Join-Path $runtime 'config.json') $config
+    Put (Join-Path $runtime 'fixture-fail.json') 'fixture stop failure'
+    Reject {& $entry -Action Start -Snapshot}
+    Check ((Get-Content -LiteralPath (Join-Path $runtime 'config.json') -Raw|ConvertFrom-Json).port -eq 4174) 'Legacy snapshot config changed before its worker could stop'
+    Remove-Item -LiteralPath (Join-Path $runtime 'fixture-fail.json')
     & $entry -Action Start -Snapshot
     Check ([IO.File]::ReadAllText((Join-Path $runtime 'data/sop/sop.sqlite3')) -ceq 'trial edits') 'Restart replaced trial data'
+    $upgraded=Get-Content -LiteralPath (Join-Path $runtime 'config.json') -Raw|ConvertFrom-Json
+    Check ($upgraded.port -eq 4173 -and $upgraded.publicOrigin -ceq 'http://127.0.0.1:4173') 'Legacy snapshot did not migrate to unified public port'
     & $entry -Action Start -Snapshot -RefreshSnapshot
     $next=Get-Content -LiteralPath $statePath -Raw|ConvertFrom-Json
     Check ($next.snapshot -cne $state.snapshot) 'Refresh overwrote the previous snapshot'

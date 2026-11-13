@@ -1,11 +1,14 @@
 // Portal-owned loopback preview bridge. The authenticated portal stays intact.
 import http from 'node:http';
 
-export const LOCAL_PREVIEW_ORIGIN='http://127.0.0.1:4174';
+export const LOCAL_PREVIEW_PORT=4173;
+export const LOCAL_PREVIEW_ORIGIN=`http://127.0.0.1:${LOCAL_PREVIEW_PORT}`;
 
-export function validatePreviewConfig(config){
+export function validatePreviewConfig(config,{allowLegacy=false}={}){
   const preview=config?.preview;
-  if(!preview||typeof preview!=='object'||Array.isArray(preview)||preview.schemaVersion!==1||config.publicOrigin!==LOCAL_PREVIEW_ORIGIN||config.port!==4174||config.listenAddress!=='127.0.0.1')throw new Error('Local preview requires schema 1 and http://127.0.0.1:4174 bound to 127.0.0.1.');
+  const originMatches=config?.publicOrigin===LOCAL_PREVIEW_ORIGIN&&config?.port===LOCAL_PREVIEW_PORT;
+  const legacyMatches=allowLegacy&&config?.publicOrigin==='http://127.0.0.1:4174'&&config?.port===4174;
+  if(!preview||typeof preview!=='object'||Array.isArray(preview)||preview.schemaVersion!==1||(!originMatches&&!legacyMatches)||config.listenAddress!=='127.0.0.1')throw new Error('Local preview requires schema 1 and '+LOCAL_PREVIEW_ORIGIN+' bound to 127.0.0.1.');
   if(typeof preview.user!=='string'||preview.user.length>100||!/^([A-Za-z0-9_.-]+\\[A-Za-z0-9_.-]+|[A-Za-z0-9_.+-]+@[A-Za-z0-9.-]+)$/.test(preview.user))throw new Error('Local preview requires the launching Windows account or its SID identity.');
   if(typeof preview.sourceDirectory!=='string'||!preview.sourceDirectory.trim()||/[\x00-\x1f\x7f]/.test(preview.sourceDirectory)||typeof preview.createdAt!=='string'||!Number.isFinite(Date.parse(preview.createdAt)))throw new Error('Local preview requires snapshot source metadata.');
   if(typeof config.proxySecret!=='string'||!/^[A-Za-z0-9_-]{32,}$/.test(config.proxySecret))throw new Error('Local preview requires its own server-side proxy secret.');
@@ -22,7 +25,7 @@ function withoutTransportIdentity(headers,{allowControl=false}={}){
 function permitted(request,config){
   const names=request.rawHeaders.filter((_,index)=>index%2===0).map(name=>name.toLowerCase());
   if(names.filter(name=>name==='host').length!==1||['origin','sec-fetch-site'].some(key=>names.filter(name=>name===key).length>1))return false;
-  if(request.headers.host!=='127.0.0.1:4174')return false;
+  if(request.headers.host!==new URL(config.publicOrigin).host)return false;
   if(request.headers.origin!==undefined&&request.headers.origin!==config.publicOrigin)return false;
   if(request.headers['sec-fetch-site']!==undefined&&!['none','same-origin','same-site'].includes(request.headers['sec-fetch-site']))return false;
   return typeof request.url==='string'&&request.url.startsWith('/')&&!request.url.startsWith('//');
@@ -40,7 +43,7 @@ export function createLocalPreviewGateway({config,targetPort,allowControl=false}
     };
     if(!permitted(request,config)){request.resume();send(403,'Use the local preview address on this computer.');return;}
     const headers=withoutTransportIdentity(request.headers,{allowControl});
-    headers.host='127.0.0.1:4174';
+    headers.host=new URL(config.publicOrigin).host;
     headers['x-planhub-key']=config.proxySecret;
     headers['x-planhub-user']=preview.user;
     const upstream=http.request({hostname:'127.0.0.1',port:targetPort,path:request.url,method:request.method,headers},incoming=>{

@@ -4,7 +4,7 @@ import {writeFile,mkdir,cp,rename,access,mkdtemp,rm} from 'node:fs/promises';
 import {spawnSync} from 'node:child_process';
 import {fileURLToPath,pathToFileURL} from 'node:url';
 import {readRelease} from './release-validation.mjs';
-import {DELIVERY_SCHEMA,DELIVERY_PLATFORM,readJson,hashFile,noLinks,deliveryFiles,validateReleases,validateBindings,validateDelivery} from './delivery-validation.mjs';
+import {DELIVERY_SCHEMA,DELIVERY_PLATFORM,runtimeContract,readJson,hashFile,noLinks,deliveryFiles,validateReleases,validateBindings,validateDelivery} from './delivery-validation.mjs';
 import {createDockerMaterials} from './build-docker.mjs';
 import {resolveNodeLicense} from './node-runtime-license.mjs';
 
@@ -57,7 +57,7 @@ export async function buildDelivery(releasePaths,destination,{complete=false,roo
     await collectRuntime(path.join(output,'runtime'),{python,requirements,root});
     const images=await createDockerMaterials(releases,output,{bindings,moduleNames:containerModules});
     const files={};for(const name of await deliveryFiles(output))files[name]=await hashFile(path.join(output,name));
-    await json(path.join(output,'delivery.json'),{schemaVersion:DELIVERY_SCHEMA,complete,platform:DELIVERY_PLATFORM,contractHash:crypto.createHash('sha256').update(JSON.stringify(bindings)).digest('hex'),applications:Object.keys(releases),images,files,versions:Object.fromEntries(Object.entries(releases).map(([id,release])=>[id,release.manifest.version]))});
+    await json(path.join(output,'delivery.json'),{schemaVersion:DELIVERY_SCHEMA,complete,platform:DELIVERY_PLATFORM,contractHash:crypto.createHash('sha256').update(JSON.stringify(runtimeContract(bindings))).digest('hex'),applications:Object.keys(releases),images,files,versions:Object.fromEntries(Object.entries(releases).map(([id,release])=>[id,release.manifest.version]))});
     await validateDelivery(output);
     await rename(output,destination);
   }catch(error){await rm(output,{recursive:true,force:true});throw error;}
