@@ -27,7 +27,8 @@ $apps=@([pscustomobject]@{id='planhub';name='计划工作台门户'})
 $apps+=@($registry.groups | ForEach-Object {$_.apps} | Where-Object {$_.enabled})
 if (-not $AppId -and -not $All) {
     if($NonInteractive){throw 'AppId is required.'}
-    Write-Host '0. 全部打包'
+    Write-Host '0. 生成整套交付文件夹（完整复制到 B）'
+    Write-Host '其他编号用于单个应用更新：'
     for($i=0;$i -lt $apps.Count;$i++){Write-Host ("{0}. {1} ({2})" -f ($i+1),$apps[$i].name,$apps[$i].id)}
     $selected=Read-Host '选择需要发布的应用编号'
     $number=0
@@ -58,11 +59,14 @@ if($All) {
     foreach($item in $failures){Write-Host ("失败 {0}：{1}" -f $item.appId,$item.message)}
     Write-Host '仅生成独立版本包，尚未传送或部署。失败项修复后可单独选择重试。'
     if($failures.Count){throw 'Some applications could not be packaged. See the summary above; this batch is incomplete.'}
-    $bundleDestination=Join-Path $root ('staging/bundles/PlanHub-'+(Get-Date -Format 'yyyyMMdd-HHmmss-fff'))
+    $bundleDestination=Join-Path $root ('交付包/计划工作台-'+(Get-Date -Format 'yyyyMMdd-HHmmss-fff'))
     $bundle=& (Join-Path $PSScriptRoot 'New-LocalBundle.ps1') -ReleasePaths @($completed.releasePath) -Destination $bundleDestination
-    Write-Host ('整套本地运行包：'+$bundle.bundlePath)
-    Write-Host '打开整套目录，双击“启动发布版工作台.cmd”；数据和日志在版本目录外。'
-    return $completed
+    Write-Host "`n打包完成。只需把下面这一个文件夹完整复制到电脑 B："
+    Write-Host $bundle.bundlePath
+    Write-Host '其中已含全部应用、启动和停止 CMD；数据继续使用版本目录外的运行目录。'
+    if($NonInteractive){return $completed}
+    Open-PublishDeliveryFolder -Path $bundle.bundlePath
+    return
 }
 Assert-PublishId $AppId
 if(-not @($apps | Where-Object {$_.id -ceq $AppId}).Count){throw 'Register the application before publishing it.'}

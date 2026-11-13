@@ -31,3 +31,15 @@ function Get-PublishRevision {
     if ($LASTEXITCODE -ne 0) { throw 'Cannot determine source Git status.' }
     return ([string]$result).Trim() + $(if($dirty){'-dirty'}else{''})
 }
+
+function Open-PublishDeliveryFolder {
+    param([string]$Path)
+    # Explorer is a convenience after successful validation, never part of the build.
+    try {
+        $folder=(Get-Item -LiteralPath $Path -ErrorAction Stop).FullName
+        $explorer=Join-Path $env:WINDIR 'explorer.exe'
+        Start-Process -FilePath $explorer -ArgumentList ('/select,"'+$folder+'"') -WindowStyle Normal -ErrorAction Stop | Out-Null
+    } catch {
+        Write-Warning '交付文件夹已生成，无法自动打开位置；请按上方完整路径手动打开。'
+    }
+}

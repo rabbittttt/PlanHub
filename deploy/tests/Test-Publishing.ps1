@@ -132,12 +132,21 @@ $config.applications | Add-Member -NotePropertyName sop -NotePropertyValue ([psc
 Write-AppReleaseJson $configFile $config
 Put (Join-Path $workspace 'portal/config/apps.json') '{"groups":[{"apps":[{"id":"alpha","name":"Alpha","enabled":true},{"id":"localstatic","name":"Local Static","enabled":true},{"id":"sop","name":"SOP","enabled":true},{"id":"disabled","name":"Disabled","enabled":false}]}]}'
 function Invoke-Command {throw 'Batch packaging must not deploy.'}
+$deliveryState=@{calls=@();fail=$false}
+function Start-Process {
+    param($FilePath,$ArgumentList,$WindowStyle,$ErrorAction)
+    $deliveryState.calls+=[pscustomobject]@{command=$FilePath;arguments=$ArgumentList;window=$WindowStyle}
+    if($deliveryState.fail){throw 'Fixture Explorer unavailable.'}
+}
 function Read-Host {throw 'Noninteractive batch must not ask for paths or actions.'}
 try {
     $batch=@(& $publish -All -Version batch1 -ConfigPath $configFile -NonInteractive)
     Check ($batch.Count -eq 4) 'Batch did not return all enabled apps plus the portal.'
-    $bundleDirectories=@(Get-ChildItem -LiteralPath (Join-Path $workspace 'staging/bundles') -Directory)
+    $bundleDirectories=@(Get-ChildItem -LiteralPath (Join-Path $workspace '交付包') -Directory)
     Check ($bundleDirectories.Count -eq 1) 'Successful batch did not produce one local bundle.'
+    Check ($bundleDirectories[0].Name.StartsWith('计划工作台-')) 'Delivery folder name is not recognizable.'
+    Check ($deliveryState.calls.Count -eq 0) 'Noninteractive packaging opened Explorer.'
+    Check (-not(Test-Path -LiteralPath (Join-Path $workspace 'staging/bundles'))) 'Batch still exposes the obsolete bundle output directory.'
     $bundleManifest=Get-Content -LiteralPath (Join-Path $bundleDirectories[0].FullName 'bundle.json') -Raw -Encoding UTF8 | ConvertFrom-Json
     Check (@($bundleManifest.applications.PSObject.Properties).Count -eq 4) 'Local bundle is missing successful batch applications.'
     Check (Test-Path -LiteralPath (Join-Path $bundleDirectories[0].FullName '启动发布版工作台.cmd')) 'Local bundle has no launch CMD.'
@@ -152,8 +161,18 @@ $selectionState=@{prompts=0}
 function Read-Host {$selectionState.prompts++;return '0'}
 try {
     $menuBatch=@(& $publish -Version menu-all -ConfigPath $configFile)
-    Check ($menuBatch.Count -eq 4 -and $selectionState.prompts -eq 1) 'Menu option 0 did not package all apps with one selection.'
+    Check ($menuBatch.Count -eq 0 -and $selectionState.prompts -eq 1) 'Interactive packaging should show the delivery folder instead of emitting internal release records.'
+    $deliveryFolders=@(Get-ChildItem -LiteralPath (Join-Path $workspace '交付包') -Directory)
+    Check ($deliveryFolders.Count -eq 2 -and $deliveryState.calls.Count -eq 1) 'Menu option 0 did not open its completed delivery folder once.'
+    $opened=$deliveryState.calls[0]
+    Check ($opened.command -eq (Join-Path $env:WINDIR 'explorer.exe') -and $opened.window -eq 'Normal') 'The delivery selection must use visible Windows Explorer.'
+    $selectedFolder=$opened.arguments.Substring('/select,"'.Length).TrimEnd('"')
+    Check ($opened.arguments.StartsWith('/select,"') -and @($deliveryFolders | Where-Object FullName -eq $selectedFolder).Count -eq 1) 'Explorer did not select the exact new folder with spaces and Chinese characters.'
+    Check (Test-Path -LiteralPath (Join-Path $selectedFolder '停止发布版工作台.cmd')) 'The selected folder omitted its stop entry.'
 } finally {Remove-Item Function:Read-Host}
+$deliveryState.fail=$true
+Open-PublishDeliveryFolder -Path $selectedFolder
+Check (Test-Path -LiteralPath (Join-Path $selectedFolder 'bundle.json')) 'Explorer failure changed a completed delivery folder.'
 Reject {& $publish -All -AppId planhub -ConfigPath $configFile -NonInteractive}
 Reject {& $publish -All -ReleasePath $imported.releasePath -ConfigPath $configFile -NonInteractive}
 foreach($action in @('Send','Deploy','SendExisting','DeployExisting')){
@@ -161,7 +180,8 @@ foreach($action in @('Send','Deploy','SendExisting','DeployExisting')){
 }
 Put $builderFile 'param($Destination); exit 3'
 Reject {& $publish -All -Version partial -ConfigPath $configFile -NonInteractive}
-Check (@(Get-ChildItem -LiteralPath (Join-Path $workspace 'staging/bundles') -Directory).Count -eq 2) 'An incomplete batch was published as a local bundle.'
+Check (@(Get-ChildItem -LiteralPath (Join-Path $workspace '交付包') -Directory).Count -eq 2) 'An incomplete batch was published as a local bundle.'
+Check ($deliveryState.calls.Count -eq 2) 'A failed batch unexpectedly opened Explorer.'
 Check (-not(Test-Path -LiteralPath (Join-Path $workspace 'staging/releases/alpha-partial'))) 'A failed batch builder produced a release.'
 foreach($id in @('planhub','localstatic','sop')){
     $valid=Assert-AppRelease (Join-Path $workspace ('staging/releases/'+$id+'-partial'))

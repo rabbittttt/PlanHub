@@ -1,6 +1,7 @@
 node_modules/
 dist/
 staging/
+交付包/
 artifacts/
 apps/*/
 deploy/config.local.json
