@@ -43,7 +43,12 @@ function Actor {
         return 'SID\'+$sid
     }finally{$identity.Dispose()}
 }
-function Docker-Read([string[]]$Arguments){$value=& docker @Arguments;if($LASTEXITCODE -ne 0){throw 'Docker check failed. Start Docker with Linux containers.'};return ($value -join "`n")}
+function Native([string]$Mode,[string]$Runtime){
+    Remove-Item Env:NODE_OPTIONS -ErrorAction SilentlyContinue
+    Remove-Item Env:NODE_PATH -ErrorAction SilentlyContinue
+    & $node (Join-Path $package 'launcher/native-preview.mjs') $Mode --package $package --runtime $Runtime
+    if($LASTEXITCODE -ne 0){throw 'Native preview failed. Check the output and snapshot logs above.'}
+}
 function Assert-CopyTree([string]$Path){
     No-Link $Path
     if(Test-Path -LiteralPath $Path -PathType Container){
@@ -59,6 +64,8 @@ No-Link $source;No-Link $previewRoot
 if((Within $source $previewRoot) -or (Within $previewRoot $source) -or (Within $package $source) -or (Within $source $package)){throw 'Preview snapshots, source data and the package must be separate directories.'}
 $manifest=& (Join-Path $package 'deploy.ps1') -Action Validate
 if(-not $manifest.complete){throw 'Use a complete package built with selection 0 for local preview.'}
+$node=Join-Path $package 'runtime/node/node.exe';No-Link $node
+if(-not(Test-Path -LiteralPath $node -PathType Leaf)){throw 'Bundled Windows Node.js is missing. Copy the complete delivery folder again.'}
 if($Action -eq 'Start' -and -not $Snapshot){throw 'Local preview requires the explicit -Snapshot option. Use preview.cmd.'}
 if($Action -eq 'Stop' -and -not(Test-Path -LiteralPath $previewRoot -PathType Container)){Write-Host 'No local preview has been prepared.';return}
 [void][IO.Directory]::CreateDirectory($previewRoot)
@@ -71,20 +78,18 @@ try{
     if(Test-Path -LiteralPath $stateFile){
         $state=Read-Json $stateFile
         if($state.schemaVersion -ne 1 -or $state.snapshot -cnotmatch '^snapshot-[a-f0-9]{32}$' -or $state.sourceDirectory -ine $source){throw 'Preview state does not match this source directory.'}
-        $runtime=Join-Path $previewRoot $state.snapshot;No-Link $runtime
+        $runtime=Join-Path $previewRoot $state.snapshot;Assert-CopyTree $runtime
         No-Link (Join-Path $runtime 'config.json')
         $previewConfig=Read-Json (Join-Path $runtime 'config.json')
         if($previewConfig.preview.sourceDirectory -ine $source){throw 'Snapshot source identity differs.'}
     }
     if($Action -eq 'Stop'){
         if($null -eq $state){Write-Host 'No local preview is running.';return}
-        & (Join-Path $package 'deploy.ps1') -Action Stop -RuntimeDirectory $runtime -LocalPreview
+        Native 'stop' $runtime
         Write-Host 'Local preview stopped. Snapshot data retained; formal data was not changed.';return
     }
     $sourceConfig=Join-Path $source 'config.json';No-Link $sourceConfig
-    if(-not(Test-Path -LiteralPath $sourceConfig -PathType Leaf)){throw 'Complete deployment step 3 (Prepare, rules and data) before local preview.'}
-    $engine=Docker-Read @('info','--format','{{.OSType}}/{{.Architecture}}')
-    if($engine -notmatch '^linux/(x86_64|amd64)$'){throw 'Local preview requires Docker Linux containers on x86_64/amd64.'}
+    if(-not(Test-Path -LiteralPath $sourceConfig -PathType Leaf)){throw 'Run prepare.cmd, then place shared rules and data as described in step 3 before local preview.'}
     $user=Actor
     $settings=Read-Json $sourceConfig
     if($null -ne $settings.PSObject.Properties['preview']){throw 'The snapshot source must be the original formal runtime configuration.'}
@@ -92,28 +97,28 @@ try{
     if($null -ne $state -and -not $RefreshSnapshot){
         if($state.sourceConfigHash -cne $sourceHash -or $state.contractHash -cne $manifest.contractHash -or (@($state.applications|Sort-Object) -join ',') -cne (@($manifest.applications|Sort-Object) -join ',')){throw 'Source configuration or applications changed. Run preview.cmd -RefreshSnapshot.'}
         Write-Host ('Reusing local snapshot: '+$runtime)
-        $previewConfig.preview.user=$user;Save-Json (Join-Path $runtime 'config.json') $previewConfig
+        if($previewConfig.preview.user -cne $user){Native 'stop' $runtime;$previewConfig.preview.user=$user;Save-Json (Join-Path $runtime 'config.json') $previewConfig}
     }else{
         if($null -ne $state){
-            & (Join-Path $package 'deploy.ps1') -Action Stop -RuntimeDirectory $runtime -LocalPreview
-            $removeArgs=@('compose','--project-name','planhub-preview','--file',(Join-Path $runtime 'compose.preview.json'),'down')
-            & docker @removeArgs
-            if($LASTEXITCODE -ne 0){throw 'Could not remove the stopped preview containers. Snapshot data was retained.'}
+            Native 'stop' $runtime
         }
         No-Link (Join-Path $source 'deployment.lock')
         try{$sourceLock=[IO.File]::Open((Join-Path $source 'deployment.lock'),[IO.FileMode]::Open,[IO.FileAccess]::Read,[IO.FileShare]::None)}catch{throw 'Source runtime is busy or not prepared. Complete step 3 Prepare and wait for any deployment to finish.'}
         if((Get-FileHash -LiteralPath $sourceConfig).Hash -cne $sourceHash){throw 'Source configuration changed during snapshot preparation. Retry preview.cmd.'}
-        $running=Docker-Read @('ps','-q','--filter','label=planhub.runtime')
-        foreach($containerId in @($running -split "`n"|Where-Object {$_})){
-            $container=@((Docker-Read @('inspect',$containerId))|ConvertFrom-Json)[0]
-            $label=$container.Config.Labels.PSObject.Properties['planhub.runtime']
-            if($null -ne $label -and $label.Value){
-                $owner=[IO.Path]::GetFullPath(([string]$label.Value).Replace('/','\')).TrimEnd('\','/')
-                if((Within $source $owner) -or (Within $owner $source)){throw 'Stop the source services before copying their data into a preview snapshot.'}
-            }
+        $activeMarker=Join-Path $source 'deployment-active.json';No-Link $activeMarker
+        if(Test-Path -LiteralPath $activeMarker){
+            $active=Read-Json $activeMarker
+            if($active.schemaVersion -ne 1 -or $active.mayBeRunning -cne $false){throw 'Formal services may still be running. Complete a full stop.cmd before copying their data.'}
+        }
+        $deploymentState=Join-Path $source 'deployment-state.json';No-Link $deploymentState
+        if(Test-Path -LiteralPath $deploymentState){
+            $deployment=Read-Json $deploymentState
+            if($null -eq $deployment.PSObject.Properties['running'] -or $deployment.running -cne $false){throw 'Stop formal Docker services with their stop.cmd before copying data. Native preview does not require Docker.'}
         }
         $shared=Source-Path $settings.sharedDirectory;$rules=Source-Path $settings.sopSharedConfig
         $null=Source-Path $settings.quicklookSourceBase
+        $base=[string]$settings.quicklookSourceBase
+        if($base -cne $settings.sharedDirectory -and -not $base.StartsWith(([string]$settings.sharedDirectory)+'/',[StringComparison]::Ordinal) -and $base -cne 'data' -and -not $base.StartsWith('data/',[StringComparison]::Ordinal)){throw 'quicklookSourceBase must stay within the copied shared directory or data directory for native preview.'}
         if(-not(Test-Path -LiteralPath $rules -PathType Leaf)){throw 'Place the real shared_config.py at the configured source path before preview.'}
         if(-not(Test-Path -LiteralPath $shared -PathType Container)){throw 'Prepare the shared data directory before preview.'}
         $data=Join-Path $source 'data'
@@ -135,7 +140,7 @@ try{
         Save-Json $stateFile $state
         $sourceLock.Dispose();$sourceLock=$null
     }
-    & (Join-Path $package 'deploy.ps1') -Action Start -RuntimeDirectory $runtime -LocalPreview
+    Native 'start' $runtime
     Write-Host 'Open http://127.0.0.1:4174/ in the browser on this computer.'
     Write-Host 'Use stop-preview.cmd to stop. Trial edits remain in the snapshot only.'
 }finally{

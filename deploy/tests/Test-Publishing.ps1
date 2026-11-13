@@ -8,7 +8,7 @@ $fixture=Join-Path $scratch 'workspace'
 function Put($Path,$Value){[void][IO.Directory]::CreateDirectory((Split-Path -Parent $Path));[IO.File]::WriteAllText($Path,$Value,(New-Object Text.UTF8Encoding($false)))}
 function Check($Value,$Message){if(-not $Value){throw $Message};$publishTestState.checks++}
 function Reject([scriptblock]$Run){$failed=$false;try{& $Run|Out-Null}catch{$failed=$true};Check $failed 'Expected rejection'}
-$publishTestState=[pscustomobject]@{checks=0;dockerBuildArgs=$null}
+$publishTestState=[pscustomobject]@{checks=0;deliveryArgs=$null}
 [void][IO.Directory]::CreateDirectory((Join-Path $fixture 'deploy'))
 foreach($name in @('Publish-App.ps1','Publish.Common.ps1','App.Release.ps1','Sop.Release.ps1','Deployment.Common.ps1','New-AppRelease.ps1','publish.example.json')){Copy-Item -LiteralPath (Join-Path $deploy $name) -Destination (Join-Path $fixture 'deploy')}
 Put (Join-Path $fixture 'portal/index.html') 'portal fixture'
@@ -45,20 +45,20 @@ try {
     Reject {& $publish -AppId '../outside' -ConfigPath $config -NonInteractive -BuildOnly}
     function node {
         param([Parameter(ValueFromRemainingArguments=$true)][string[]]$Arguments)
-        Check ($Arguments[0].EndsWith('build-docker.mjs')) 'Unexpected Node invocation'
-        $publishTestState.dockerBuildArgs=$Arguments
-        $output=if($Arguments[1] -eq '--complete'){$Arguments[2]}else{$Arguments[1]}
+        Check ($Arguments[0].EndsWith('build-delivery.mjs')) 'Packaging must not invoke the Docker image builder'
+        $publishTestState.deliveryArgs=$Arguments
+        $output=if($Arguments[1] -eq '--complete'){$Arguments[4]}else{$Arguments[3]}
         [void][IO.Directory]::CreateDirectory($output)
         $global:LASTEXITCODE=0
     }
     $delivery=& $publish -AppId planhub -Version docker-v2 -ConfigPath $config -NonInteractive
     Check ($delivery.deliveryPath -match '[\\/]release[\\/]planhub-') 'One-app delivery must use English release directory'
-    Check ($publishTestState.dockerBuildArgs.Count -eq 3) 'Single-app delivery should contain only selected release'
+    Check ($publishTestState.deliveryArgs.Count -eq 5) 'Single-app delivery should contain only selected release and runtime executable'
     Put (Join-Path $fixture 'portal/config/apps.json') '{"groups":[]}'
     $all=& $publish -All -Version all-v3 -ConfigPath $config -NonInteractive
-    Check ($publishTestState.dockerBuildArgs[1] -eq '--complete') 'Selection 0 must enforce a complete Docker package'
+    Check ($publishTestState.deliveryArgs[1] -eq '--complete') 'Selection 0 must enforce a complete delivery package'
     Check (Test-Path -LiteralPath $all.deliveryPath -PathType Container) 'Selection 0 did not return a delivery folder'
-    Check ($publishTestState.dockerBuildArgs.Count -eq 4) 'Complete package did not receive the built releases'
+    Check ($publishTestState.deliveryArgs.Count -eq 6) 'Complete package did not receive the built releases and runtime executable'
     function node { $global:LASTEXITCODE=1 }
     Reject {& $publish -AppId planhub -Version docker-fail -ConfigPath $config -NonInteractive}
     Write-Output ("Publishing checks passed: "+$publishTestState.checks)

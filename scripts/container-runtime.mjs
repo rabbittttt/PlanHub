@@ -19,7 +19,7 @@ export function validateRuntime(config){
   return config;
 }
 export function privatePath(root,value){
-  if(typeof value!=='string'||!value||value.includes('\\')||path.posix.isAbsolute(value)||value.split('/').some(p=>!p||p==='.'||p==='..'||p.startsWith('.')))throw new Error('Runtime paths must be relative paths below the external runtime directory.');
+  if(typeof value!=='string'||!value||/[\\:]/.test(value)||path.posix.isAbsolute(value)||value.split('/').some(p=>!p||p==='.'||p==='..'||p.startsWith('.')))throw new Error('Runtime paths must be relative paths below the external runtime directory.');
   return path.posix.join(root,...value.split('/'));
 }
 function expand(value,tokens){
@@ -37,16 +37,17 @@ export function trustedActor(request,config){
   if(['x-planhub-key','x-planhub-user','host'].some(name=>names.filter(n=>n===name).length>1))return null;
   return user;
 }
-export function containerSpec(id,binding,config,{runtime='/runtime',payload='/app/release/payload'}={}){
-  const shared=privatePath(runtime,config.sharedDirectory),data=path.posix.join(runtime,'data',id);
+export function containerSpec(id,binding,config,{runtime='/runtime',payload='/app/release/payload',python='/usr/local/bin/python',pathApi=path.posix}={}){
+  const localPath=value=>{privatePath('/runtime',value);return pathApi.join(runtime,...value.split('/'));};
+  const shared=localPath(config.sharedDirectory),data=pathApi.join(runtime,'data',id);
   const tokens={payload,data,shared,runtime,host:'127.0.0.1',port:String(binding.port),basePath:`/${id}/`,publicOrigin:config.publicOrigin,publicHost:new URL(config.publicOrigin).hostname};
   const args=(binding.arguments??[]).map(v=>expand(v,tokens));
   const env={...process.env,PYTHONDONTWRITEBYTECODE:'1',PYTHONIOENCODING:'utf-8',PYTHONUNBUFFERED:'1'};
-  for(const key of Object.keys(env))if(/^(SOP_.*|ORDER_DASHBOARD_.*|DATA_QUICKLOOK_.*|SALES_FORECAST_.*|SHARED_DATA_ROOT|VEHICLE_CONFIG_.*|PYTHONPATH|PYTHONHOME)$/.test(key))delete env[key];
+  for(const key of Object.keys(env))if(/^(SOP_.*|ORDER_DASHBOARD_.*|DATA_QUICKLOOK_.*|SALES_FORECAST_.*|SHARED_DATA_ROOT|VEHICLE_CONFIG_.*|PYTHONPATH|PYTHONHOME|PLANHUB_PYTHON_APP_ROOT)$/.test(key))delete env[key];
   for(const [key,value] of Object.entries(binding.environment??{}))env[key]=expand(value,tokens);
-  if(id==='sop'){env.SOP_LOCAL_RELEASE_SECRET=config.sopSecret;env.SOP_PYTHON_PATH='/usr/local/bin/python';}
+  if(id==='sop'){env.SOP_LOCAL_RELEASE_SECRET=config.sopSecret;env.SOP_PYTHON_PATH=python;}
   if(id==='vehicle-config')env.VEHICLE_CONFIG_PROXY_SECRET=config.vehicleSecret;
-  if(id==='quicklook')env.DATA_QUICKLOOK_SOURCE_BASE=privatePath(runtime,config.quicklookSourceBase);
+  if(id==='quicklook')env.DATA_QUICKLOOK_SOURCE_BASE=localPath(config.quicklookSourceBase);
   return {args,env,data,shared,healthExpected:Object.fromEntries(Object.entries(binding.healthExpected??{}).map(([k,v])=>[k,typeof v==='string'?expand(v,tokens):v]))};
 }
 export async function checkService(id,binding,config){
@@ -66,7 +67,7 @@ export async function checkService(id,binding,config){
     if(!Object.entries(expected).every(([k,v])=>Object.is(body[k],v)))throw new Error(id+': health identity mismatch');
   }
 }
-export function createContainerPortal(payload,bindings,config){
+export function createContainerPortal(payload,bindings,config,{root='/runtime',runtime}={}){
   const applications={};
   for(const [id,binding] of Object.entries(bindings)){
     if(['planhub','sop'].includes(id))continue;
@@ -74,7 +75,7 @@ export function createContainerPortal(payload,bindings,config){
     if(id==='vehicle-config')applications[id].headersForRequest=req=>({'x-config-proxy-key':config.vehicleSecret,'x-config-user':req.portalActor});
   }
   const sopProxy=bindings.sop?{port:bindings.sop.port,secret:config.sopSecret,user:req=>'b64:'+Buffer.from(req.portalActor,'utf8').toString('base64')}:null;
-  const server=createServer({root:'/runtime',portalRoot:payload,applications,sopProxy});
+  const server=createServer({root,portalRoot:payload,applications,sopProxy,runtime});
   const handler=server.listeners('request')[0];server.removeAllListeners('request');
   server.on('request',(request,response)=>{
     request.portalActor=trustedActor(request,config);

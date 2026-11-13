@@ -23,12 +23,13 @@ if (-not(Test-Path -LiteralPath $ConfigPath)) {
     Write-Host "已创建本机发布配置：$ConfigPath"
 }
 $config=Get-Content -LiteralPath $ConfigPath -Raw -Encoding UTF8 | ConvertFrom-Json
+$runtimePython=Resolve-PublishPath ([string](Get-PublishValue $config 'runtimePython' '../.venv/Scripts/python.exe')) $root
 $registry=Get-Content -LiteralPath (Join-Path $root 'portal/config/apps.json') -Raw -Encoding UTF8 | ConvertFrom-Json
 $apps=@([pscustomobject]@{id='planhub';name='计划工作台门户'})
 $apps+=@($registry.groups | ForEach-Object {$_.apps} | Where-Object {$_.enabled})
 if (-not $AppId -and -not $All) {
     if($NonInteractive){throw 'AppId is required.'}
-    Write-Host '0. 打包全部应用为 Docker 交付文件夹（首次部署选此项）'
+    Write-Host '0. 打包全部应用及 Windows 运行环境（首次交付选此项）'
     Write-Host '其他编号用于单个应用更新：'
     for($i=0;$i -lt $apps.Count;$i++){Write-Host ("{0}. {1} ({2})" -f ($i+1),$apps[$i].name,$apps[$i].id)}
     $selected=Read-Host '选择需要发布的应用编号'
@@ -59,13 +60,13 @@ if($All) {
     foreach($item in $completed){Write-Host ("已校验 {0} {1}" -f $item.appId,$item.version)}
     foreach($item in $failures){Write-Host ("失败 {0}：{1}" -f $item.appId,$item.message)}
     if($failures.Count){throw 'Some applications could not be packaged. See the summary above; this batch is incomplete.'}
-    Write-Host '正在构建 Docker 镜像并导出交付文件夹；首次构建可能较慢。'
+    Write-Host '正在整理应用及 Windows 运行环境；此步骤不需要 Docker。'
     $bundleDestination=Join-Path $root ('release/planhub-'+(Get-Date -Format 'yyyyMMdd-HHmmss-fff'))
-    & node (Join-Path $root 'scripts/build-docker.mjs') --complete $bundleDestination @($completed.releasePath) | Out-Host
-    if($LASTEXITCODE -ne 0){throw 'Docker image build/export failed. No completed delivery folder was published.'}
+    & node (Join-Path $root 'scripts/build-delivery.mjs') --complete --python $runtimePython $bundleDestination @($completed.releasePath) | Out-Host
+    if($LASTEXITCODE -ne 0){throw 'Delivery packaging failed. No completed delivery folder was published.'}
     Write-Host "`n打包完成。只需把下面这一个文件夹完整复制到电脑 B："
     Write-Host $bundleDestination
-    Write-Host '已包含离线镜像、preview.cmd 本机试运行及 start.cmd 正式部署入口；按包内 README.md 操作。'
+    Write-Host 'B 无需安装 Python、Node.js 或 Docker：按 README.md 准备数据后运行 preview.cmd。Docker 部署交给同事。'
     if($NonInteractive){return [pscustomobject]@{deliveryPath=$bundleDestination}}
     Open-PublishDeliveryFolder -Path $bundleDestination
     return
@@ -180,8 +181,8 @@ if($kind -eq 'release'){
 Write-Host ("应用校验通过：{0} {1}" -f $AppId,$Version)
 if($BuildOnly){return [pscustomobject]@{appId=$AppId;version=$Version;releasePath=$destination;action=$Action}}
 $delivery=Join-Path $root ('release/'+$AppId+'-'+(Get-Date -Format 'yyyyMMdd-HHmmss-fff'))
-& node (Join-Path $root 'scripts/build-docker.mjs') $delivery $destination | Out-Host
-if($LASTEXITCODE -ne 0){throw 'Docker image build/export failed. No completed delivery folder was published.'}
+& node (Join-Path $root 'scripts/build-delivery.mjs') --python $runtimePython $delivery $destination | Out-Host
+if($LASTEXITCODE -ne 0){throw 'Delivery packaging failed. No completed delivery folder was published.'}
 Write-Host ('只复制此文件夹到 B：'+$delivery)
 if($NonInteractive){return [pscustomobject]@{deliveryPath=$delivery}}
 Open-PublishDeliveryFolder -Path $delivery

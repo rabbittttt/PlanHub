@@ -5,9 +5,11 @@ import os from 'node:os';
 import crypto from 'node:crypto';
 import http from 'node:http';
 import {fileURLToPath} from 'node:url';
-import {writeFileSync} from 'node:fs';
 import {mkdtemp,mkdir,writeFile,readFile,readdir,rm} from 'node:fs/promises';
-import {buildDockerPackage,hashFile} from '../scripts/build-docker.mjs';
+import {buildDelivery} from '../scripts/build-delivery.mjs';
+import {collectWindowsRuntime} from '../scripts/build-delivery.mjs';
+import {spawnSync} from 'node:child_process';
+import {hashFile,validateDelivery} from '../scripts/delivery-validation.mjs';
 import {readRelease} from '../scripts/release-validation.mjs';
 import {validateRuntime,containerSpec,createContainerPortal,checkService} from '../scripts/container-runtime.mjs';
 const root=path.resolve(path.dirname(fileURLToPath(import.meta.url)),'..');
@@ -24,53 +26,59 @@ async function release(base,id,files,{type='static',healthPath='/'}={}){
   await json(path.join(directory,'app-release.json'),{schemaVersion:1,appId:id,version:'v1',type,basePath:`/${id}/`,entryPoint:type==='static'?'index.html':'server.py',sourceRevision:'fixture',dataMode:type==='static'?'stateless':'external',healthPath,files:entries});
   return directory;
 }
-function fakeDocker(){
-  const images=new Map(),calls=[];
-  function execute(args,options={}){
-    calls.push(args);
-    if(args[0]==='info')return 'linux/x86_64';
-    if(args[0]==='compose')return args[1]==='version'?'2.24.0':'';
-    if(args[0]==='build'){
-      const tag=args[args.indexOf('--tag')+1],label=args[args.indexOf('--label')+1].split('=')[1];
-      images.set(tag,{Id:'sha256:'+sha(tag),Os:'linux',Architecture:'amd64',Config:{Labels:{'planhub.fingerprint':label}}});return '';
-    }
-    if(args[1]==='inspect')return images.has(args[2])?JSON.stringify([images.get(args[2])]):options.allowMissing?null:assert.fail('Unknown image');
-    if(args[1]==='save'){writeFileSync(args[args.indexOf('--output')+1],'fixture image archive');return '';}
-    assert.fail('Unexpected Docker command: '+args.join(' '));
-  }
-  return {execute,calls,images};
+async function fakeRuntime(output,{requirements}){
+  await mkdir(path.join(output,'node'),{recursive:true});await writeFile(path.join(output,'node/node.exe'),'fixture Node, never executed');
+  if(requirements.length){await mkdir(path.join(output,'python'));await writeFile(path.join(output,'python/python.exe'),'fixture Python, never executed');}
 }
-test('complete Docker delivery is one ASCII folder, with unchanged verified releases and offline images',async t=>{
-  const base=await temporary(t),docker=fakeDocker();
+test('delivery packages unchanged releases, Windows runtime and Linux materials without Docker',async t=>{
+  const base=await temporary(t);
   const portal=await release(base,'planhub',{'index.html':'portal','config/apps.json':JSON.stringify({groups:[{apps:[{id:'leads',enabled:true}]}]})});
   const leads=await release(base,'leads',{'index.html':'original child page'}),before=await hashFile(path.join(leads,'app-release.json'));
   const destination=path.join(base,'delivery');
-  await buildDockerPackage([portal,leads],destination,{complete:true,execute:docker.execute,workDirectory:path.join(base,'build')});
+  await buildDelivery([portal,leads],destination,{complete:true,collectRuntime:fakeRuntime});
   assert.equal(await hashFile(path.join(leads,'app-release.json')),before);
-  const names=await readdir(destination);assert.ok(names.every(name=>/^[\x20-\x7e]+$/.test(name)));
-  assert.deepEqual(names.sort(),['README.md','compose.json','delivery.json','deploy.ps1','images.tar','preview.cmd','preview.ps1','runtime.example.json','start.cmd','stop-preview.cmd','stop.cmd']);
-  const manifest=JSON.parse(await readFile(path.join(destination,'delivery.json'))),compose=JSON.parse(await readFile(path.join(destination,'compose.json')));
+  const names=await readdir(destination);assert.ok(names.every(name=>/^[\x20-\x7e]+$/.test(name)));assert.ok(!names.includes('images.tar'));
+  for(const name of ['prepare.cmd','preview.cmd','stop-preview.cmd','build-docker.cmd','start.cmd','runtime','releases','launcher','docker'])assert.ok(names.includes(name));
+  const {manifest}=await validateDelivery(destination,{requireComplete:true}),compose=JSON.parse(await readFile(path.join(destination,'compose.json')));
   for(const [name,hash] of Object.entries(manifest.files))assert.equal(await hashFile(path.join(destination,name)),hash);
   assert.deepEqual(manifest.applications,['planhub','leads']);assert.equal(manifest.complete,true);
   assert.equal(compose.services.leads.network_mode,'service:network');assert.equal(compose.services.leads.pull_policy,'never');
   assert.equal(compose.services.leads.volumes[0].target,'/runtime');assert.equal(compose.services.leads.read_only,true);
   assert.equal(Object.values(compose.services).filter(v=>v.ports).length,1);
-  const context=docker.calls.find(args=>args[0]==='build'&&args.includes(manifest.images.leads.tag)).at(-1);
-  assert.equal(await readFile(path.join(context,'release/payload/index.html'),'utf8'),'original child page');
-  assert.equal(await hashFile(path.join(context,'release/app-release.json')),before);
-  assert.equal(await readFile(path.join(context,'launcher/local-preview-gateway.mjs'),'utf8'),await readFile(path.join(root,'scripts/local-preview-gateway.mjs'),'utf8'));
-  await assert.rejects(buildDockerPackage([portal,leads],destination,{complete:true,execute:docker.execute,workDirectory:path.join(base,'build')}),/exists/);
-  await assert.rejects(buildDockerPackage([portal],path.join(base,'incomplete'),{complete:true,execute:docker.execute,workDirectory:path.join(base,'build')}),/Incomplete/);
+  assert.equal(await readFile(path.join(destination,'releases/leads/payload/index.html'),'utf8'),'original child page');
+  assert.equal(await hashFile(path.join(destination,'releases/leads/app-release.json')),before);
+  const dockerfile=await readFile(path.join(destination,'docker/leads.Dockerfile'),'utf8');
+  assert.match(dockerfile,/COPY releases\/leads \.\/release/);assert.doesNotMatch(dockerfile,/runtime\/node|runtime\/python/);
+  assert.match(await readFile(path.join(destination,'.dockerignore'),'utf8'),/^\*\*/);
+  await assert.rejects(buildDelivery([portal,leads],destination,{complete:true,collectRuntime:fakeRuntime}),/exists/);
+  await assert.rejects(buildDelivery([portal],path.join(base,'incomplete'),{complete:true,collectRuntime:fakeRuntime}),/Incomplete/);
+  await writeFile(path.join(destination,'runtime/node/node.exe'),'corrupted');await assert.rejects(validateDelivery(destination),/damaged/);
   await writeFile(path.join(leads,'payload/index.html'),'tampered');
-  await assert.rejects(buildDockerPackage([leads],path.join(base,'tampered'),{execute:docker.execute,workDirectory:path.join(base,'build')}),/校验失败/);
+  await assert.rejects(buildDelivery([leads],path.join(base,'tampered'),{collectRuntime:fakeRuntime}),/校验失败/);
 });
-test('build failure publishes no delivery, and an existing immutable image cannot be replaced',async t=>{
-  const base=await temporary(t),app=await release(base,'leads',{'index.html':'original'}),docker=fakeDocker(),destination=path.join(base,'failed');
-  const execute=(args,options)=>{if(args[1]==='save')throw new Error('export failed');return docker.execute(args,options);};
-  await assert.rejects(buildDockerPackage([app],destination,{execute,workDirectory:path.join(base,'build')}),/export failed/);
+test('runtime failure publishes no completed folder and undeclared files fail validation',async t=>{
+  const base=await temporary(t),app=await release(base,'leads',{'index.html':'original'}),destination=path.join(base,'failed');
+  await assert.rejects(buildDelivery([app],destination,{collectRuntime:async()=>{throw new Error('missing dependency');}}),/missing dependency/);
   await assert.rejects(readFile(path.join(destination,'delivery.json')),/ENOENT/);
-  const first=[...docker.images.keys()][0];docker.images.get(first).Config.Labels['planhub.fingerprint']='tampered';
-  await assert.rejects(buildDockerPackage([app],destination,{execute:docker.execute,workDirectory:path.join(base,'build')}),/Immutable image/);
+  assert.ok(!(await readdir(base)).some(name=>name.startsWith('.planhub-partial-')));
+  await buildDelivery([app],destination,{collectRuntime:fakeRuntime});
+  await writeFile(path.join(destination,'extra.txt'),'undeclared');await assert.rejects(validateDelivery(destination),/file set/);
+});
+test('dynamic delivery includes its Python dependencies and pins Linux build content',async t=>{
+  const base=await temporary(t),app=await release(base,'quicklook',{'server.py':'# source-owned fixture','requirements.txt':'openpyxl>=3.1,<4\n'},{type:'service',healthPath:'/healthz'});
+  let seen;
+  const destination=path.join(base,'dynamic');await buildDelivery([app],destination,{collectRuntime:async(output,options)=>{seen=options;await fakeRuntime(output,options);}});
+  const {manifest}=await validateDelivery(destination);assert.equal(seen.requirements.length,1);assert.equal(await readFile(seen.requirements[0],'utf8'),'openpyxl>=3.1,<4\n');
+  assert.match(manifest.images.quicklook.fingerprint,/^[a-f0-9]{64}$/);
+  assert.match(await readFile(path.join(destination,'docker/quicklook.Dockerfile'),'utf8'),/RUN python -m pip install/);
+});
+test('actual bundled Node runs without the build computer PATH or a Node installation', {skip:process.platform!=='win32'||process.arch!=='x64'}, async t=>{
+  const base=await temporary(t),output=path.join(base,'runtime');await collectWindowsRuntime(output,{requirements:[]});
+  const env={...process.env,PATH:path.join(process.env.SystemRoot,'System32')};
+  delete env.NODE_OPTIONS;delete env.NODE_PATH;
+  const result=spawnSync(path.join(output,'node/node.exe'),['-e',"process.stdout.write(require('node:crypto').createHash('sha256').update('portable').digest('hex'))"],{cwd:base,env,encoding:'utf8',windowsHide:true});
+  assert.equal(result.status,0,result.stderr);assert.equal(result.stdout,sha('portable'));
+  assert.ok((await readFile(path.join(output,'node/LICENSE.txt'))).length>1000);
 });
 test('release validation rejects undeclared private data and checksum or case collisions',async t=>{
   const base=await temporary(t),app=await release(base,'leads',{'index.html':'original'});

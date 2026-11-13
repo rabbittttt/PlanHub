@@ -1,1 +1,2 @@
 deploy/docker/*.cmd text eol=crlf
+deploy/windows/*.cmd text eol=crlf

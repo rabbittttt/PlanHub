@@ -12,10 +12,10 @@ export function validatePreviewConfig(config){
   return preview;
 }
 
-function withoutTransportIdentity(headers){
+function withoutTransportIdentity(headers,{allowControl=false}={}){
   const result={...headers};
   for(const name of ['connection','keep-alive','proxy-authenticate','proxy-authorization','te','trailer','transfer-encoding','upgrade',...(headers.connection??'').split(',').map(value=>value.trim().toLowerCase())])delete result[name];
-  for(const name of Object.keys(result))if(name.startsWith('x-planhub-')||name.startsWith('x-config-')||name.startsWith('x-sop-')||name.startsWith('x-forwarded-')||name==='forwarded')delete result[name];
+  for(const name of Object.keys(result))if((name.startsWith('x-planhub-')&&!(allowControl&&name==='x-planhub-control'))||name.startsWith('x-config-')||name.startsWith('x-sop-')||name.startsWith('x-forwarded-')||name==='forwarded')delete result[name];
   return result;
 }
 
@@ -28,7 +28,7 @@ function permitted(request,config){
   return typeof request.url==='string'&&request.url.startsWith('/')&&!request.url.startsWith('//');
 }
 
-export function createLocalPreviewGateway({config,targetPort}){
+export function createLocalPreviewGateway({config,targetPort,allowControl=false}){
   const preview=validatePreviewConfig(config);
   if(!Number.isInteger(targetPort)||targetPort<1||targetPort>65535)throw new Error('Invalid authenticated preview portal port.');
   const active=new Set();
@@ -39,7 +39,7 @@ export function createLocalPreviewGateway({config,targetPort}){
       response.end(request.method==='HEAD'?undefined:message);
     };
     if(!permitted(request,config)){request.resume();send(403,'Use the local preview address on this computer.');return;}
-    const headers=withoutTransportIdentity(request.headers);
+    const headers=withoutTransportIdentity(request.headers,{allowControl});
     headers.host='127.0.0.1:4174';
     headers['x-planhub-key']=config.proxySecret;
     headers['x-planhub-user']=preview.user;
@@ -63,10 +63,10 @@ export function createLocalPreviewGateway({config,targetPort}){
 
 function listen(server,port,host){return new Promise((resolve,reject)=>{const fail=error=>{server.removeListener('listening',ready);reject(error);};const ready=()=>{server.removeListener('error',fail);resolve();};server.once('error',fail);server.once('listening',ready);server.listen(port,host);});}
 
-export async function startLocalPreviewPortal(portal,config,{port=4173,host='0.0.0.0'}={}){
+export async function startLocalPreviewPortal(portal,config,{port=4173,host='0.0.0.0',allowControl=false}={}){
   validatePreviewConfig(config);
   await listen(portal,0,'127.0.0.1');
-  const server=createLocalPreviewGateway({config,targetPort:portal.address().port});
+  const server=createLocalPreviewGateway({config,targetPort:portal.address().port,allowControl});
   const stopPortal=()=>{portal.close();portal.closeAllConnections?.();};
   server.once('close',stopPortal);
   portal.once('close',()=>{server.close();server.closeAllConnections?.();});
