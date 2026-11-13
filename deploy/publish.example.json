@@ -66,8 +66,7 @@
       }
     },
     "leads": {
-      "kind": "static",
-      "businessSourceConfirmed": false
+      "kind": "static"
     },
     "vehicle-config": {
       "kind": "release",

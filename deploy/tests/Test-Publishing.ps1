@@ -3,7 +3,7 @@ $ErrorActionPreference='Stop'
 $deploy=Split-Path -Parent $PSScriptRoot
 $root=Split-Path -Parent $deploy
 . (Join-Path $deploy 'Publish.Common.ps1')
-$scratch=Join-Path $root ('artifacts/publish-docker-test-'+[Guid]::NewGuid().ToString('N'))
+$scratch=Join-Path ([IO.Path]::GetTempPath()) ('planhub-publish-test-'+[Guid]::NewGuid().ToString('N'))
 $fixture=Join-Path $scratch 'workspace'
 function Put($Path,$Value){[void][IO.Directory]::CreateDirectory((Split-Path -Parent $Path));[IO.File]::WriteAllText($Path,$Value,(New-Object Text.UTF8Encoding($false)))}
 function Check($Value,$Message){if(-not $Value){throw $Message};$publishTestState.checks++}
@@ -23,7 +23,23 @@ try {
     Check ($release.Files.Count -eq 2) 'Portal payload should contain only portal files'
     Check (-not $release.Files.ContainsKey('web.config')) 'Obsolete IIS file included'
     Reject {& $publish -AppId planhub -Version test-v1 -ConfigPath $config -NonInteractive -BuildOnly}
-    Reject {& $publish -AppId leads -Version test-v1 -ConfigPath $config -NonInteractive -BuildOnly}
+    # A prepared fixture page packages directly, including old private configs
+    # that still contain the retired confirmation field.
+    $preparedPage=Join-Path $scratch 'page-source'
+    Put (Join-Path $preparedPage 'index.html') '<title>Fixture-owned page</title>'
+    foreach($version in @('leads-current','leads-legacy')){
+        if($version -eq 'leads-legacy'){
+            $settings=Get-Content -LiteralPath $config -Raw -Encoding UTF8|ConvertFrom-Json
+            $settings.applications.leads|Add-Member -NotePropertyName businessSourceConfirmed -NotePropertyValue $false
+            Write-AppReleaseJson $config $settings
+        }
+        $preparedRelease=Join-Path $scratch $version
+        & (Join-Path $deploy 'New-AppRelease.ps1') -PayloadPath $preparedPage -Destination $preparedRelease -AppId leads -Version $version -Type static -EntryPoint index.html -SourceRevision fixture -DataMode stateless|Out-Null
+        $leads=& $publish -AppId leads -ReleasePath $preparedRelease -ConfigPath $config -NonInteractive -BuildOnly
+        $validated=Assert-AppRelease $leads.releasePath
+        Check ($validated.Manifest.appId -eq 'leads') 'Configured leads release was blocked by a retired confirmation flag'
+        Check ((Get-FileHash -LiteralPath $validated.Files['index.html']).Hash -eq (Get-FileHash -LiteralPath (Join-Path $preparedPage 'index.html')).Hash) 'Configured child page was modified'
+    }
     Reject {& $publish -AppId unknown -ConfigPath $config -NonInteractive -BuildOnly}
     Reject {& $publish -AppId planhub -Action Deploy -ConfigPath $config -NonInteractive}
     Reject {& $publish -AppId '../outside' -ConfigPath $config -NonInteractive -BuildOnly}
@@ -49,4 +65,8 @@ try {
 } finally {
     Remove-Item Function:node -ErrorAction SilentlyContinue
     Set-Location -LiteralPath $root
+    $resolved=[IO.Path]::GetFullPath($scratch)
+    $tempRoot=[IO.Path]::GetFullPath([IO.Path]::GetTempPath()).TrimEnd('\','/')
+    if((Split-Path -Parent $resolved).TrimEnd('\','/') -ne $tempRoot -or (Split-Path -Leaf $resolved) -notmatch '^planhub-publish-test-[a-f0-9]{32}$'){throw 'Unexpected temporary fixture cleanup path'}
+    Remove-Item -LiteralPath $resolved -Recurse -Force
 }

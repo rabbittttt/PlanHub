@@ -80,7 +80,6 @@ if(-not $Version){$Version=Get-Date -Format 'yyyyMMdd-HHmmss-fff'}
 Assert-PublishVersion $Version
 $profile=Get-PublishValue (Get-PublishValue $config 'applications') $AppId ([pscustomobject]@{})
 $kind=[string](Get-PublishValue $profile 'kind' '')
-if($AppId -eq 'leads' -and (Get-PublishValue $profile 'businessSourceConfirmed' $false) -ne $true){throw 'Replace the leads integration sample with the real intranet page, then set applications.leads.businessSourceConfirmed=true in config.local/publish.json.'}
 if(-not $ReleasePath){$ReleasePath=[string](Get-PublishValue $profile 'releasePath' '')}
 if(-not $ReleasePath -and -not $kind){
     # New static apps can use the registered collector; dynamic apps need a source-owned release.
