@@ -26,9 +26,10 @@ A 还需保留现有 Node.js 20+、Python 构建环境，并能访问公司允�
 
 **操作位置：A 的工作台源码目录，也就是能看到 `发布应用.bat` 的文件夹。目的：生成要带给 B 的程序。**
 
-1. 更新门户和各应用源码。首次打包配置：已有 `config.local/publish.json` 就沿用；没有时，先新建 `config.local/` 文件夹，再将 `deploy/publish.example.json` 复制进去并命名为 `publish.json`。请维护代码的同事核对里面的原项目路径和 Python 构建路径。
-2. 线索声量先换成内网真实网页，再在该配置中将 `applications.leads.businessSourceConfirmed` 设为 `true`。
-3. 双击 **`发布应用.bat`**，输入 **`0`**，等待打包完成。
+1. 更新门户和各应用源码。
+2. 双击 **`发布应用.bat`**。工具会自动创建 `config.local/` 和其中的 `publish.json`，已有配置会继续沿用，无需手动新建或复制模板。
+3. **仅首次配置时：** 看到应用编号菜单后先关闭窗口，打开自动生成的 `config.local/publish.json`，请维护代码的同事核对原项目路径和 Python 构建路径。线索声量须使用内网真实网页，再将 `applications.leads.businessSourceConfirmed` 设为 `true`。保存后重新双击 `发布应用.bat`；配置已核对好的电脑可跳过此项。
+4. 在应用编号菜单输入 **`0`**，等待打包完成。
 
 工具会构建各应用、制作 Docker 镜像并导出文件。**完成标准：** 窗口显示“打包完成”，资源管理器选中 `release/planhub-时间戳/`。
 
