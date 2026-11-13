@@ -45,10 +45,10 @@ test('complete Docker delivery is one ASCII folder, with unchanged verified rele
   const portal=await release(base,'planhub',{'index.html':'portal','config/apps.json':JSON.stringify({groups:[{apps:[{id:'leads',enabled:true}]}]})});
   const leads=await release(base,'leads',{'index.html':'original child page'}),before=await hashFile(path.join(leads,'app-release.json'));
   const destination=path.join(base,'delivery');
-  await buildDockerPackage([portal,leads],destination,{complete:true,execute:docker.execute});
+  await buildDockerPackage([portal,leads],destination,{complete:true,execute:docker.execute,workDirectory:path.join(base,'build')});
   assert.equal(await hashFile(path.join(leads,'app-release.json')),before);
   const names=await readdir(destination);assert.ok(names.every(name=>/^[\x20-\x7e]+$/.test(name)));
-  assert.deepEqual(names.sort(),['README.md','compose.json','delivery.json','deploy.ps1','images.tar','runtime.example.json','start.cmd','stop.cmd']);
+  assert.deepEqual(names.sort(),['README.md','compose.json','delivery.json','deploy.ps1','images.tar','preview.cmd','preview.ps1','runtime.example.json','start.cmd','stop-preview.cmd','stop.cmd']);
   const manifest=JSON.parse(await readFile(path.join(destination,'delivery.json'))),compose=JSON.parse(await readFile(path.join(destination,'compose.json')));
   for(const [name,hash] of Object.entries(manifest.files))assert.equal(await hashFile(path.join(destination,name)),hash);
   assert.deepEqual(manifest.applications,['planhub','leads']);assert.equal(manifest.complete,true);
@@ -58,18 +58,19 @@ test('complete Docker delivery is one ASCII folder, with unchanged verified rele
   const context=docker.calls.find(args=>args[0]==='build'&&args.includes(manifest.images.leads.tag)).at(-1);
   assert.equal(await readFile(path.join(context,'release/payload/index.html'),'utf8'),'original child page');
   assert.equal(await hashFile(path.join(context,'release/app-release.json')),before);
-  await assert.rejects(buildDockerPackage([portal,leads],destination,{complete:true,execute:docker.execute}),/exists/);
-  await assert.rejects(buildDockerPackage([portal],path.join(base,'incomplete'),{complete:true,execute:docker.execute}),/Incomplete/);
+  assert.equal(await readFile(path.join(context,'launcher/local-preview-gateway.mjs'),'utf8'),await readFile(path.join(root,'scripts/local-preview-gateway.mjs'),'utf8'));
+  await assert.rejects(buildDockerPackage([portal,leads],destination,{complete:true,execute:docker.execute,workDirectory:path.join(base,'build')}),/exists/);
+  await assert.rejects(buildDockerPackage([portal],path.join(base,'incomplete'),{complete:true,execute:docker.execute,workDirectory:path.join(base,'build')}),/Incomplete/);
   await writeFile(path.join(leads,'payload/index.html'),'tampered');
-  await assert.rejects(buildDockerPackage([leads],path.join(base,'tampered'),{execute:docker.execute}),/校验失败/);
+  await assert.rejects(buildDockerPackage([leads],path.join(base,'tampered'),{execute:docker.execute,workDirectory:path.join(base,'build')}),/校验失败/);
 });
 test('build failure publishes no delivery, and an existing immutable image cannot be replaced',async t=>{
   const base=await temporary(t),app=await release(base,'leads',{'index.html':'original'}),docker=fakeDocker(),destination=path.join(base,'failed');
   const execute=(args,options)=>{if(args[1]==='save')throw new Error('export failed');return docker.execute(args,options);};
-  await assert.rejects(buildDockerPackage([app],destination,{execute}),/export failed/);
+  await assert.rejects(buildDockerPackage([app],destination,{execute,workDirectory:path.join(base,'build')}),/export failed/);
   await assert.rejects(readFile(path.join(destination,'delivery.json')),/ENOENT/);
   const first=[...docker.images.keys()][0];docker.images.get(first).Config.Labels['planhub.fingerprint']='tampered';
-  await assert.rejects(buildDockerPackage([app],destination,{execute:docker.execute}),/Immutable image/);
+  await assert.rejects(buildDockerPackage([app],destination,{execute:docker.execute,workDirectory:path.join(base,'build')}),/Immutable image/);
 });
 test('release validation rejects undeclared private data and checksum or case collisions',async t=>{
   const base=await temporary(t),app=await release(base,'leads',{'index.html':'original'});

@@ -7,6 +7,7 @@ import {spawn} from 'node:child_process';
 import {pathToFileURL} from 'node:url';
 import {createServer} from './dev-server.mjs';
 import {readRelease} from './release-validation.mjs';
+import {validatePreviewConfig,startLocalPreviewPortal} from './local-preview-gateway.mjs';
 
 export const readJson=async file=>JSON.parse((await readFile(file,'utf8')).replace(/^\uFEFF/,''));
 export function validateRuntime(config){
@@ -14,6 +15,7 @@ export function validateRuntime(config){
   if(config.schemaVersion!==1||!['http:','https:'].includes(origin.protocol)||origin.origin!==config.publicOrigin||origin.hostname.endsWith('.invalid'))throw new Error('Set publicOrigin to the company gateway origin, without a path or trailing slash.');
   for(const key of ['proxySecret','sopSecret','vehicleSecret'])if(!/^[a-zA-Z0-9_-]{32,}$/.test(config[key]??''))throw new Error('Missing external secret: '+key);
   for(const key of ['sharedDirectory','sopSharedConfig','quicklookSourceBase'])privatePath('/runtime',config[key]);
+  if(Object.hasOwn(config,'preview'))validatePreviewConfig(config);
   return config;
 }
 export function privatePath(root,value){
@@ -87,8 +89,9 @@ export async function runContainer(id,{appRoot='/app',runtime='/runtime'}={}){
   const release=await readRelease(path.join(appRoot,'release'),id);
   if(binding.type!==release.manifest.type)throw new Error('Release type differs from the container binding');
   if(binding.type==='static'){
-    const server=id==='planhub'?createContainerPortal(release.payload,bindings,config):createServer({root:runtime,portalRoot:release.payload,applications:{}});
-    await new Promise((resolve,reject)=>{server.once('error',reject);server.listen(binding.port,id==='planhub'?'0.0.0.0':'127.0.0.1',resolve);});
+    let server=id==='planhub'?createContainerPortal(release.payload,bindings,config):createServer({root:runtime,portalRoot:release.payload,applications:{}});
+    if(id==='planhub'&&Object.hasOwn(config,'preview'))server=await startLocalPreviewPortal(server,config,{port:binding.port});
+    else await new Promise((resolve,reject)=>{server.once('error',reject);server.listen(binding.port,id==='planhub'?'0.0.0.0':'127.0.0.1',resolve);});
     const stop=()=>{server.close();server.closeAllConnections();};process.once('SIGTERM',stop);process.once('SIGINT',stop);
     return server;
   }

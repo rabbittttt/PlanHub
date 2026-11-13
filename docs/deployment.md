@@ -4,6 +4,8 @@
 
 **`start.cmd` 是 B 上的“一键部署并启动”入口。** 首次运行会安装并启动收到的版本；以后在新版本包里运行它，会更新并启动该版本。打开网页则是在浏览器输入公司提供的工作台地址。
 
+准备好第三步的数据后，可以先用 **`preview.cmd` 在 B 本机试运行**，确认各网页能用，再继续第四步。试运行地址是 `http://127.0.0.1:4174/`，使用独立数据副本，不需要公司入口。
+
 ## 第一步：让 A、B 具备运行 Docker 的条件
 
 **操作位置：A 和 B，各做一次。目的：让 A 能制作程序包，让 B 能运行收到的包。**
@@ -35,7 +37,7 @@ A 还需保留现有 Node.js 20+、Python 构建环境，并能访问公司允�
 
 线索声量按已配置的网页来源打包；正式交付使用内网真实页面，不用接入样例。
 
-接下来只搬这个选中的文件夹。它里面有 `start.cmd`、`stop.cmd`、`images.tar` 和 `README.md` 等文件；`images.tar` 由部署脚本处理，保留原文件即可。
+接下来只搬这个选中的文件夹。它里面有 `start.cmd`、`stop.cmd`、`preview.cmd`、`stop-preview.cmd`、`images.tar` 和 `README.md` 等文件；`images.tar` 由脚本处理，保留原文件即可。新增试运行入口后，需要在 A 重新打包，再复制新包到 B。
 
 ## 第三步：在 B 放好程序包、配置和数据
 
@@ -60,6 +62,8 @@ planhub/                           ← B 上新建的总目录
 ├─ planhub-时间戳/                 ← 从 A 完整复制的程序包
 │  ├─ start.cmd                    ← 下一步双击这个文件部署
 │  ├─ stop.cmd
+│  ├─ preview.cmd                  ← 可选：先在 B 本机试运行
+│  ├─ stop-preview.cmd
 │  ├─ deploy.ps1
 │  ├─ images.tar
 │  └─ 其他随包文件
@@ -84,30 +88,41 @@ planhub/                           ← B 上新建的总目录
 |---|---|---|
 | SOP 计划 | `../SOP维护/data/` 的内容：核心是 `sop.sqlite3`，连同 `sales.json`、`source_settings.json`、历史备份等一起保留；旧 `service.json`、`service.pid` 不必复制 | `data/sop/` |
 | 订单分析批注 | `../订单分析/data/order_dashboard/` 的内容，关键文件为 `annotations.sqlite3` | `data/orderiq/annotations/` |
-| 数据速查 | `../数据速查/output_file/` 中的 `warehouse.db`、`workspace.json`、`recognition.json` 和 `uploads/`（存在的都保留）；旧路径还需按下文处理 | `data/quicklook/`，例如 `data/quicklook/uploads/` |
+| 数据速查 | 本次不沿用旧数据速查文件，无需复制原 `output_file/` | `data/quicklook/` 留空，由程序创建；共享 Excel 从 `shared/` 读取 |
 | 车型配置 | 原 `../共享数据/车型配置/` 的全部内容，包括 `catalog.sqlite3`、`current.json`、`drafts/`、`history/` | `data/vehicle-config/` |
 | 订单分析旧报表批次（可选） | 要保留历史批次时，复制 `../订单分析/output_file/runtime/` 的全部内容，包括 `current.json` 和 `datasets/` | `data/orderiq/runtime/`；不保留旧批次时可留空，从共享 Excel 重新生成 |
 | 销量预测 | 通常无需复制旧 `output_file/`，页面和缓存可从共享 Excel 重新生成 | `data/forecast/` 可留空，由程序创建 |
 
 这些是原应用的默认位置；如果原服务配置过其他数据目录，取它**实际使用的目录**。原项目的 `output_file/releases/` 等程序发布包不属于业务数据，不用复制进来。门户和线索声量页面已包含在程序包中。
 
-如果某个应用以前完全没用过、没有记录要保留，对应 `data/` 子目录可以留空。SOP 已保存的计划在 `sop.sqlite3` 中，不能只搬一份旧维护 Excel 代替。数据速查的收藏和销量预测的网页人工参数保存在原浏览器中，复制这些服务器文件不会自动迁移浏览器设置。
+如果某个应用以前完全没用过、没有记录要保留，对应 `data/` 子目录可以留空。SOP 已保存的计划在 `sop.sqlite3` 中，不能只搬一份旧维护 Excel 代替。销量预测的网页人工参数保存在原浏览器中，复制服务器文件不会自动迁移浏览器设置。
 
-**`quicklookSourceBase` 到底要不要处理？**
+**完成标准：** 程序包在 B；`planhub-runtime` 和 `config.json` 已生成；共享规则、共享 Excel 和需要保留的旧数据已按上述位置准备好。数据速查按全新使用准备，无需迁移旧库或修改额外路径参数。
 
-它只表示：数据速查的旧 `workspace.json` 里，如果只写了一个相对路径，应该从哪个目录开始找文件。默认 `"quicklookSourceBase": "shared"` 就是从 B 的 `planhub-runtime/shared/` 开始找。例如旧设置写的是 `订单汇总`，对应的就是 `shared/订单汇总/`。
+### 第三步完成后：先在 B 本机试运行（可选）
 
-- **没有旧数据速查文件要沿用：** 保持默认 `"shared"`，不用修改或额外核对。共享 Excel 放好后，程序会按配置读取共享目录；通过网页新上传的文件由程序保存。
-- **需要保留以前的数据速查库和设置：** 保留上表列出的文件，并在复制的 `workspace.json` 中查看 `folder` / `folders`。只有旧相对路径在新的 `shared/` 下仍能找到对应文件时，默认值才直接适用。
-- **旧设置或旧库里记录了 Windows 盘符路径：** 例如 `D:\旧目录\订单汇总`，不能把它填进 `quicklookSourceBase`；只改这个参数也不会转换数据库中的原文件路径、上传记录和识别规则。当前门户没有完成 Windows 到 Linux 的历史路径自动迁移，需要由数据速查原项目按其迁移能力处理。迁移验收要检查旧文件预览、同步和识别规则，不只检查数据库能打开。
+**操作位置：B 的完整版本文件夹，即能直接看到 `preview.cmd` 的文件夹。** 此时可以不填写公司访问地址，也不接公司认证入口。
 
-**完成标准：** 程序包在 B；`planhub-runtime` 和 `config.json` 已生成；共享规则、共享 Excel 和需要保留的旧数据已按上述位置准备好。若要沿用数据速查历史记录，其路径迁移也须处理完成。
+1. 确认 B 的 Docker 已启动，原来使用这份数据的服务已停止。
+2. 双击 **`preview.cmd`**。首次会将第三步准备的规则、共享 Excel 和应用数据复制到旁边的 `planhub-preview/`，然后启动独立的试运行容器。数据较多时，首次复制需要等待。
+3. 试运行就绪后会自动打开 B 的浏览器，地址是 **`http://127.0.0.1:4174/`**；也可手动输入这个地址。进入各应用检查页面、查询、保存和导入导出。数据速查及销量预测首次处理数据时，等页面更新完成再验收。
+4. 检查结束后，双击 **`stop-preview.cmd`** 停止试运行，再继续第四步。
+
+试运行只供 B 本机访问。你在试运行里保存、上传或生成的内容留在副本中，不会合并到正式 `planhub-runtime/`；正式配置里的地址也不受影响。停止后副本保留，再次试运行会沿用它。需要重新复制第三步的最新数据时，确认使用源数据的正式服务已停止，再在版本文件夹的 PowerShell 执行：
+
+```powershell
+.\preview.cmd -RefreshSnapshot
+```
+
+工具会先停止现有试运行，再新建一份副本，旧副本保留。副本由脚本通过显式 `-Snapshot` 选项创建，无需你手动修改配置。
+
+**完成标准：** B 的浏览器可从上述本机地址进入工作台和各动态网页。公司入口与账号认证仍在第五步单独验收。
 
 ## 第四步：在 B 部署程序，并让它后台运行
 
 **操作位置：B 的 `planhub/planhub-时间戳/`，就是第三步复制的版本文件夹。**
 
-1. 用记事本打开旁边的 `planhub-runtime/config.json`，将 `publicOrigin` 改成同事提供的访问地址，例如 `https://planhub.company.internal`，结尾不带 `/`，保存。
+1. 如果刚做过本机试运行，先双击 `stop-preview.cmd`。然后用记事本打开旁边的 `planhub-runtime/config.json`，将 `publicOrigin` 改成同事提供的访问地址，例如 `https://planhub.company.internal`，结尾不带 `/`，保存。
 2. 回到第三步复制的版本文件夹，**双击里面的 `start.cmd`。这一步就是正式部署。**
 
 脚本会自动完成下面的工作，无需再手动导入镜像或输入 Docker 部署命令：
@@ -147,6 +162,7 @@ planhub/                           ← B 上新建的总目录
 | 更新一个应用 | A 打开 `发布应用.bat`，选对应编号；把新包复制到 B 的同一个 `planhub/` 总目录，与旧包并排。等业务操作结束后，在**新版本文件夹**双击 `start.cmd`，它会停止并更新该应用。 |
 | 更新整套 | A 输入 `0` 打包；B 在新版本包里运行 `start.cmd`，会停止并更新整套应用。新增应用或修改运行配置时用这一方式；新增导航入口也要交付更新后的门户。 |
 | 保留原数据 | 新旧版本都使用旁边同一份 `planhub-runtime/`。日常更新沿用它，第三步的首次准备不用重做。 |
+| 本机试运行 / 停止 | B 在完整包里双击 `preview.cmd`，浏览器打开 `http://127.0.0.1:4174/`；结束时双击 `stop-preview.cmd`。 |
 | 停止运行 | B 双击包内 `stop.cmd`。完整包停止整套，单应用包只停止该应用，数据保留。关闭浏览器或 CMD 窗口不会停止容器。 |
 | 查看错误日志 | B 在对应版本文件夹打开 PowerShell，执行 `.\deploy.ps1 -Action Logs -AppId orderiq`；将 `orderiq` 换成要检查的应用 ID。 |
 
@@ -160,5 +176,6 @@ planhub/                           ← B 上新建的总目录
 - 公司认证后，覆盖 `X-PlanHub-User` 为真实 ASCII 域账号或 UPN，覆盖 `X-PlanHub-Key` 为该配置中的 `proxySecret`，不透传客户端自报身份。
 - 网关不在 B 时，按公司网络规则调整 `listenAddress` 并限制上游访问。密钥仅供服务端使用。
 - 宿主重启后需先有 Docker 运行；容器使用 `restart: unless-stopped`。手动停止的容器需再次启动。
+- 本机试运行使用独立 Compose 项目 `planhub-preview`，只绑定 `127.0.0.1:4174`，容器不设自动恢复。操作人来自 B 当前 Windows 登录账号；现有身份契约需要 ASCII 域账号或 UPN。公司认证仍由正式入口负责。
 
 </details>

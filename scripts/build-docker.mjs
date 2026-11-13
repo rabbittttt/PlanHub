@@ -7,8 +7,8 @@ import {fileURLToPath,pathToFileURL} from 'node:url';
 import {readRelease} from './release-validation.mjs';
 
 const ROOT=path.resolve(path.dirname(fileURLToPath(import.meta.url)),'..');
-const modules=['container-runtime.mjs','release-validation.mjs','dev-server.mjs','app-integrations.mjs','proxy-request.mjs','portal-instance.mjs'];
-const templates=['deploy.ps1','start.cmd','stop.cmd','runtime.example.json'];
+const modules=['container-runtime.mjs','local-preview-gateway.mjs','release-validation.mjs','dev-server.mjs','app-integrations.mjs','proxy-request.mjs','portal-instance.mjs'];
+const templates=['deploy.ps1','start.cmd','stop.cmd','preview.ps1','preview.cmd','stop-preview.cmd','runtime.example.json'];
 const json=async file=>JSON.parse((await readFile(file,'utf8')).replace(/^\uFEFF/,''));
 const putJson=(file,value)=>writeFile(file,JSON.stringify(value,null,2)+'\n');
 const digest=value=>crypto.createHash('sha256').update(value).digest('hex');
@@ -19,7 +19,7 @@ export function docker(args,{capture=false,env=process.env,allowMissing=false}={
   if(result.error||result.status!==0)throw new Error('Docker failed: '+args.slice(0,3).join(' ')+'\n'+(result.error?.message??result.stderr??'See output above.'));
   return result.stdout?.trim()??'';
 }
-export async function buildDockerPackage(releasePaths,destination,{complete=false,root=ROOT,execute=docker}={}){
+export async function buildDockerPackage(releasePaths,destination,{complete=false,root=ROOT,execute=docker,workDirectory=null}={}){
   destination=path.resolve(destination);
   try{await access(destination);throw new Error('Destination already exists; choose a new version directory.');}catch(error){if(error.code!=='ENOENT')throw error;}
   const releases={};
@@ -51,7 +51,7 @@ export async function buildDockerPackage(releasePaths,destination,{complete=fals
   if(!/^linux\/(x86_64|amd64)$/.test(engine))throw new Error('Use Docker Linux containers on x86_64/amd64. Check docker info.');
   const composeVersion=execute(['compose','version','--short'],{capture:true}).match(/^v?(\d+)\.(\d+)\./);
   if(!composeVersion||Number(composeVersion[1])<2||(Number(composeVersion[1])===2&&Number(composeVersion[2])<20))throw new Error('Docker Compose 2.20 or newer is required.');
-  const buildRoot=path.join(root,'staging/docker');await mkdir(buildRoot,{recursive:true});
+  const buildRoot=workDirectory?path.resolve(workDirectory):path.join(root,'staging/docker');await mkdir(buildRoot,{recursive:true});
   const work=await mkdtemp(path.join(buildRoot,'build-'));
   await mkdir(path.dirname(destination),{recursive:true});
   const output=await mkdtemp(path.join(path.dirname(destination),'.planhub-partial-'));

@@ -1,19 +1,19 @@
 #requires -Version 5.1
 $ErrorActionPreference='Stop'
 $root=Split-Path -Parent (Split-Path -Parent $PSScriptRoot)
-$scratch=Join-Path $root ('artifacts/docker-deploy-test-'+[Guid]::NewGuid().ToString('N'))
+$scratch=Join-Path ([IO.Path]::GetTempPath()) ('planhub-docker-deploy-test-'+[Guid]::NewGuid().ToString('N'))
 $package=Join-Path $scratch 'delivery'
 [void][IO.Directory]::CreateDirectory($package)
 function Save($File,$Value){[IO.File]::WriteAllText($File,($Value|ConvertTo-Json -Depth 30),(New-Object Text.UTF8Encoding($false)))}
 function Check($Value,$Message){if(-not $Value){throw $Message};$dockerTestState.checks++}
 function Reject([scriptblock]$Action){$failed=$false;try{& $Action|Out-Null}catch{$failed=$true};Check $failed 'Expected safe failure'}
 $dockerTestState=[pscustomobject]@{checks=0;calls=(New-Object Collections.Generic.List[string]);failHealth=$false;hasNetwork=$false;foreignRuntime=$false}
-foreach($name in @('deploy.ps1','start.cmd','stop.cmd','runtime.example.json')){Copy-Item -LiteralPath (Join-Path $root ('deploy/docker/'+$name)) -Destination $package}
+foreach($name in @('deploy.ps1','start.cmd','stop.cmd','preview.ps1','preview.cmd','stop-preview.cmd','runtime.example.json')){Copy-Item -LiteralPath (Join-Path $root ('deploy/docker/'+$name)) -Destination $package}
 [IO.File]::WriteAllText((Join-Path $package 'images.tar'),'fixture archive')
 [IO.File]::WriteAllText((Join-Path $package 'README.md'),'fixture guide')
 Save (Join-Path $package 'compose.json') @{name='planhub';services=@{}}
 $hashes=@{}
-foreach($name in @('deploy.ps1','start.cmd','stop.cmd','runtime.example.json','images.tar','compose.json','README.md')){$hashes[$name]=(Get-FileHash -LiteralPath (Join-Path $package $name)).Hash.ToLowerInvariant()}
+foreach($name in @('deploy.ps1','start.cmd','stop.cmd','preview.ps1','preview.cmd','stop-preview.cmd','runtime.example.json','images.tar','compose.json','README.md')){$hashes[$name]=(Get-FileHash -LiteralPath (Join-Path $package $name)).Hash.ToLowerInvariant()}
 $manifest=@{schemaVersion=1;platform='linux/amd64';contractHash='fixture-contract';complete=$true;applications=@('planhub');files=$hashes;images=@{network=@{tag='network-fixture';id='sha256:network'};planhub=@{tag='portal-fixture';id='sha256:planhub'}}}
 Save (Join-Path $package 'delivery.json') $manifest
 $entry=Join-Path $package 'deploy.ps1'
@@ -73,4 +73,10 @@ try {
     Reject {& $entry -Action Start}
     Check (($dockerTestState.calls|Where-Object {$_ -match ' stop |image load'}).Count -eq 0) 'Changed runtime configuration was applied to only one app'
     Write-Output ('Docker deployment checks passed: '+$dockerTestState.checks)
-} finally {Remove-Item Function:docker -ErrorAction SilentlyContinue}
+} finally {
+    Remove-Item Function:docker -ErrorAction SilentlyContinue
+    $resolved=[IO.Path]::GetFullPath($scratch)
+    $tempRoot=[IO.Path]::GetFullPath([IO.Path]::GetTempPath()).TrimEnd('\','/')
+    if((Split-Path -Parent $resolved).TrimEnd('\','/') -ne $tempRoot -or (Split-Path -Leaf $resolved) -notmatch '^planhub-docker-deploy-test-[a-f0-9]{32}$'){throw 'Unexpected temporary test cleanup path'}
+    Remove-Item -LiteralPath $resolved -Recurse -Force
+}

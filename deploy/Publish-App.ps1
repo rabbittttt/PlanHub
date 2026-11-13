@@ -65,7 +65,7 @@ if($All) {
     if($LASTEXITCODE -ne 0){throw 'Docker image build/export failed. No completed delivery folder was published.'}
     Write-Host "`n打包完成。只需把下面这一个文件夹完整复制到电脑 B："
     Write-Host $bundleDestination
-    Write-Host '已包含离线镜像、start.cmd、stop.cmd 和 README.md；按包内说明在 B 部署。'
+    Write-Host '已包含离线镜像、preview.cmd 本机试运行及 start.cmd 正式部署入口；按包内 README.md 操作。'
     if($NonInteractive){return [pscustomobject]@{deliveryPath=$bundleDestination}}
     Open-PublishDeliveryFolder -Path $bundleDestination
     return
