@@ -1,10 +1,16 @@
-# 从打包到 Docker 部署：五步完成
+# 第一次把工作台部署到 B：按这五步做
 
-**A 负责打包，B 负责运行。首次只搬一个文件夹。公司认证由同事接入。**
+**A 是有源码的打包电脑，B 是长期运行工作台的部署电脑。** 先在 A 制作程序包，再复制到 B 安装运行，最后从部门浏览器访问。
 
-## 第一步：检查 A、B 的 Docker
+**`start.cmd` 是 B 上的“一键部署并启动”入口。** 首次运行会安装并启动收到的版本；以后在新版本包里运行它，会更新并启动该版本。打开网页则是在浏览器输入公司提供的工作台地址。
 
-两台电脑分别打开 PowerShell，运行：
+## 第一步：让 A、B 具备运行 Docker 的条件
+
+**操作位置：A 和 B，各做一次。目的：让 A 能制作程序包，让 B 能运行收到的包。**
+
+请同事安装并启动 Docker。Windows 工作站使用 [Docker Desktop 的 Linux 容器模式](https://docs.docker.com/desktop/setup/install/windows-install/)；Windows Server 由同事提供适用的 Linux 容器环境。
+
+在两台电脑的开始菜单搜索并打开 PowerShell，分别执行：
 
 ```powershell
 docker version
@@ -12,86 +18,121 @@ docker compose version
 docker info --format '{{.OSType}}/{{.Architecture}}'
 ```
 
-应看到 Docker **Server** 信息、Compose **v2.20+**，最后一行是 `linux/x86_64` 或 `linux/amd64`。未安装或连接失败，先让同事安装并启动 Docker。Windows 工作站使用 [Docker Desktop 的 Linux 容器模式](https://docs.docker.com/desktop/setup/install/windows-install/)；Windows Server 交由同事提供适用的 Linux 容器环境。
+**完成标准：** 第一条能看到 Server 信息；Compose 是 v2.20 或更新版本；最后一条显示 `linux/x86_64` 或 `linux/amd64`。有报错就先请同事解决，再继续。
 
-A 继续使用现有 Node.js 20+、Python 构建环境，并能访问公司允许的镜像源及 Python 依赖源。**B 无需另装 Node.js、Python，也无需下载依赖。**
+A 还需保留现有 Node.js 20+、Python 构建环境，并能访问公司允许的镜像和依赖源。B 的 Node.js、Python 和依赖由程序包提供。请公司接入同事先给出最终访问地址，第三步要填写它。
 
-## 第二步：在 A 打包
+## 第二步：在 A 制作完整程序包
 
-1. 更新门户和各应用代码，确认本地功能正常；首次核对 `config.local/publish.json` 的项目路径和构建命令。
-2. 双击 **`发布应用.bat`**，输入 **`0`**。
-3. 等待构建、校验和镜像导出全部成功，工具会选中 **`release/planhub-时间戳/`**。
+**操作位置：A 的工作台源码目录，也就是能看到 `发布应用.bat` 的文件夹。目的：生成要带给 B 的程序。**
 
-线索声量须换成内网真实页面，再在本机发布配置确认 `applications.leads.businessSourceConfirmed=true`，不能交付接入样例。其他应用会调用已有构建入口，不需要先手动生成订单业务报表。
+1. 更新门户和各应用源码。首次打包配置：已有 `config.local/publish.json` 就沿用；没有时，先新建 `config.local/` 文件夹，再将 `deploy/publish.example.json` 复制进去并命名为 `publish.json`。请维护代码的同事核对里面的原项目路径和 Python 构建路径。
+2. 线索声量先换成内网真实网页，再在该配置中将 `applications.leads.businessSourceConfirmed` 设为 `true`。
+3. 双击 **`发布应用.bat`**，输入 **`0`**，等待打包完成。
 
-```text
-planhub-20261113-120000-000/
-  README.md
-  start.cmd
-  stop.cmd
-  deploy.ps1
-  compose.json
-  images.tar
-  delivery.json
-  runtime.example.json
-```
+工具会构建各应用、制作 Docker 镜像并导出文件。**完成标准：** 窗口显示“打包完成”，资源管理器选中 `release/planhub-时间戳/`。
 
-**只复制这个文件夹。** 不搬源码、`staging` 或旧 `bundles`。`images.tar` 是离线镜像，交给 Docker 导入，不用解压。
+接下来只搬这个选中的文件夹。它里面有 `start.cmd`、`stop.cmd`、`images.tar` 和 `README.md` 等文件；`images.tar` 由部署脚本处理，保留原文件即可。
 
-## 第三步：复制到 B，准备运行目录
+## 第三步：在 B 放好程序包、配置和数据
 
-在收到的文件夹里打开 PowerShell，运行：
+**操作位置：B。目的：为下一步正式部署准备文件和数据。**
+
+1. 在 B 选一个长期保留的位置，新建 `planhub` 文件夹。
+2. 将 A 生成的整个 `planhub-时间戳` 文件夹复制进去。
+3. 打开刚复制的版本文件夹，确认能直接看到 `start.cmd`。在资源管理器地址栏输入 `powershell` 并回车，然后执行：
 
 ```powershell
 .\deploy.ps1 -Action Prepare
 ```
 
-它会在旁边生成 **`planhub-runtime/`**。首次完成三件事：
+这条命令只创建配置和数据目录，**这时还没有部署、启动工作台**。它会在版本文件夹旁边生成 `planhub-runtime`。
 
-1. 打开 `../planhub-runtime/config.json`，把 `publicOrigin` 改成公司分配的入口，例如 `https://planhub.company.internal`，结尾不带 `/`。
-2. 真实共享规则放到 `config/shared_config.py`；共享输入放到 `shared/`，保留原业务目录名。
-3. 要接续旧数据时，由同事停止旧服务、接好对应持久目录并核对。新装可以没有历史数据，但不能用空样例代替共享规则。
+接着在 B 完成两件事：
+
+- 用记事本打开 `planhub-runtime/config.json`，将 `publicOrigin` 改成同事提供的访问地址，例如 `https://planhub.company.internal`，结尾不带 `/`，保存。
+- 将真实共享规则 `shared_config.py` 放到 `planhub-runtime/config/`；该文件默认来自订单原项目的 `../订单分析/scripts/config/shared_config.py`（路径相对门户源码目录）。将现有“共享数据”文件夹里面的内容放到 `planhub-runtime/shared/`，保留业务子目录名。
+
+此时 B 的目录应是：
 
 ```text
-parent/
-  planhub-版本号/          程序包
-  planhub-runtime/        长期保留，更新不替换
-    config.json
-    config/shared_config.py
-    shared/
-    data/sop/
-    data/orderiq/runtime/
-    data/orderiq/annotations/
-    data/forecast/
-    data/quicklook/
-    data/vehicle-config/
+planhub/                           ← B 上新建的总目录
+├─ planhub-时间戳/                 ← 从 A 完整复制的程序包
+│  ├─ start.cmd                    ← 下一步双击这个文件部署
+│  ├─ stop.cmd
+│  ├─ deploy.ps1
+│  ├─ images.tar
+│  └─ 其他随包文件
+└─ planhub-runtime/                ← 配置和数据，长期保留
+   ├─ config.json
+   ├─ config/
+   │  └─ shared_config.py
+   ├─ shared/
+   │  ├─ 订单汇总/
+   │  ├─ 对账资料/
+   │  └─ 其他现有业务目录
+   └─ data/                       ← 各应用保存的数据
 ```
 
-数据速查的历史来源需核对 `quicklookSourceBase`，Windows 绝对路径不能直接带进 Linux 容器。运行目录与程序包不能相互包含。该五步说明会原样放入交付包的 `README.md`，B 可直接查看。
+如果要接续旧数据库、上传或设置，请同事先停止旧服务，再按原项目的数据目录契约迁移到 `data/`。数据速查的历史来源还需核对配置中的 `quicklookSourceBase`，原 Windows 绝对路径不能直接带进 Linux 容器。
 
-## 第四步：启动，并接公司入口
+**完成标准：** 程序包在 B；`config.json` 已填真实访问地址；共享规则和数据已放好。
 
-双击 **`start.cmd`**。它会校验文件、导入镜像、启动容器并等待健康检查。成功 3 秒后窗口关闭，容器继续运行；失败保留窗口和日志。
+## 第四步：在 B 部署程序，并让它后台运行
 
-把这一段交给负责公司入口的同事即可：
+**操作位置：B 的 `planhub/planhub-时间戳/`，就是第三步复制的版本文件夹。**
 
-> 上游默认为 B 的 `http://127.0.0.1:4173`，转发全部路径并保留公共 Host、Origin、请求体。公司认证后覆盖 `X-PlanHub-User` 为真实 ASCII 域账号或 UPN，覆盖 `X-PlanHub-Key` 为 B 外置 config.json 的 proxySecret；不能透传客户端自报身份。公共入口须与 publicOrigin 一致。网关不在 B 时，按公司网络规则调整 listenAddress 并限制上游访问。
+完成第三步后，**双击这个文件夹里的 `start.cmd`。这一步就是正式部署。**
 
-密钥不放入浏览器或交付包。直接访问上游返回 **403 是正常的**，用户从公司认证入口进入。工具不配置公司账号、DNS、防火墙。
+脚本会自动完成下面的工作，无需再手动导入镜像或输入 Docker 部署命令：
 
-## 第五步：确认部署成功
+1. 检查程序包和配置。
+2. 把 `images.tar` 中的程序镜像导入 B 的 Docker。
+3. 创建并启动工作台及各应用容器，让程序在后台运行。
+4. 等待各应用正常响应，再显示检查结果。
 
-1. B 运行 `.\deploy.ps1 -Action Status`，应用容器应全部 **healthy**。
-2. 从另一台部门电脑打开公司入口，门户及六个应用可以进入；销量预测有真实输入后能生成报表。
-3. 验收查询、保存、导入导出和真实操作人记录；停止再启动后，数据仍在。
-4. 同事确认 Docker 随 B 启动，再做一次重启验收。
+**完成标准：** 窗口显示 `Containers are healthy`，随后约 3 秒自动关闭。工作台继续在 B 后台运行，继续做第五步接入浏览器访问。
 
-**以上通过，才算部署成功。** healthy 只证明服务正常响应；手动停止的容器需重新启动，Docker 未运行时容器也不会自动恢复。
+如果窗口保留并显示错误，这一步没有完成。保留错误内容交给同事排查；不要把出现 Docker 列表或窗口关闭本身当作成功。
 
-## 以后更新、停止、排错
+## 第五步：让部门电脑能访问，并确认可用
 
-- **更新一个应用**：A 选择它的编号打包，新包放在 B 的同一父目录。业务操作结束后双击新包 `start.cmd`，只更新该应用，沿用同一份数据。新增入口还需更新门户；新增应用或修改运行配置时选 `0`。
-- **停止**：完整包的 `stop.cmd` 停整套，单应用包只停对应应用，均保留数据。关闭浏览器或 CMD 不会停止容器。
-- **查看日志**：在包目录运行 `.\deploy.ps1 -Action Logs -AppId orderiq`，将 `orderiq` 换成要检查的应用 ID。修复后再启动。回退前确认旧程序兼容当前数据，再启动旧包；不会自动回滚数据库。
+**操作位置：同事负责公司入口；你从部门电脑用浏览器验收。**
 
-开发联调仍用源码目录的启动/停止 CMD。旧 IIS、计划任务、WinRM 和本机发布版启动器不再属于当前发布流程。
+1. 将下方“给接入同事的参数”交给同事，请他把 B 上已运行的工作台接到第三步填写的公司地址。
+2. 接入完成后，在浏览器输入那个地址，例如 `https://planhub.company.internal`，打开门户及六个应用，确认能正常操作。
+3. 做一次实际保存或导入导出，停止再启动后确认数据仍在、操作人记录正确。销量预测需要真实输入才能生成报表。
+4. 请同事确认 Docker 随 B 启动，并安排一次 B 重启验收，确认重启后还能使用。
+
+需要检查容器时，在 **B 的版本文件夹** 地址栏输入 `powershell`，执行：
+
+```powershell
+.\deploy.ps1 -Action Status
+```
+
+各应用应显示 `healthy`；`network` 是网络辅助容器，显示运行中即可。直接访问 B 的 `127.0.0.1:4173` 可能返回 403，正式使用公司接入后的地址。
+
+**完成标准：部门电脑能进入各应用、业务操作正常、数据重启保留。到这里才算部署成功。**
+
+## 以后更新、停止和排错
+
+| 需要做什么 | 在哪里、怎么做 |
+|---|---|
+| 更新一个应用 | A 打开 `发布应用.bat`，选对应编号；把新包复制到 B 的同一个 `planhub/` 总目录，与旧包并排。等业务操作结束后，在**新版本文件夹**双击 `start.cmd`，它会停止并更新该应用。 |
+| 更新整套 | A 输入 `0` 打包；B 在新版本包里运行 `start.cmd`，会停止并更新整套应用。新增应用或修改运行配置时用这一方式；新增导航入口也要交付更新后的门户。 |
+| 保留原数据 | 新旧版本都使用旁边同一份 `planhub-runtime/`。日常更新沿用它，第三步的首次准备不用重做。 |
+| 停止运行 | B 双击包内 `stop.cmd`。完整包停止整套，单应用包只停止该应用，数据保留。关闭浏览器或 CMD 窗口不会停止容器。 |
+| 查看错误日志 | B 在对应版本文件夹打开 PowerShell，执行 `.\deploy.ps1 -Action Logs -AppId orderiq`；将 `orderiq` 换成要检查的应用 ID。 |
+
+手动停止后，再用 `start.cmd` 启动。回退旧版前由同事确认数据兼容，再运行旧包；工具不回滚数据库。
+
+<details>
+<summary>给接入同事的参数（转交即可）</summary>
+
+- 默认上游：B 本机 `http://127.0.0.1:4173`；转发全部路径，保留公共 Host、Origin 和请求体。
+- 公共地址：与 B 的 `planhub-runtime/config.json` 中 `publicOrigin` 一致。
+- 公司认证后，覆盖 `X-PlanHub-User` 为真实 ASCII 域账号或 UPN，覆盖 `X-PlanHub-Key` 为该配置中的 `proxySecret`，不透传客户端自报身份。
+- 网关不在 B 时，按公司网络规则调整 `listenAddress` 并限制上游访问。密钥仅供服务端使用。
+- 宿主重启后需先有 Docker 运行；容器使用 `restart: unless-stopped`。手动停止的容器需再次启动。
+
+</details>
