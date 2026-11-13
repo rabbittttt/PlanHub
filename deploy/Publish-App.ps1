@@ -37,6 +37,10 @@ if (-not $AppId -and -not $All) {
     if(-not[int]::TryParse($selected,[ref]$number) -or $number -lt 0 -or $number -gt $apps.Count){throw 'Invalid selection.'}
     if($number -eq 0){$All=$true}else{$AppId=$apps[$number-1].id}
 }
+if(-not $BuildOnly){
+    & node (Join-Path $root 'scripts/build-delivery.mjs') --check-node-runtime | Out-Host
+    if($LASTEXITCODE -ne 0){throw 'Node.js runtime preflight failed. See the exact version and license error above; no applications have been rebuilt.'}
+}
 if($All) {
     if($AppId -or $ReleasePath){throw 'All cannot be combined with AppId or ReleasePath.'}
     if($Action -and $Action -ne 'Package'){throw 'All supports packaging only. Send or deploy packages individually.'}

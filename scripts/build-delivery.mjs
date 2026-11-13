@@ -1,11 +1,12 @@
 import path from 'node:path';
 import crypto from 'node:crypto';
-import {readFile,writeFile,mkdir,cp,rename,access,mkdtemp,rm} from 'node:fs/promises';
+import {writeFile,mkdir,cp,rename,access,mkdtemp,rm} from 'node:fs/promises';
 import {spawnSync} from 'node:child_process';
 import {fileURLToPath,pathToFileURL} from 'node:url';
 import {readRelease} from './release-validation.mjs';
 import {DELIVERY_SCHEMA,DELIVERY_PLATFORM,readJson,hashFile,noLinks,deliveryFiles,validateReleases,validateBindings,validateDelivery} from './delivery-validation.mjs';
 import {createDockerMaterials} from './build-docker.mjs';
+import {resolveNodeLicense} from './node-runtime-license.mjs';
 
 const ROOT=path.resolve(path.dirname(fileURLToPath(import.meta.url)),'..');
 const modules=['native-preview.mjs','service-process.mjs','delivery-validation.mjs','container-runtime.mjs','local-preview-gateway.mjs','release-validation.mjs','dev-server.mjs','app-integrations.mjs','proxy-request.mjs','portal-instance.mjs'];
@@ -18,12 +19,10 @@ function run(command,args,options={}){
 }
 export async function collectWindowsRuntime(output,{python,requirements,root=ROOT}={}){
   if(process.platform!=='win32'||process.arch!=='x64')throw new Error('Create the Windows preview delivery on Windows x64.');
+  const license=await resolveNodeLicense({licenseDirectory:path.join(root,'deploy/licenses/node')});
   await mkdir(path.join(output,'node'),{recursive:true});
   await cp(process.execPath,path.join(output,'node/node.exe'));
-  let license;
-  for(const name of ['LICENSE','LICENSE.txt']){try{license=await readFile(path.join(path.dirname(process.execPath),name));break;}catch(error){if(error.code!=='ENOENT')throw error;}}
-  if(!license)throw new Error('Keep the official Node.js distribution LICENSE file beside node.exe on A, then package again.');
-  await writeFile(path.join(output,'node/LICENSE.txt'),license);
+  await writeFile(path.join(output,'node',license.fileName),license.bytes);
   run(path.join(output,'node/node.exe'),['--version'],{stdio:'pipe'});
   if(requirements.length){
     if(!python)throw new Error('Set runtimePython in config.local/publish.json to the working Python executable on A.');
@@ -67,8 +66,12 @@ export async function buildDelivery(releasePaths,destination,{complete=false,roo
 }
 if(process.argv[1]&&import.meta.url===pathToFileURL(path.resolve(process.argv[1])).href){
   try{
-    const args=process.argv.slice(2),complete=args[0]==='--complete';if(complete)args.shift();
-    let python;const pythonIndex=args.indexOf('--python');if(pythonIndex>=0){python=args[pythonIndex+1];args.splice(pythonIndex,2);if(!python)throw new Error('Missing Python executable');}
-    const destination=args.shift();if(!destination)throw new Error('Provide destination and release paths');await buildDelivery(args,destination,{complete,python});
+    if(process.argv[2]==='--check-node-runtime'){
+      const license=await resolveNodeLicense();console.log(`Node.js ${license.version}: full license ready (${license.source}); no network required.`);
+    }else{
+      const args=process.argv.slice(2),complete=args[0]==='--complete';if(complete)args.shift();
+      let python;const pythonIndex=args.indexOf('--python');if(pythonIndex>=0){python=args[pythonIndex+1];args.splice(pythonIndex,2);if(!python)throw new Error('Missing Python executable');}
+      const destination=args.shift();if(!destination)throw new Error('Provide destination and release paths');await buildDelivery(args,destination,{complete,python});
+    }
   }catch(error){console.error(error.message);process.exitCode=1;}
 }

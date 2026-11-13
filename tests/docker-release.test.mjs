@@ -4,8 +4,8 @@ import path from 'node:path';
 import os from 'node:os';
 import crypto from 'node:crypto';
 import http from 'node:http';
-import {fileURLToPath} from 'node:url';
-import {mkdtemp,mkdir,writeFile,readFile,readdir,rm} from 'node:fs/promises';
+import {fileURLToPath,pathToFileURL} from 'node:url';
+import {mkdtemp,mkdir,writeFile,readFile,readdir,rm,cp} from 'node:fs/promises';
 import {buildDelivery} from '../scripts/build-delivery.mjs';
 import {collectWindowsRuntime} from '../scripts/build-delivery.mjs';
 import {spawnSync} from 'node:child_process';
@@ -78,7 +78,20 @@ test('actual bundled Node runs without the build computer PATH or a Node install
   delete env.NODE_OPTIONS;delete env.NODE_PATH;
   const result=spawnSync(path.join(output,'node/node.exe'),['-e',"process.stdout.write(require('node:crypto').createHash('sha256').update('portable').digest('hex'))"],{cwd:base,env,encoding:'utf8',windowsHide:true});
   assert.equal(result.status,0,result.stderr);assert.equal(result.stdout,sha('portable'));
-  assert.ok((await readFile(path.join(output,'node/LICENSE.txt'))).length>1000);
+  const licenseName=(await readdir(path.join(output,'node'))).find(name=>/^LICENSE\.(txt|rtf)$/.test(name));
+  assert.ok(licenseName);assert.ok((await readFile(path.join(output,'node',licenseName))).length>1000);
+});
+test('binary-only Node installation packages offline with the exact bundled license', {skip:process.platform!=='win32'||process.arch!=='x64'}, async t=>{
+  const catalog=JSON.parse(await readFile(path.join(root,'deploy/licenses/node/index.json'),'utf8'));
+  if(!catalog.versions[process.version]){t.skip('The current Node version has no checked-in offline fallback.');return;}
+  const base=await temporary(t),bare=path.join(base,'bare-node'),output=path.join(base,'collected');await mkdir(bare);
+  const executable=path.join(bare,'node.exe');await cp(process.execPath,executable);
+  const moduleUrl=pathToFileURL(path.join(root,'scripts/build-delivery.mjs')).href;
+  const script=`const {collectWindowsRuntime}=await import(${JSON.stringify(moduleUrl)});await collectWindowsRuntime(process.argv[1],{requirements:[]});`;
+  const result=spawnSync(executable,['--input-type=module','-e',script,output],{cwd:base,encoding:'utf8',windowsHide:true});
+  assert.equal(result.status,0,result.stderr);
+  assert.deepEqual(await readFile(path.join(output,'node/LICENSE.txt')),await readFile(path.join(root,'deploy/licenses/node',process.version+'.LICENSE.txt')));
+  assert.deepEqual((await readdir(bare)).sort(),['node.exe']);
 });
 test('release validation rejects undeclared private data and checksum or case collisions',async t=>{
   const base=await temporary(t),app=await release(base,'leads',{'index.html':'original'});

@@ -46,6 +46,7 @@ try {
     function node {
         param([Parameter(ValueFromRemainingArguments=$true)][string[]]$Arguments)
         Check ($Arguments[0].EndsWith('build-delivery.mjs')) 'Packaging must not invoke the Docker image builder'
+        if($Arguments[1] -eq '--check-node-runtime'){$global:LASTEXITCODE=0;return}
         $publishTestState.deliveryArgs=$Arguments
         $output=if($Arguments[1] -eq '--complete'){$Arguments[4]}else{$Arguments[3]}
         [void][IO.Directory]::CreateDirectory($output)
@@ -61,6 +62,7 @@ try {
     Check ($publishTestState.deliveryArgs.Count -eq 6) 'Complete package did not receive the built releases and runtime executable'
     function node { $global:LASTEXITCODE=1 }
     Reject {& $publish -AppId planhub -Version docker-fail -ConfigPath $config -NonInteractive}
+    Check (-not(Test-Path -LiteralPath (Join-Path $fixture 'staging/releases/planhub-docker-fail'))) 'Runtime preflight failure rebuilt the application before failing'
     Write-Output ("Publishing checks passed: "+$publishTestState.checks)
 } finally {
     Remove-Item Function:node -ErrorAction SilentlyContinue
