@@ -1,1 +1,1 @@
-deploy/local-bundle/*.cmd text eol=crlf
+deploy/docker/*.cmd text eol=crlf

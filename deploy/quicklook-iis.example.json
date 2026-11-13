@@ -1,6 +1,0 @@
-{
-  "SiteName": "DataPlatform",
-  "DeploymentRoot": "..",
-  "BackendPort": 8765,
-  "PublicOrigin": "http://data.example.internal:8080"
-}

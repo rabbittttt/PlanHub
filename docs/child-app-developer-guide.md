@@ -23,7 +23,7 @@
 额外公开资源：assets/
 ```
 
-单 HTML 没有额外资源时留空。向导会核对文件，登记导航、挂载与静态打包配置，并在 `artifacts/registration-*` 保存原配置。先双击 `停止本地门户.cmd`，再双击 `启动本地门户.cmd`；健康检查成功后窗口会在 3 秒后关闭，服务继续后台运行。手动打开 `/#/app/capacity` 检查；失败保留窗口，启动日志及前台调试方式见[项目首页](../README.md)。
+单 HTML 没有额外资源时留空。向导会核对文件，登记导航和本机挂载，并在 `artifacts/registration-*` 保存原配置。先停止再启动开发门户，手动打开 `/#/app/capacity` 检查。正式 Docker 运行绑定另见下方，不再生成 IIS 配置。
 
 动态网页选择类型 2，填写门户配置的接入端口、健康地址（例如 `/healthz`）、返回 JSON 字段、工作目录、解释器、启动参数及必要环境变量。默认启动探针只检查稳定字段；需要复用已有服务时，可在 apps.json 设置 healthExpected 核对身份、公共前缀等固定值，避免误用其他实例。参数按数组填写，例如 `["-B","server.py","--port","{port}"]`。{port}/{host} 来自门户 target，{basePath} 为 /应用ID/；可用于启动参数、环境变量和健康身份期望。未知应用的端口参数名称仍按原项目契约填写。原服务尚未验收时保留 pending，验收后再次运行向导更新同一 ID。
 
@@ -48,7 +48,7 @@ node scripts/register-app.mjs --config config.local/new-app.json
 }
 ```
 
-更新已有 ID 需加 `"replace": true`。向导合并修改导航、本机挂载和部署清单，其他应用设置保留。SOP 的已有身份网关继续用专用配置，不通过通用向导替换。
+更新已有 ID 需加 `"replace": true`。向导合并修改导航和本机挂载，其他应用设置保留。SOP 的已有身份网关继续用专用配置，不通过通用向导替换。
 
 ## 开发者交付五项内容
 
@@ -92,7 +92,7 @@ node scripts/register-app.mjs --config config.local/new-app.json
 <a id="current-contracts"></a>
 ## 当前版本核对（2026-11-12）
 
-- **车型配置**：动态服务 `/vehicle-config/`，开发源码 `../配置管理`，健康接口 `/healthz`；`scripts/build_release.py` 生成独立通用包。`--port`、`--public-prefix` 与 `--data-dir` 配置运行位置；共享持久目录为 `共享数据/车型配置`。草稿/发布分离，业务报表尚未接入。生产必须启用 `--require-proxy-identity`，外置 `VEHICLE_CONFIG_PROXY_SECRET`，由 Windows 认证代理覆盖 `X-Config-User` 与 `X-Config-Proxy-Key`；模板 `proxyMode=existing`，先在目标机用 `Configure-IdentityProxy.ps1 -AppId vehicle-config -DeploymentConfigPath config.local/deployment.json` 规划并显式配置可信身份桥，不能仅凭健康检查判定上线。开发模式记录本机操作人。详见原项目 README。
+- **车型配置**：动态服务 `/vehicle-config/`，开发源码 `../配置管理`，健康接口 `/healthz`；`scripts/build_release.py` 生成独立通用包。Docker 显式启用 `--require-proxy-identity`，保留原有 `X-Config-User`、`X-Config-Proxy-Key` 及 ASCII 操作人契约，不使用容器账号冒充业务用户。
 
 - **SOP计划管理**：继续使用原网关、整段 /sop/ 代理与原构建器；业务新增标签不需门户逐项登记。新版计划保存在数据库，Excel 从页面导出、修改后导入；服务器旧维护表仅归档，不再自动同步。正式资料对账来源通过 SOP_RECONCILE_DIR 指向 shared/对账资料。
 - **订单分析**：动态服务 /orderiq/，健康接口 /health。本地沿用原项目的数据选择；正式部署显式传 --input、--data-dir、--state-dir、--web-dir。原 Git 仓库在订单分析/scripts，构建入口 generate_html/package_release.py；直接从同版模板生成发布前端，不依赖 Excel、旧 runtime 或已生成批次。业务数据由部署后的原服务处理，打包无需先运行 main.py。
@@ -101,3 +101,23 @@ node scripts/register-app.mjs --config config.local/new-app.json
 - **销量预测**：动态服务 /forecast/，默认端口 8780，原项目 dynamic/serve.py 启动；scripts/build_release.py 构建标准包。--public-prefix 配置公共前缀，--data-dir 或 SALES_FORECAST_DATA_DIR 外置页面、缓存和日志，SHARED_DATA_ROOT 指定共享输入。/healthz 只检测服务，/readyz 区分首次等待、就绪与生成失败；/api/status 提供更新状态。首次生成前页面自动等待，不把尚无报表当成进程启动失败。静态入口仍可在原项目独立使用。
 
 SOP 的接入说明与协作约定已同步当前实现：门户默认使用持久数据库，Excel 从页面导入导出，仅显式 --snapshot 才使用测试副本。
+
+<a id="docker-contracts"></a>
+## Docker 集成与外置数据
+
+发布步骤只维护在 [部署手册](deployment.md)。门户和每个应用各自一个镜像、一个容器；网络辅助容器只保留共同网络空间，使现有回环监听与 SOP 回环信任条件保持有效。只有门户端口对宿主开放，应用按整段前缀代理，业务文件按原清单校验并原样装入镜像。原包内部中文文件名不改写；用户拿到的交付文件夹内只有英文文件名。
+
+容器启动参数、内部端口和健康身份集中在 `deploy/docker/bindings.json`；新增应用须登记该绑定并核对原项目在 Linux/Python 3.12 下的支持情况，不能假定原生 Windows/COM 依赖能进入 Linux 镜像。B 的环境配置只在外置 `planhub-runtime/config.json`；所有相对路径均以该运行目录为基准，在容器中统一挂到 `/runtime`。运行镜像只读，没有源码热更新。
+
+| 内容 | 外置路径及首次迁移注意事项 |
+|---|---|
+| 共享输入 | `shared/` 下保留原业务目录，例如 `订单汇总`、`对账资料`；销量预测可能更新共享派生表，不能全部只读 |
+| SOP | `data/sop/` 为持久数据库；`config/shared_config.py` 必须是真实规则；旧维护 Excel 不再自动同步 |
+| 订单分析 | `data/orderiq/runtime/` 与 `data/orderiq/annotations/`；前端来自镜像，输入来自共享订单目录 |
+| 销量预测 | `data/forecast/`；存活健康与生成就绪分开，`/forecast/readyz` 才表明报表可用 |
+| 数据速查 | `data/quicklook/` 保留工作区、上传及数据库；`quicklookSourceBase` 指定历史相对路径基准；旧绝对 Windows 路径须由原项目支持的迁移方式处理 |
+| 车型配置 | `data/vehicle-config/`；首次由部署同事核对原共享目录中的真实持久数据，不用空目录代替迁移 |
+
+后续版本使用同一目录，不复制旧版本数据来升级。完整包更新停止整套容器；单应用包只更新该容器。单应用包要求已有完整部署且运行配置未变。不要用另一个 Compose 项目名同时运行第二套服务写入相同目录。重启策略不代替 Docker 宿主开机配置和重启验收。
+
+公司入口负责认证，门户只校验约定的可信代理密钥并转发真实操作人。密钥在 B 首次准备时生成，后续不轮换、不进镜像、不进仓库；SOP 和车型配置仍使用各自原有密钥接口。业务验收必须检查真实操作人，容器健康检查使用只读健康身份，不代表用户登录。

@@ -8,7 +8,7 @@ import {createInterface} from 'node:readline/promises';
 import {validateConfig} from '../portal/js/config.js';
 import {loadAppIntegrations,STATIC_MIME_TYPES} from './app-integrations.mjs';
 const ROOT=path.resolve(path.dirname(fileURLToPath(import.meta.url)),'..');
-const FILES=['portal/config/apps.json','config.local/apps.json','deploy/config.local.json'];
+const FILES=['portal/config/apps.json','config.local/apps.json'];
 const PRIVATE=new Set(['data','logs','node_modules','runtime','input_file','config.local']);
 const plain=value=>value&&typeof value==='object'&&!Array.isArray(value);
 const json=value=>JSON.stringify(value,null,2)+'\n';
@@ -60,8 +60,7 @@ export async function planRegistration(root,input){
   const originals=await Promise.all(FILES.map(file=>readOptional(path.join(root,file))));
   if(originals[0]===null)throw new Error('未找到门户注册表，请从门户项目运行');
   const registry=parse(originals[0]),local=parse(originals[1],{applications:{}});
-  const deployment=parse(originals[2],parse(await readOptional(path.join(root,'deploy/config.example.json'))));
-  if(!plain(local.applications)||!Array.isArray(deployment?.StaticApplications))throw new Error('已有本机配置格式无效，未写入任何文件');
+  if(!plain(local.applications))throw new Error('已有本机配置格式无效，未写入任何文件');
   const existing=registry.groups.flatMap(g=>g.apps).find(app=>app.id===input.id);
   if(existing&&!input.replace)throw new Error('应用 ID 已存在。更新同一应用需明确设置 replace:true');
   if(!existing&&input.replace)throw new Error('replace:true 仅用于更新已有应用');
@@ -89,8 +88,6 @@ export async function planRegistration(root,input){
     }
   }
   local.applications[input.id]=integration;
-  deployment.StaticApplications=deployment.StaticApplications.filter(a=>a.Name!==input.id);
-  if(input.type==='static')deployment.StaticApplications.push({Name:input.id,Enabled:true});
   validateConfig(registry);
   // Validate the complete effective integration without touching the live configuration.
   const temporary=await mkdtemp(path.join(os.tmpdir(),'planhub-register-'));
@@ -102,7 +99,7 @@ export async function planRegistration(root,input){
     const integrations=await loadAppIntegrations(temporary);
     if(input.type==='proxy')for(const [id,item] of Object.entries(integrations))if(id!==input.id&&item.type==='proxy'&&item.target===integration.target)throw new Error('服务端口已由应用 '+id+' 使用');
   }finally{if(!inside(os.tmpdir(),temporary))throw new Error('临时目录越界');await rm(temporary,{recursive:true,force:true});}
-  return {root,id:input.id,name:app.name,type:input.type,status:app.status,files:FILES.map((file,index)=>({file,original:originals[index],content:json([registry,local,deployment][index])}))};
+  return {root,id:input.id,name:app.name,type:input.type,status:app.status,files:FILES.map((file,index)=>({file,original:originals[index],content:json([registry,local][index])}))};
 }
 export async function applyRegistration(plan){
   const configDir=path.join(plan.root,'config.local');await mkdir(configDir,{recursive:true});

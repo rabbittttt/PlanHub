@@ -1,12 +1,5 @@
 {
   "schemaVersion": 1,
-  "inbox": "",
-  "remote": {
-    "computerName": "",
-    "toolsRoot": "",
-    "configPath": "",
-    "inboxLocalPath": ""
-  },
   "applications": {
     "planhub": {
       "kind": "portal"
@@ -73,7 +66,8 @@
       }
     },
     "leads": {
-      "kind": "static"
+      "kind": "static",
+      "businessSourceConfirmed": false
     },
     "vehicle-config": {
       "kind": "release",

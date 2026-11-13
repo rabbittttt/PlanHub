@@ -10,7 +10,8 @@ export function proxyRequest(request,response,app,upstreamPath,send) {
   const target=new URL(app.target);
   const headers=headersWithoutHop(request.headers);
   // Keep public Host + Origin paired: the original application's same-origin check remains effective.
-  for(const key of Object.keys(headers))if(key.startsWith('x-sop-')||key.startsWith('x-forwarded-')||key==='forwarded')delete headers[key];
+  for(const key of Object.keys(headers))if(key.startsWith('x-sop-')||key.startsWith('x-config-')||key.startsWith('x-planhub-')||key.startsWith('x-forwarded-')||key==='forwarded')delete headers[key];
+  Object.assign(headers,app.headersForRequest?.(request)??{});
   const upstream=http.request({hostname:target.hostname,port:target.port||80,path:upstreamPath,method:request.method,headers},incoming=>{
     response.writeHead(incoming.statusCode,headersWithoutHop(incoming.headers));
     incoming.on('error',()=>response.destroy());

@@ -41,53 +41,7 @@ try {
     Write-AppReleaseJson $manifestPath $manifest;Reject { Assert-AppRelease $release };Put $manifestPath $saved
     $args.Destination=Join-Path $scratch 'invalid-data-mode';$args.DataMode='external';Reject { & (Join-Path $deploy 'New-AppRelease.ps1') @args -WhatIf };$args.DataMode='stateless'
 
-    # A separate fixture workspace exercises the real bundle script without real reports/data.
-    $workspace=Join-Path $scratch 'workspace'
-    $fixtureDeploy=Join-Path $workspace 'deploy'
-    New-Item -ItemType Directory -Path $fixtureDeploy | Out-Null
-    Get-ChildItem -LiteralPath $deploy -File | Where-Object { $_.Extension -in @('.ps1','.json','.config','.xml') -and $_.Name -notlike '*.local.*' } | ForEach-Object { Copy-Item -LiteralPath $_.FullName -Destination $fixtureDeploy }
-    Put (Join-Path $workspace 'portal\index.html') '<title>Portal fixture</title>'
-    Put (Join-Path $workspace 'docs\README.md') 'fixture'
-    $registry=@{groups=@(@{apps=@(@{id='alpha';url='/alpha/';enabled=$true;status='ready'},@{id='beta';url='/beta/';enabled=$true;status='ready'})})}
-    Write-AppReleaseJson (Join-Path $workspace 'portal\config.json') $registry
-    New-Item -ItemType Directory -Path (Join-Path $workspace 'portal\config') | Out-Null
-    Write-AppReleaseJson (Join-Path $workspace 'portal\config\apps.json') $registry
-    Put (Join-Path $workspace 'apps\alpha\index.html') '<title>Collected static</title>'
-    $config=@{SiteName='Fixture';ApplicationPool='Fixture';DeploymentRoot='..';HostName='';Port=8080;RequireReverseProxy=$false;StaticApplications=@(@{Name='alpha';Enabled=$true})}
-    $configPath=Join-Path $fixtureDeploy 'fixture.json';Write-AppReleaseJson $configPath $config
-    $bundle=Join-Path $scratch 'bundle'
-    $packArgs=@{Destination=$bundle;ConfigPath=$configPath}
-    Reject { & (Join-Path $fixtureDeploy 'New-DeploymentPackage.ps1') @packArgs -RequireComplete }
-    Assert-True (-not(Test-Path -LiteralPath $bundle)) 'Incomplete strict package created files.'
-    $partial=Join-Path $scratch 'partial-bundle'
-    & (Join-Path $fixtureDeploy 'New-DeploymentPackage.ps1') -Destination $partial -ConfigPath $configPath | Out-Null
-    & (Join-Path $partial 'deploy\Test-DeploymentPackage.ps1') -DeploymentRoot $partial | Out-Null
-    Reject { & (Join-Path $partial 'deploy\Test-DeploymentPackage.ps1') -DeploymentRoot $partial -RequireComplete }
-    $partialInventory=Get-Content -LiteralPath (Join-Path $partial 'config\release-inventory.json') -Raw | ConvertFrom-Json
-    Assert-True (@($partialInventory.applications | Where-Object { $_.id -eq 'beta' -and $_.delivery -eq 'external' }).Count -eq 1) 'Partial delivery was hidden.'
-    $dynamic=Join-Path $scratch 'dynamic-prepared'
-    Put (Join-Path $dynamic 'server.py') '# fixture backend v2 with new route; never executed'
-    Put (Join-Path $dynamic 'web\index.html') '<title>New tab</title>'
-    $dynamicRelease=Join-Path $scratch 'beta-v2'
-    & (Join-Path $deploy 'New-AppRelease.ps1') -PayloadPath $dynamic -Destination $dynamicRelease -AppId beta -Version v2 -Type service -EntryPoint server.py -SourceRevision fixture-v2 -DataMode external -HealthPath /health | Out-Null
-    Put (Join-Path $scratch 'business-data\sentinel.txt') 'persistent data untouched'
-    $mapPath=Join-Path $scratch 'releases.json'
-    Write-AppReleaseJson $mapPath @{applications=@(@{id='beta';release='./beta-v2'},@{id='alpha';release='./alpha-v2'})}
-    $packArgs.AppReleasesPath=$mapPath
-    & (Join-Path $fixtureDeploy 'New-DeploymentPackage.ps1') @packArgs -RequireComplete -WhatIf | Out-Null
-    Assert-True (-not(Test-Path -LiteralPath $bundle)) 'Bundle WhatIf wrote files.'
-    & (Join-Path $fixtureDeploy 'New-DeploymentPackage.ps1') @packArgs -RequireComplete | Out-Null
-    & (Join-Path $bundle 'deploy\Test-DeploymentPackage.ps1') -DeploymentRoot $bundle -RequireComplete | Out-Null
-    Assert-True ((Get-Content -LiteralPath (Join-Path $bundle 'apps\alpha\assets\tabs.js') -Raw) -match 'second') 'Explicit static release was not used.'
-    Assert-True ((Get-Content -LiteralPath (Join-Path $bundle 'services\beta\web\index.html') -Raw) -match 'New tab') 'New frontend missing.'
-    Assert-True ((Get-Content -LiteralPath (Join-Path $bundle 'services\beta\server.py') -Raw) -match 'new route') 'Matching backend missing.'
-    Reject { & (Join-Path $fixtureDeploy 'New-DeploymentPackage.ps1') @packArgs -RequireComplete }
-    $moved=Join-Path $scratch 'moved-bundle';Move-Item -LiteralPath $bundle -Destination $moved
-    & (Join-Path $moved 'deploy\Test-DeploymentPackage.ps1') -DeploymentRoot $moved -RequireComplete | Out-Null
-    Put (Join-Path $moved 'services\beta\server.py') '# replaced old backend'
-    Reject { & (Join-Path $moved 'deploy\Test-DeploymentPackage.ps1') -DeploymentRoot $moved }
-    Assert-True ((Get-Content -LiteralPath (Join-Path $scratch 'business-data\sentinel.txt') -Raw) -eq 'persistent data untouched') 'Data modified.'
-    Write-Output "Generic release checks passed: $script:checks assertions; version isolation, complete pairs, hashes, missing apps, portable paths and no overwrites."
+    Write-Output ('App release integrity checks passed: '+$script:checks)
 } finally {
     $resolved=[IO.Path]::GetFullPath($scratch)
     $expected=[IO.Path]::GetFullPath((Join-Path $project 'artifacts')).TrimEnd('\')+'\app-release-test-'

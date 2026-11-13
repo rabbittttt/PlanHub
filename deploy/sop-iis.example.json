@@ -1,9 +1,0 @@
-{
-  "SiteName": "DataPlatform",
-  "DeploymentRoot": "..",
-  "ApplicationPool": "DataPlatform-SopProxy",
-  "BackendPort": 8877,
-  "PublicOrigin": "http://data.example.internal:8080",
-  "AllowWrites": true,
-  "ProxySecretPath": "config/sop-proxy.secret"
-}

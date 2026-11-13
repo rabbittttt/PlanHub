@@ -5,7 +5,7 @@ $ErrorActionPreference = 'Stop'
 $deploy = Split-Path -Parent $PSScriptRoot
 $project = Split-Path -Parent $deploy
 . (Join-Path $deploy 'Deployment.Common.ps1')
-. (Join-Path $deploy 'Sop.Common.ps1')
+. (Join-Path $deploy 'App.Release.ps1')
 . (Join-Path $deploy 'Sop.Release.ps1')
 $scratch = Join-Path $project ('artifacts\sop-release-validation-' + [Guid]::NewGuid().ToString('N'))
 $release = Join-Path $scratch 'release'
@@ -19,7 +19,7 @@ foreach ($name in @('server.py', 'sop/__init__.py', 'sop/gateway.py', 'requireme
     $manifest.files += [ordered]@{ path = $name; sha256 = (Get-SopFileSha256 -Path $file); bytes = (Get-Item -LiteralPath $file).Length }
 }
 $manifestPath = Join-Path $release 'sop-release.json'
-function Save-Manifest { Write-SopJson -Path $manifestPath -Value $manifest }
+function Save-Manifest { Write-AppReleaseJson -Path $manifestPath -Value $manifest }
 function Expect-Rejected {
     $rejected = $false
     try { Assert-SopRelease -Path $release | Out-Null } catch { $rejected = $true }
@@ -48,7 +48,7 @@ try {
         [IO.File]::WriteAllText($file, 'fixture ' + $name, $utf8)
         $legacyManifest.files += [ordered]@{ path = $name; sha256 = (Get-SopFileSha256 -Path $file); bytes = (Get-Item -LiteralPath $file).Length }
     }
-    Write-SopJson -Path (Join-Path $legacy 'sop-release.json') -Value $legacyManifest
+    Write-AppReleaseJson -Path (Join-Path $legacy 'sop-release.json') -Value $legacyManifest
     $legacyValid = Assert-SopRelease -Path $legacy
     if ($legacyValid.Files.Count -ne 6) { throw 'Existing root-module releases must remain supported.' }
     $extra = Join-Path $release 'private.secret'
@@ -74,9 +74,6 @@ try {
     Expect-Rejected
     Remove-Item -LiteralPath $runtime
     $null = Assert-SopRelease -Path $release
-    $rejected = $false
-    try { & (Join-Path $deploy 'New-DeploymentPackage.ps1') -Destination (Join-Path $scratch 'missing-release-package') -IncludeSop -WhatIf | Out-Null } catch { $rejected = $true }
-    if (-not $rejected) { throw 'Portal packaging silently accepted a missing explicit SOP release.' }
     Write-Output 'SOP manifest checks passed: explicit release, hashes, undeclared files/directories, traversal and duplicate paths.'
 }
 finally {

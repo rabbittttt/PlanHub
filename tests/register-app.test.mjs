@@ -21,14 +21,13 @@ async function fixture(t){
   await writeFile(path.join(root,'portal/config/apps.json'),json(registry));
   await writeFile(path.join(root,'integration/apps.json'),json({applications:{}}));
   await writeFile(path.join(root,'config.local/apps.json'),json({applications:{old:{type:'static',root:'../old',entry:'index.html',publicPaths:['index.html']}}}));
-  await writeFile(path.join(root,'deploy/config.example.json'),json({SiteName:'original',StaticApplications:[{Name:'old',Enabled:false}]}));
   return {base,root,release,registry};
 }
 const input={id:'sample',name:'测试网页',type:'static',root:'../sample/dist',entry:'report.html',publicPaths:['report.html','assets/']};
 const dynamic={id:'sample',name:'动态网页',type:'proxy',port:9881,stripPrefix:true,healthPath:'/healthz',healthKeys:['ok'],start:{cwd:'../sample',command:'../runtime.exe',args:['server.py'],env:{PUBLIC_PREFIX:'/sample/'}}};
 async function readJson(root,file){return JSON.parse(await readFile(path.join(root,file),'utf8'));}
 
-test('one registration updates all three configs, retains unrelated entries and backs up originals',async t=>{
+test('one registration updates navigation and local bindings, retains unrelated entries and backs up originals',async t=>{
   const f=await fixture(t),before=await readFile(path.join(f.root,'portal/config/apps.json'),'utf8');
   const childBefore=await readFile(path.join(f.release,'report.html'));
   const plan=await planRegistration(f.root,input);
@@ -39,10 +38,9 @@ test('one registration updates all three configs, retains unrelated entries and 
   assert.equal(registry.groups[0].apps[1].status,'ready');
   const local=await readJson(f.root,'config.local/apps.json');
   assert.equal(local.applications.old.root,'../old');assert.equal(local.applications.sample.root,'../sample/dist');
-  const deployment=await readJson(f.root,'deploy/config.local.json');
-  assert.equal(deployment.SiteName,'original');assert.deepEqual(deployment.StaticApplications,[{Name:'old',Enabled:false},{Name:'sample',Enabled:true}]);
+  await assert.rejects(lstat(path.join(f.root,'deploy/config.local.json')),/ENOENT/);
   assert.equal(await readFile(path.join(f.root,result.backup,'0.before.json'),'utf8'),before);
-  assert.equal((await readJson(f.root,result.backup+'/transaction.json')).files[2].existed,false);
+  assert.equal((await readJson(f.root,result.backup+'/transaction.json')).files.length,2);
   assert.deepEqual(await readFile(path.join(f.release,'report.html')),childBefore);
   await assert.rejects(lstat(path.join(f.root,'config.local/register-app.lock')),/ENOENT/);
 });
@@ -68,14 +66,14 @@ test('invalid and private static assets never alter the current configuration',a
   await assert.rejects(lstat(path.join(f.root,'deploy/config.local.json')),/ENOENT/);
 });
 
-test('updating a registered app requires explicit replace and removes obsolete static deployment',async t=>{
+test('updating a registered app requires explicit replace and removes obsolete static mapping',async t=>{
   const f=await fixture(t);await applyRegistration(await planRegistration(f.root,input));
   await assert.rejects(planRegistration(f.root,dynamic),/replace/);
   await applyRegistration(await planRegistration(f.root,{...dynamic,replace:true}));
   const registry=await readJson(f.root,'portal/config/apps.json');
   assert.equal(registry.groups[0].apps.filter(a=>a.id==='sample').length,1);
   assert.equal(registry.groups[0].apps.find(a=>a.id==='sample').status,'pending');
-  assert.deepEqual((await readJson(f.root,'deploy/config.local.json')).StaticApplications,[{Name:'old',Enabled:false}]);
+  await assert.rejects(lstat(path.join(f.root,'deploy/config.local.json')),/ENOENT/);
   const app=(await loadAppIntegrations(f.root)).sample;
   assert.equal(app.type,'proxy');assert.equal(app.target,'http://127.0.0.1:9881');assert.deepEqual(app.rootRoutes,[]);
   assert.equal(app.start.env.PUBLIC_PREFIX,'/sample/');
@@ -105,7 +103,7 @@ test('leads integration uses its unchanged standalone placeholder and orderiq st
   assert.equal(leads.name,'线索声量');assert.equal(leads.status,'ready');
   assert.deepEqual(defaults.applications.leads,{type:'static',root:'../线索声量',entry:'lead-dashboard.html',publicPaths:['lead-dashboard.html']});
   assert.equal(defaults.applications.orderiq.type,'proxy');
-  assert.equal((await readJson(root,'deploy/config.example.json')).StaticApplications.some(a=>a.Name==='orderiq'),false);
+  assert.equal((await readJson(root,'deploy/docker/bindings.json')).orderiq.type,'service');
 });
 
 test('dynamic registration stores a single portal port and expands public prefix identity after a target override',async t=>{

@@ -28,7 +28,7 @@ export function parseRequestPath(rawUrl) {
 
 /** Local-only preview; the optional loopback SOP bridge does not provide Windows authentication. */
 export function createServer({ root = PROJECT_ROOT, portalRoot = path.join(root, 'portal'), sopProxy = null, applications = null, runtime = null } = {}) {
-  if (sopProxy && (!Number.isInteger(sopProxy.port) || sopProxy.port < 1 || sopProxy.port > 65535 || typeof sopProxy.secret !== 'string' || sopProxy.secret.length < 32 || typeof sopProxy.user !== 'string' || /[\r\n]/.test(sopProxy.user))) throw new Error('Invalid local SOP preview configuration');
+  if (sopProxy && (!Number.isInteger(sopProxy.port) || sopProxy.port < 1 || sopProxy.port > 65535 || typeof sopProxy.secret !== 'string' || sopProxy.secret.length < 32 || !['string','function'].includes(typeof sopProxy.user) || (typeof sopProxy.user === 'string' && /[\r\n]/.test(sopProxy.user)))) throw new Error('Invalid local SOP preview configuration');
   return http.createServer(async (request, response) => {
     const headers = { 'Cache-Control': 'no-store', 'X-Content-Type-Options': 'nosniff', 'X-Frame-Options': 'SAMEORIGIN' };
     const send = (status, message, extra = {}) => {
@@ -51,9 +51,9 @@ export function createServer({ root = PROJECT_ROOT, portalRoot = path.join(root,
     if (sopProxy && parts[0] === 'sop') {
       if (pathname === '/sop') return send(308, 'Redirecting', { Location: '/sop/' });
       const forwarded = { ...request.headers, host: `127.0.0.1:${sopProxy.port}` };
-      for (const header of Object.keys(forwarded)) if (header.startsWith('x-sop-') || ['connection', 'transfer-encoding', 'proxy-authorization', 'upgrade', 'te', 'trailer'].includes(header)) delete forwarded[header];
+      for (const header of Object.keys(forwarded)) if (header.startsWith('x-sop-') || header.startsWith('x-planhub-') || header.startsWith('x-config-') || header.startsWith('x-forwarded-') || ['forwarded', 'connection', 'transfer-encoding', 'proxy-authorization', 'upgrade', 'te', 'trailer'].includes(header)) delete forwarded[header];
       forwarded['x-sop-proxy-key'] = sopProxy.secret;
-      forwarded['x-sop-user'] = sopProxy.user;
+      forwarded['x-sop-user'] = typeof sopProxy.user === 'function' ? sopProxy.user(request) : sopProxy.user;
       const upstream = http.request({ hostname: '127.0.0.1', port: sopProxy.port, path: request.url, method: request.method, headers: forwarded }, incoming => {
         const incomingHeaders = { ...incoming.headers };
         delete incomingHeaders['transfer-encoding']; delete incomingHeaders.connection;

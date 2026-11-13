@@ -1,0 +1,12 @@
+{
+  "schemaVersion": 1,
+  "publicOrigin": "https://planhub.example.invalid",
+  "listenAddress": "127.0.0.1",
+  "port": 4173,
+  "proxySecret": "",
+  "sopSecret": "",
+  "vehicleSecret": "",
+  "sharedDirectory": "shared",
+  "sopSharedConfig": "config/shared_config.py",
+  "quicklookSourceBase": "shared"
+}

@@ -1,0 +1,146 @@
+{
+  "planhub": {
+    "port": 4173,
+    "type": "static",
+    "healthPath": "/"
+  },
+  "leads": {
+    "stripPrefix": true,
+    "port": 8781,
+    "type": "static",
+    "healthPath": "/"
+  },
+  "orderiq": {
+    "port": 8767,
+    "arguments": [
+      "-B",
+      "{payload}/server.py",
+      "--host",
+      "127.0.0.1",
+      "--port",
+      "{port}",
+      "--input",
+      "{shared}/订单汇总",
+      "--data-dir",
+      "{data}/runtime",
+      "--state-dir",
+      "{data}/annotations",
+      "--web-dir",
+      "{payload}/web",
+      "--allowed-host",
+      "{publicHost}",
+      "--allowed-origin",
+      "{publicOrigin}"
+    ],
+    "environment": {},
+    "stripPrefix": true,
+    "healthExpected": {
+      "status": "ok",
+      "application": "order-dashboard"
+    },
+    "type": "service",
+    "healthPath": "/health"
+  },
+  "forecast": {
+    "port": 8780,
+    "arguments": [
+      "-B",
+      "{payload}/dynamic/serve.py",
+      "--host",
+      "127.0.0.1",
+      "--port",
+      "{port}",
+      "--no-open",
+      "--data-dir",
+      "{data}",
+      "--public-prefix",
+      "{basePath}"
+    ],
+    "environment": {
+      "SHARED_DATA_ROOT": "{shared}"
+    },
+    "stripPrefix": true,
+    "healthExpected": {
+      "ok": true,
+      "app": "sales-forecast-live",
+      "public_prefix": "{basePath}"
+    },
+    "type": "service",
+    "healthPath": "/healthz"
+  },
+  "quicklook": {
+    "port": 8765,
+    "arguments": [
+      "-B",
+      "{payload}/server.py",
+      "--port",
+      "{port}"
+    ],
+    "environment": {
+      "DATA_QUICKLOOK_DATA_DIR": "{data}",
+      "DATA_QUICKLOOK_SOURCE_BASE": "{shared}",
+      "DATA_QUICKLOOK_PUBLIC_PREFIX": "{basePath}",
+      "DATA_QUICKLOOK_PUBLIC_ORIGIN": "{publicOrigin}",
+      "SHARED_DATA_ROOT": "{shared}"
+    },
+    "stripPrefix": true,
+    "healthExpected": {
+      "ok": true,
+      "app": "quicklook"
+    },
+    "type": "service",
+    "healthPath": "/healthz"
+  },
+  "sop": {
+    "port": 8877,
+    "arguments": [
+      "-B",
+      "{payload}/server.py",
+      "--host",
+      "127.0.0.1",
+      "--port",
+      "{port}",
+      "--gateway-config",
+      "{runtime}/config/sop-local.json"
+    ],
+    "environment": {
+      "SOP_EXCEL_ENGINE": "python",
+      "SHARED_DATA_ROOT": "{shared}",
+      "SOP_RECONCILE_DIR": "{shared}/对账资料"
+    },
+    "stripPrefix": false,
+    "healthExpected": {
+      "app_id": "hima-sop",
+      "launch_mode": "gateway"
+    },
+    "type": "service",
+    "healthPath": "/sop/api/health"
+  },
+  "vehicle-config": {
+    "port": 8790,
+    "arguments": [
+      "-B",
+      "{payload}/server.py",
+      "--host",
+      "127.0.0.1",
+      "--port",
+      "{port}",
+      "--data-dir",
+      "{data}",
+      "--public-prefix",
+      "{basePath}",
+      "--public-origin",
+      "{publicOrigin}",
+      "--require-proxy-identity"
+    ],
+    "environment": {},
+    "stripPrefix": true,
+    "healthExpected": {
+      "ok": true,
+      "app": "vehicle-config",
+      "public_prefix": "{basePath}"
+    },
+    "type": "service",
+    "healthPath": "/healthz"
+  }
+}

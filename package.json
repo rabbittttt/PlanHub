@@ -3,7 +3,7 @@
   "version": "0.2.2",
   "private": true,
   "type": "module",
-  "description": "IIS 统一业务门户，纯 HTML/CSS/JavaScript，无运行时外部依赖",
+  "description": "部门业务门户，独立应用发布与 Docker 部署",
   "scripts": {
     "start": "node scripts/start-local.mjs",
     "dev": "node scripts/start-local.mjs",

@@ -1,6 +1,7 @@
 node_modules/
 dist/
 staging/
+release/
 交付包/
 artifacts/
 apps/*/

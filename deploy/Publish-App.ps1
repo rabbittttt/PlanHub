@@ -5,9 +5,10 @@ param(
     [string]$Version='',
     [string]$ReleasePath='',
     [string]$ConfigPath='',
-    [ValidateSet('','Package','Send','Deploy','SendExisting','DeployExisting')][string]$Action='',
+    [ValidateSet('','Package')][string]$Action='',
     [switch]$NonInteractive,
-    [switch]$All
+    [switch]$All,
+    [switch]$BuildOnly
 )
 $ErrorActionPreference='Stop'
 . (Join-Path $PSScriptRoot 'Publish.Common.ps1')
@@ -27,7 +28,7 @@ $apps=@([pscustomobject]@{id='planhub';name='计划工作台门户'})
 $apps+=@($registry.groups | ForEach-Object {$_.apps} | Where-Object {$_.enabled})
 if (-not $AppId -and -not $All) {
     if($NonInteractive){throw 'AppId is required.'}
-    Write-Host '0. 生成整套交付文件夹（完整复制到 B）'
+    Write-Host '0. 打包全部应用为 Docker 交付文件夹（首次部署选此项）'
     Write-Host '其他编号用于单个应用更新：'
     for($i=0;$i -lt $apps.Count;$i++){Write-Host ("{0}. {1} ({2})" -f ($i+1),$apps[$i].name,$apps[$i].id)}
     $selected=Read-Host '选择需要发布的应用编号'
@@ -43,7 +44,7 @@ if($All) {
     $failures=@()
     foreach($app in $apps) {
         Write-Host ("`n正在打包：{0} ({1})" -f $app.name,$app.id)
-        $parameters=@{AppId=$app.id;ConfigPath=$ConfigPath;Action='Package';NonInteractive=$true}
+        $parameters=@{AppId=$app.id;ConfigPath=$ConfigPath;Action='Package';NonInteractive=$true;BuildOnly=$true}
         # Prepared immutable releases retain their own version unless one is requested.
         if($Version){$parameters.Version=$Version}
         try {
@@ -55,17 +56,18 @@ if($All) {
         }
     }
     Write-Host ("`n打包汇总：成功 {0}，失败 {1}。" -f $completed.Count,$failures.Count)
-    foreach($item in $completed){Write-Host ("成功 {0}：{1}" -f $item.appId,$item.releasePath)}
+    foreach($item in $completed){Write-Host ("已校验 {0} {1}" -f $item.appId,$item.version)}
     foreach($item in $failures){Write-Host ("失败 {0}：{1}" -f $item.appId,$item.message)}
-    Write-Host '仅生成独立版本包，尚未传送或部署。失败项修复后可单独选择重试。'
     if($failures.Count){throw 'Some applications could not be packaged. See the summary above; this batch is incomplete.'}
-    $bundleDestination=Join-Path $root ('交付包/计划工作台-'+(Get-Date -Format 'yyyyMMdd-HHmmss-fff'))
-    $bundle=& (Join-Path $PSScriptRoot 'New-LocalBundle.ps1') -ReleasePaths @($completed.releasePath) -Destination $bundleDestination
+    Write-Host '正在构建 Docker 镜像并导出交付文件夹；首次构建可能较慢。'
+    $bundleDestination=Join-Path $root ('release/planhub-'+(Get-Date -Format 'yyyyMMdd-HHmmss-fff'))
+    & node (Join-Path $root 'scripts/build-docker.mjs') --complete $bundleDestination @($completed.releasePath) | Out-Host
+    if($LASTEXITCODE -ne 0){throw 'Docker image build/export failed. No completed delivery folder was published.'}
     Write-Host "`n打包完成。只需把下面这一个文件夹完整复制到电脑 B："
-    Write-Host $bundle.bundlePath
-    Write-Host '其中已含全部应用、启动和停止 CMD；数据继续使用版本目录外的运行目录。'
-    if($NonInteractive){return $completed}
-    Open-PublishDeliveryFolder -Path $bundle.bundlePath
+    Write-Host $bundleDestination
+    Write-Host '已包含离线镜像、start.cmd、stop.cmd 和 README.md；按包内说明在 B 部署。'
+    if($NonInteractive){return [pscustomobject]@{deliveryPath=$bundleDestination}}
+    Open-PublishDeliveryFolder -Path $bundleDestination
     return
 }
 Assert-PublishId $AppId
@@ -73,38 +75,12 @@ if(-not @($apps | Where-Object {$_.id -ceq $AppId}).Count){throw 'Register the a
 if(-not $Action) {
     $Action='Package'
 }
-if($Action -ne 'Package' -and -not(Get-PublishValue $config 'inbox' '')) {
-    if($NonInteractive){throw 'Set inbox in the private publish config before sending.'}
-    $inbox=Read-Host 'B 电脑收件共享目录，或本机中转目录（可以是相对路径）'
-    $null=Resolve-PublishPath $inbox $root
-    $config | Add-Member -NotePropertyName inbox -NotePropertyValue $inbox -Force
-    Write-AppReleaseJson $ConfigPath $config
-}
-if($Action -in @('Deploy','DeployExisting')) {
-    $remote=Get-PublishValue $config 'remote'
-    foreach($field in @('computerName','toolsRoot','configPath','inboxLocalPath')) {
-        if(-not(Get-PublishValue $remote $field '')){throw "Configure remote.$field first. This tool never enables WinRM."}
-    }
-    if(-not $NonInteractive) {
-        Write-Host '将使用当前 Windows 身份在 B 电脑切换此应用。请先等正在进行的保存、上传及后台写入结束。'
-        if((Read-Host '确认执行远程部署？输入 Y') -cne 'Y'){throw 'Deployment cancelled.'}
-    }
-}
-if($Action -in @('SendExisting','DeployExisting')){
-    if(-not $ReleasePath){
-        if($NonInteractive){throw 'ReleasePath is required when sending an existing package.'}
-        $ReleasePath=Read-Host '已有发布包目录（例如 staging/releases/leads-版本号）'
-    }
-    $existing=Assert-AppRelease (Resolve-PublishPath $ReleasePath $root)
-    if($existing.Manifest.appId -cne $AppId){throw 'Selected package belongs to a different application.'}
-    if($Version -and $existing.Manifest.version -cne $Version){throw 'Requested version differs from the selected package.'}
-    return & (Join-Path $PSScriptRoot 'Send-AppRelease.ps1') -ReleasePath $existing.Root -ConfigPath $ConfigPath -ApplyRemote:($Action -eq 'DeployExisting')
-}
 $explicitVersion=!!$Version
 if(-not $Version){$Version=Get-Date -Format 'yyyyMMdd-HHmmss-fff'}
 Assert-PublishVersion $Version
 $profile=Get-PublishValue (Get-PublishValue $config 'applications') $AppId ([pscustomobject]@{})
 $kind=[string](Get-PublishValue $profile 'kind' '')
+if($AppId -eq 'leads' -and (Get-PublishValue $profile 'businessSourceConfirmed' $false) -ne $true){throw 'Replace the leads integration sample with the real intranet page, then set applications.leads.businessSourceConfirmed=true in config.local/publish.json.'}
 if(-not $ReleasePath){$ReleasePath=[string](Get-PublishValue $profile 'releasePath' '')}
 if(-not $ReleasePath -and -not $kind){
     # New static apps can use the registered collector; dynamic apps need a source-owned release.
@@ -138,8 +114,6 @@ if($ReleasePath){
         New-Item -ItemType Directory -Force -Path (Split-Path -Parent $target) | Out-Null
         Copy-Item -LiteralPath $portalFiles[$relative] -Destination $target
     }
-    # Only the portal's own reviewed baseline is added. Host-specific proxy/auth stays on B.
-    Copy-Item -LiteralPath (Join-Path $PSScriptRoot 'portal.web.config') -Destination (Join-Path $prepared 'web.config')
 } elseif($kind -eq 'static') {
     & node (Join-Path $root 'scripts/prepare-apps.mjs') $AppId | Out-Host
     if($LASTEXITCODE -ne 0){throw 'Static application collection failed.'}
@@ -170,7 +144,7 @@ if($kind -eq 'release'){
     $Version=$built.Manifest.version
 }
 $destination=Join-Path $root ("staging/releases/"+$AppId+"-"+$Version)
-if(Test-Path -LiteralPath $destination){throw 'Packaged version already exists. Send it with Send-AppRelease.ps1 or choose a new version.'}
+if(Test-Path -LiteralPath $destination){throw 'Packaged version already exists. Choose a new version.'}
 if($kind -eq 'release'){
     $final=Copy-ValidatedRelease $built $destination
 } else {
@@ -200,12 +174,15 @@ if($kind -eq 'release'){
             if($source){$revision=Get-PublishRevision (Resolve-PublishPath $source $root)}
             else{$revision='prepared-entry-sha256:'+(Get-FileHash -LiteralPath (Join-Path $prepared $entry) -Algorithm SHA256).Hash.ToLowerInvariant()}
         }
-        & (Join-Path $PSScriptRoot 'New-AppRelease.ps1') -PayloadPath $prepared -Destination $destination -AppId $AppId -Version $Version -Type $type -EntryPoint $entry -SourceRevision $revision -DataMode $mode -HealthPath $health | Out-Host
+        & (Join-Path $PSScriptRoot 'New-AppRelease.ps1') -PayloadPath $prepared -Destination $destination -AppId $AppId -Version $Version -Type $type -EntryPoint $entry -SourceRevision $revision -DataMode $mode -HealthPath $health | Out-Null
         $final=Assert-AppRelease $destination
     }
 }
-Write-Host "发布包已生成：$destination"
-if($Action -ne 'Package'){
-    & (Join-Path $PSScriptRoot 'Send-AppRelease.ps1') -ReleasePath $destination -ConfigPath $ConfigPath -ApplyRemote:($Action -eq 'Deploy') | Out-Host
-} else { Write-Host '尚未部署。正式数据、机器配置和运行环境不在此包中。' }
-[pscustomobject]@{appId=$AppId;version=$Version;releasePath=$destination;action=$Action}
+Write-Host ("应用校验通过：{0} {1}" -f $AppId,$Version)
+if($BuildOnly){return [pscustomobject]@{appId=$AppId;version=$Version;releasePath=$destination;action=$Action}}
+$delivery=Join-Path $root ('release/'+$AppId+'-'+(Get-Date -Format 'yyyyMMdd-HHmmss-fff'))
+& node (Join-Path $root 'scripts/build-docker.mjs') $delivery $destination | Out-Host
+if($LASTEXITCODE -ne 0){throw 'Docker image build/export failed. No completed delivery folder was published.'}
+Write-Host ('只复制此文件夹到 B：'+$delivery)
+if($NonInteractive){return [pscustomobject]@{deliveryPath=$delivery}}
+Open-PublishDeliveryFolder -Path $delivery
