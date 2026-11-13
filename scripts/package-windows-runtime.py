@@ -459,8 +459,9 @@ def package_runtime(output: Path, requirements: list[Path]) -> dict:
     distributions = resolve_distributions(requirements_from_files(requirements))
     base = Path(sys.base_prefix).absolute()
     # Never write into a Python installation, its parent, or its descendants.
-    if output == base or output in base.parents or base in output.parents:
-        raise RuntimePackageError("Runtime destination must be outside the build Python installation")
+    for installation in {base, Path(sys.prefix).absolute()}:
+        if output == installation or output in installation.parents or installation in output.parents:
+            raise RuntimePackageError("Runtime destination must be outside the build Python installation")
     output.mkdir(parents=True)
     copied = {}
     copy_base(base, output, copied)
