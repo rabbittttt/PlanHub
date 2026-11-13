@@ -77,9 +77,34 @@ planhub/                           ← B 上新建的总目录
    └─ data/                       ← 各应用保存的数据
 ```
 
-如果要接续旧数据库、上传或设置，请同事先停止旧服务，再按原项目的数据目录契约迁移到 `data/`。数据速查的历史来源还需核对配置中的 `quicklookSourceBase`，原 Windows 绝对路径不能直接带进 Linux 容器。
+**哪些东西放进 `data/`？**
 
-**完成标准：** 程序包在 B；`config.json` 已填真实访问地址；共享规则和数据已放好。
+`shared/` 放共用的原始 Excel；`data/` 放各网页已经保存的计划、批注、数据库和上传文件。**第一次部署到 B，也可能有需要保留的旧内容**：以前在 A 的本地网页里保存过，就属于旧数据。
+
+需要保留时，先停止原应用，保留原件作备份，再将下面指定的文件或目录内容复制到 B。复制的是旧目录里面的内容，例如 `sop.sqlite3` 应直接在 `data/sop/` 下。
+
+| 应用 | 旧电脑上取哪些内容（默认位置，相对原门户源码目录） | 放到 B 的哪里（相对 `planhub-runtime/`） |
+|---|---|---|
+| SOP 计划 | `../SOP维护/data/` 的内容：核心是 `sop.sqlite3`，连同 `sales.json`、`source_settings.json`、历史备份等一起保留；旧 `service.json`、`service.pid` 不必复制 | `data/sop/` |
+| 订单分析批注 | `../订单分析/data/order_dashboard/` 的内容，关键文件为 `annotations.sqlite3` | `data/orderiq/annotations/` |
+| 数据速查 | `../数据速查/output_file/` 中的 `warehouse.db`、`workspace.json`、`recognition.json` 和 `uploads/`（存在的都保留）；旧路径还需按下文处理 | `data/quicklook/`，例如 `data/quicklook/uploads/` |
+| 车型配置 | 原 `../共享数据/车型配置/` 的全部内容，包括 `catalog.sqlite3`、`current.json`、`drafts/`、`history/` | `data/vehicle-config/` |
+| 订单分析旧报表批次（可选） | 要保留历史批次时，复制 `../订单分析/output_file/runtime/` 的全部内容，包括 `current.json` 和 `datasets/` | `data/orderiq/runtime/`；不保留旧批次时可留空，从共享 Excel 重新生成 |
+| 销量预测 | 通常无需复制旧 `output_file/`，页面和缓存可从共享 Excel 重新生成 | `data/forecast/` 可留空，由程序创建 |
+
+这些是原应用的默认位置；如果原服务配置过其他数据目录，取它**实际使用的目录**。原项目的 `output_file/releases/` 等程序发布包不属于业务数据，不用复制进来。门户和线索声量页面已包含在程序包中。
+
+如果某个应用以前完全没用过、没有记录要保留，对应 `data/` 子目录可以留空。SOP 已保存的计划在 `sop.sqlite3` 中，不能只搬一份旧维护 Excel 代替。数据速查的收藏和销量预测的网页人工参数保存在原浏览器中，复制这些服务器文件不会自动迁移浏览器设置。
+
+**`quicklookSourceBase` 到底要不要处理？**
+
+它只表示：数据速查的旧 `workspace.json` 里，如果只写了一个相对路径，应该从哪个目录开始找文件。默认 `"quicklookSourceBase": "shared"` 就是从 B 的 `planhub-runtime/shared/` 开始找。例如旧设置写的是 `订单汇总`，对应的就是 `shared/订单汇总/`。
+
+- **没有旧数据速查文件要沿用：** 保持默认 `"shared"`，不用修改或额外核对。共享 Excel 放好后，程序会按配置读取共享目录；通过网页新上传的文件由程序保存。
+- **需要保留以前的数据速查库和设置：** 保留上表列出的文件，并在复制的 `workspace.json` 中查看 `folder` / `folders`。只有旧相对路径在新的 `shared/` 下仍能找到对应文件时，默认值才直接适用。
+- **旧设置或旧库里记录了 Windows 盘符路径：** 例如 `D:\旧目录\订单汇总`，不能把它填进 `quicklookSourceBase`；只改这个参数也不会转换数据库中的原文件路径、上传记录和识别规则。当前门户没有完成 Windows 到 Linux 的历史路径自动迁移，需要由数据速查原项目按其迁移能力处理。迁移验收要检查旧文件预览、同步和识别规则，不只检查数据库能打开。
+
+**完成标准：** 程序包在 B；`config.json` 已填真实访问地址；共享规则、共享 Excel 和需要保留的旧数据已按上述位置准备好。若要沿用数据速查历史记录，其路径迁移也须处理完成。
 
 ## 第四步：在 B 部署程序，并让它后台运行
 

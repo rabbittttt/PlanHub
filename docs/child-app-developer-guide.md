@@ -115,7 +115,7 @@ SOP 的接入说明与协作约定已同步当前实现：门户默认使用持�
 | SOP | `data/sop/` 为持久数据库；`config/shared_config.py` 必须是真实规则；旧维护 Excel 不再自动同步 |
 | 订单分析 | `data/orderiq/runtime/` 与 `data/orderiq/annotations/`；前端来自镜像，输入来自共享订单目录 |
 | 销量预测 | `data/forecast/`；存活健康与生成就绪分开，`/forecast/readyz` 才表明报表可用 |
-| 数据速查 | `data/quicklook/` 保留工作区、上传及数据库；`quicklookSourceBase` 指定历史相对路径基准；旧绝对 Windows 路径须由原项目支持的迁移方式处理 |
+| 数据速查 | `data/quicklook/` 保留 `warehouse.db`、`workspace.json`、`recognition.json` 及 `uploads/`；`quicklookSourceBase` 只指定旧工作区相对路径的基准，不转换数据库/识别规则中的文件路径。新装保持默认 `shared`；沿用 Windows 旧库需由原项目处理跨系统路径迁移，并验收原文件预览、同步和规则 |
 | 车型配置 | `data/vehicle-config/`；首次由部署同事核对原共享目录中的真实持久数据，不用空目录代替迁移 |
 
 后续版本使用同一目录，不复制旧版本数据来升级。完整包更新停止整套容器；单应用包只更新该容器。单应用包要求已有完整部署且运行配置未变。不要用另一个 Compose 项目名同时运行第二套服务写入相同目录。重启策略不代替 Docker 宿主开机配置和重启验收。
