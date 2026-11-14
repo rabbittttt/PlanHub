@@ -72,6 +72,33 @@ try{
     Check ((Get-Content -LiteralPath $stateFile -Raw|ConvertFrom-Json).running) 'No running deployment record'
     Check ((Get-Content -LiteralPath (Join-Path $runtime 'deployment-active.json') -Raw|ConvertFrom-Json).mayBeRunning) 'Startup did not mark possible writers before success'
     Check (($dockerTestState.calls|Where-Object {$_ -match 'up -d --wait --wait-timeout 180$'}).Count -eq 1) 'Start did not wait for health'
+    # Selection 8 contains all applications but no Windows runtime. Docker tools
+    # must work directly, without locating or executing an old Windows runtime.
+    $runtimePayload=[IO.Path]::GetFullPath((Join-Path $package 'runtime'))
+    if(-not $runtimePayload.StartsWith($package+'\',[StringComparison]::OrdinalIgnoreCase)){throw 'Unexpected fixture runtime path'}
+    Remove-Item -LiteralPath $runtimePayload -Recurse -Force
+    [void]$manifest.files.Remove('runtime/node/node.exe')
+    $manifest.runtimeMode='reuse';Save (Join-Path $package 'delivery.json') $manifest
+    $dockerTestState.calls.Clear();& $entry -Action Prepare
+    Check ($dockerTestState.calls.Count -eq 0) 'Program-only preparation called Docker'
+    Check ((Get-Content -LiteralPath $configFile -Raw|ConvertFrom-Json).proxySecret -ceq $secret) 'Program-only preparation changed the persistent configuration'
+    & $builder;& $entry -Action Start
+    Check (-not(Test-Path -LiteralPath $runtimePayload)) 'Docker tooling recreated a Windows runtime'
+    Check (($dockerTestState.calls|Where-Object {$_ -match 'up -d --wait --wait-timeout 180$'}).Count -eq 1) 'Program-only complete delivery did not start the full stack'
+    $manifest.complete=$false;Save (Join-Path $package 'delivery.json') $manifest;$dockerTestState.calls.Clear()
+    Reject {& $entry -Action Prepare};Reject {& $builder}
+    Check ($dockerTestState.calls.Count -eq 0) 'Invalid partial runtime reuse touched Docker'
+    $manifest.complete=$true;$manifest.runtimeMode='unknown';Save (Join-Path $package 'delivery.json') $manifest
+    Reject {& $entry -Action Prepare}
+    $manifest.runtimeMode='reuse'
+    Put (Join-Path $package 'runtime/node/node.exe') 'fixture - never executed'
+    $manifest.files['runtime/node/node.exe']=(Get-FileHash -LiteralPath (Join-Path $package 'runtime/node/node.exe')).Hash.ToLowerInvariant()
+    Save (Join-Path $package 'delivery.json') $manifest
+    Reject {& $entry -Action Prepare}
+    Check ($dockerTestState.calls.Count -eq 0) 'Program-only package containing a Windows runtime touched Docker'
+    # Old schema-2 folders omit runtimeMode and still mean runtime included.
+    [void]$manifest.Remove('runtimeMode');Save (Join-Path $package 'delivery.json') $manifest
+    & $builder;& $entry -Action Start
     $before=[IO.File]::ReadAllText($stateFile);$dockerTestState.failHealth=$true
     Reject {& $entry -Action Start}
     Check ([IO.File]::ReadAllText($stateFile) -ceq $before) 'Failed health was recorded as successful'

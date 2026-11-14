@@ -196,6 +196,30 @@ test('changing only a service target updates launch arguments, environment and i
   await assert.rejects(loadAppIntegrations(f.root),/回环/);
 });
 
+test('the port registry drives proxy targets and service tokens while local numeric targets remain explicit overrides',async t=>{
+  const f=await fixture(t);
+  f.config.applications.service={type:'proxy',target:'http://127.0.0.1:{port}',stripPrefix:true,rootRoutes:[],healthPath:'/healthz',healthKeys:['app'],
+    healthExpected:{app:'fixture',port:'{port}',public_prefix:'{basePath}'},
+    start:{cwd:'.',command:'runtime.exe',args:['--port','{port}','{businessValue}'],env:{APP_ORIGIN:'http://{host}:{port}'}}};
+  await writeFile(path.join(f.root,'integration/apps.json'),JSON.stringify(f.config));
+  const save=port=>writeFile(path.join(f.root,'integration/ports.json'),JSON.stringify({schemaVersion:1,portal:14173,applications:{service:port}}));
+  for(const port of [19881,19882]) {
+    await save(port);
+    const app=(await loadAppIntegrations(f.root)).service;
+    assert.equal(app.target,'http://127.0.0.1:'+port);
+    assert.deepEqual(app.start.args,['--port',String(port),'{businessValue}']);
+    assert.equal(app.start.env.APP_ORIGIN,app.target);
+    assert.deepEqual(app.healthExpected,{app:'fixture',port:String(port),public_prefix:'/service/'});
+  }
+  await writeFile(path.join(f.root,'config.local/apps.json'),JSON.stringify({applications:{service:{target:'http://127.0.0.1:19883'}}}));
+  const overridden=(await loadAppIntegrations(f.root)).service;
+  assert.equal(overridden.target,'http://127.0.0.1:19883');
+  assert.equal(overridden.start.args[1],'19883');
+  await writeFile(path.join(f.root,'config.local/apps.json'),JSON.stringify({applications:{}}));
+  await writeFile(path.join(f.root,'integration/ports.json'),JSON.stringify({schemaVersion:1,portal:14173,applications:{}}));
+  await assert.rejects(loadAppIntegrations(f.root),/integration\/ports.json/);
+});
+
 test('a template-launched fixture listens on the portal target and keeps its public prefix in the proxy',async t=>{
   const f=await fixture(t);
   const {spawnService,stopService}=await import('../scripts/service-process.mjs');

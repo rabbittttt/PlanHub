@@ -14,6 +14,7 @@ import {resolveSopPython} from './sop-python.mjs';
 import {loadAppIntegrations} from './app-integrations.mjs';
 import {startAppServices,serviceHealthy} from './app-services.mjs';
 import {probePortal,workspaceId,configurationId,createPortalInstance,registerPortal,unregisterPortal} from './portal-instance.mjs';
+import {readServicePorts} from './service-ports.mjs';
 
 const ROOT=path.resolve(path.dirname(fileURLToPath(import.meta.url)),'..');
 
@@ -39,7 +40,7 @@ function localSopUserHeader() {
   return 'b64:'+Buffer.from(account,'utf8').toString('base64');
 }
 
-export function previewOptions(args=process.argv.slice(2)) {
+export function previewOptions(args=process.argv.slice(2),{root=ROOT}={}) {
   const {values}=parseArgs({args,options:{
     'sop-source':{type:'string'},'seed-from':{type:'string'},'data-root':{type:'string'},'shared-config':{type:'string'},
     snapshot:{type:'boolean'},demo:{type:'boolean'},
@@ -49,7 +50,8 @@ export function previewOptions(args=process.argv.slice(2)) {
   if(values['seed-from']&&!values.snapshot)throw new Error('--seed-from 仅用于 --snapshot 测试；日常持久数据目录请用 --data-root。');
   if(values['seed-from']&&values['data-root'])throw new Error('--seed-from 与 --data-root 不能同时使用。');
   if(values.demo&&(!values.snapshot||values['seed-from']||values['data-root']))throw new Error('--demo 只允许与 --snapshot 一起使用，不能指定真实数据来源。');
-  const port=Number(values.port??'4173'),backendPort=Number(values['backend-port']??'8876');
+  const ports=readServicePorts(root,{optional:true})??readServicePorts(ROOT);
+  const port=Number(values.port??ports.portal),backendPort=Number(values['backend-port']??ports.applications.sop);
   if(![port,backendPort].every(p=>Number.isInteger(p)&&p>0&&p<65536)||port===backendPort)throw new Error('门户和 SOP 端口必须为两个不同的 1–65535 整数。');
   return {...values,port,backendPort};
 }
@@ -79,7 +81,7 @@ async function integrationConfig(root) {
 
 /** Resolve code and data independently; no portal-owned business source fallback exists. */
 export async function resolvePreviewSettings(args=process.argv.slice(2),{root=ROOT,env=process.env}={}) {
-  const values=previewOptions(args);
+  const values=previewOptions(args,{root});
   if(values.help)return null;
   root=await realpath(path.resolve(root));
   const local=await integrationConfig(root);
@@ -273,7 +275,8 @@ export async function runPreview(args=process.argv.slice(2),options={}) {
 
 if(process.argv[1]&&import.meta.url===pathToFileURL(path.resolve(process.argv[1])).href) {
   try {
-    if(previewOptions().help)console.log('npm run dev:sop -- [--sop-source <独立SOP项目>] [--data-root <持久数据项目>] [--shared-config <规则文件>] [--port 4173 --backend-port 8876]\n默认直接使用原项目持久数据。只有显式 --snapshot 才使用测试副本；--snapshot --demo 使用演示数据。');
+    const options=previewOptions();
+    if(options.help)console.log(`npm run dev:sop -- [--sop-source <独立SOP项目>] [--data-root <持久数据项目>] [--shared-config <规则文件>] [--port ${options.port} --backend-port ${options.backendPort}]\n默认直接使用原项目持久数据。只有显式 --snapshot 才使用测试副本；--snapshot --demo 使用演示数据。`);
     else await runPreview();
   } catch(error) {console.error(`本地门户未启动：${error.message}`);process.exitCode=1;}
 }

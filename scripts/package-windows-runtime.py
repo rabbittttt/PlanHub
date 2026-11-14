@@ -456,7 +456,8 @@ def package_runtime(output: Path, requirements: list[Path]) -> dict:
     no_link(output)
     if output.exists():
         raise RuntimePackageError("Runtime destination exists; choose a new directory")
-    distributions = resolve_distributions(requirements_from_files(requirements))
+    # The portal's offline update check uses PEP 508 dependency declarations.
+    distributions = resolve_distributions([Requirement('packaging'), *requirements_from_files(requirements)])
     base = Path(sys.base_prefix).absolute()
     # Never write into a Python installation, its parent, or its descendants.
     for installation in {base, Path(sys.prefix).absolute()}:

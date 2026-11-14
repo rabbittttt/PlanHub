@@ -9,6 +9,9 @@ export const DELIVERY_PLATFORM='windows/amd64+linux/amd64';
 // Retain checksum compatibility with deliveries containing the retired previewPort field.
 // New launchers use only port; an old per-preview preference never controls startup.
 export const runtimeContract=bindings=>Object.fromEntries(Object.entries(bindings).map(([id,{previewPort,...binding}])=>[id,binding]));
+const canonical=value=>Array.isArray(value)?value.map(canonical):value&&typeof value==='object'?Object.fromEntries(Object.keys(value).sort().map(key=>[key,canonical(value[key])])):value;
+// Snapshot data does not depend on the transport ports assigned to services.
+export const snapshotContractHash=bindings=>crypto.createHash('sha256').update(JSON.stringify(canonical(Object.fromEntries(Object.entries(runtimeContract(bindings)).map(([id,{port,...binding}])=>[id,binding]))))).digest('hex');
 export const readJson=async file=>JSON.parse((await readFile(file,'utf8')).replace(/^\uFEFF/,''));
 export async function hashFile(file){const hash=crypto.createHash('sha256');for await(const bytes of createReadStream(file))hash.update(bytes);return hash.digest('hex');}
 export function safeName(name){return typeof name==='string'&&name.length>0&&!/[\\:*?"<>|\x00-\x1f]/.test(name)&&!name.startsWith('/')&&name.split('/').every(p=>p&&!p.startsWith('.')&&!/[. ]$/.test(p));}
@@ -58,7 +61,9 @@ export function validateBindings(bindings,releases){
 export async function validateDelivery(packageRoot,{requireComplete=false}={}){
   const root=path.resolve(packageRoot);await noLinks(root);
   const manifest=await readJson(path.join(root,'delivery.json'));
-  if(manifest.schemaVersion!==DELIVERY_SCHEMA||manifest.platform!==DELIVERY_PLATFORM||typeof manifest.complete!=='boolean'||(requireComplete&&!manifest.complete))throw new Error('Use a complete current delivery folder (selection 0) for local preview.');
+  if(manifest.schemaVersion!==DELIVERY_SCHEMA||manifest.platform!==DELIVERY_PLATFORM||typeof manifest.complete!=='boolean'||(requireComplete&&!manifest.complete))throw new Error('Use a complete current delivery folder (selection 0 or 8) for local preview.');
+  const runtimeMode=manifest.runtimeMode??'included';
+  if(!['included','reuse'].includes(runtimeMode)||(runtimeMode==='reuse'&&!manifest.complete))throw new Error('Invalid Windows runtime mode.');
   if(!Array.isArray(manifest.applications)||!manifest.applications.length||new Set(manifest.applications).size!==manifest.applications.length||manifest.applications.some(id=>!/^[a-z][a-z0-9-]{0,39}$/.test(id)||id==='network'))throw new Error('Invalid delivery application set');
   if(!manifest.files||typeof manifest.files!=='object'||Array.isArray(manifest.files))throw new Error('Invalid delivery checksums');
   const names=new Set();
@@ -74,7 +79,9 @@ export async function validateDelivery(packageRoot,{requireComplete=false}={}){
   await validateReleases(releases,{complete:manifest.complete});
   const bindings=await readJson(path.join(root,'bindings.json'));validateBindings(bindings,releases);
   if(crypto.createHash('sha256').update(JSON.stringify(runtimeContract(bindings))).digest('hex')!==manifest.contractHash)throw new Error('Runtime bindings differ from delivery');
-  for(const file of ['runtime/node/node.exe','launcher/native-preview.mjs','deploy.ps1','compose.json','build-docker.ps1'])if(!Object.hasOwn(manifest.files,file))throw new Error('Required launcher file is missing: '+file);
-  if(Object.values(releases).some(release=>release.manifest.type==='service')&&!Object.hasOwn(manifest.files,'runtime/python/python.exe'))throw new Error('Bundled Python is missing');
+  if(manifest.snapshotContractHash!==undefined&&manifest.snapshotContractHash!==snapshotContractHash(bindings))throw new Error('Snapshot bindings differ from delivery');
+  for(const file of ['launcher/native-preview.mjs','deploy.ps1','compose.json','build-docker.ps1',...(runtimeMode==='included'?['runtime/node/node.exe']:[])])if(!Object.hasOwn(manifest.files,file))throw new Error('Required launcher file is missing: '+file);
+  if(runtimeMode==='included'&&Object.values(releases).some(release=>release.manifest.type==='service')&&!Object.hasOwn(manifest.files,'runtime/python/python.exe'))throw new Error('Bundled Python is missing');
+  if(runtimeMode==='reuse'&&Object.keys(manifest.files).some(name=>name.startsWith('runtime/')))throw new Error('Program-only delivery must not include a Windows runtime.');
   return {root,manifest,bindings,releases};
 }

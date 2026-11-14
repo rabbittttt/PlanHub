@@ -6,6 +6,7 @@ import { fileURLToPath, pathToFileURL } from 'node:url';
 import {loadAppIntegrations, publicFile, STATIC_MIME_TYPES} from './app-integrations.mjs';
 import {proxyRequest} from './proxy-request.mjs';
 import {handlePortalControl} from './portal-instance.mjs';
+import {readServicePorts} from './service-ports.mjs';
 const PROJECT_ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const PRIVATE = new Set(['web.config', 'deploy', 'data', 'services', 'logs', 'scripts', 'tests', 'node_modules']);
 
@@ -108,7 +109,7 @@ export function createServer({ root = PROJECT_ROOT, portalRoot = path.join(root,
 
 if (process.argv[1] && import.meta.url === pathToFileURL(path.resolve(process.argv[1])).href) {
   const portIndex = process.argv.indexOf('--port');
-  const port = portIndex >= 0 ? Number(process.argv[portIndex + 1]) : 4173;
+  const port = portIndex >= 0 ? Number(process.argv[portIndex + 1]) : readServicePorts(PROJECT_ROOT).portal;
   if (!Number.isInteger(port) || port < 1 || port > 65535) throw new Error('Port must be between 1 and 65535');
   const applications = await loadAppIntegrations(PROJECT_ROOT);
   for (const [id, app] of Object.entries(applications)) if (app.type === 'proxy' && Number(new URL(app.target).port || 80) === port) throw new Error(id + ' 服务端口不能与门户相同');

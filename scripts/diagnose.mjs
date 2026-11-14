@@ -6,6 +6,7 @@ import {parseArgs} from 'node:util';
 import path from 'node:path';
 import {fileURLToPath,pathToFileURL} from 'node:url';
 import {loadAppIntegrations} from './app-integrations.mjs';
+import {readServicePorts} from './service-ports.mjs';
 import {validateConfig,orderedApps} from '../portal/js/config.js';
 import {workspaceId} from './portal-instance.mjs';
 import {probeServiceHealth} from './health-check.mjs';
@@ -60,8 +61,9 @@ async function latestLog(root,id){
     return logs.sort((a,b)=>b.modifiedAt.localeCompare(a.modifiedAt))[0]||null;
   }catch{return null;}
 }
-export async function collectDiagnostics({root=ROOT,port=4173,fetcher=fetch,run=execute}={}){
+export async function collectDiagnostics({root=ROOT,port,fetcher=fetch,run=execute}={}){
   root=await realpath(root);
+  port??=(readServicePorts(root,{optional:true})??readServicePorts(ROOT)).portal;
   const report={root,node:process.versions.node,port,localConfiguration:{apps:(await location(path.join(root,'config.local/apps.json'))).ok,sop:(await location(path.join(root,'config.local/sop.json'))).ok},workspaceFolders:[],portal:{},applications:[]};
   try{report.workspaceFolders=(await readdir(path.dirname(root),{withFileTypes:true})).filter(e=>e.isDirectory()&&!e.name.startsWith('.')).map(e=>e.name);}catch{}
   const origin='http://127.0.0.1:'+port;
@@ -135,7 +137,7 @@ export function formatDiagnostics(report){
 }
 if(process.argv[1]&&import.meta.url===pathToFileURL(path.resolve(process.argv[1])).href){
   try{
-    const {values}=parseArgs({options:{port:{type:'string'},json:{type:'boolean'}},strict:true,allowPositionals:false});const port=Number(values.port??4173);
+    const {values}=parseArgs({options:{port:{type:'string'},json:{type:'boolean'}},strict:true,allowPositionals:false});const port=Number(values.port??readServicePorts(ROOT).portal);
     if(!Number.isInteger(port)||port<1||port>65535)throw new Error('端口必须为1–65535整数');
     const report=await collectDiagnostics({port});console.log(values.json?JSON.stringify(report,null,2):formatDiagnostics(report));
     if(report.configurationError||!report.portal.ok||!report.portal.sameWorkspace||report.applications.some(app=>app.issues.length))process.exitCode=2;

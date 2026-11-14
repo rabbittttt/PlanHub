@@ -1,6 +1,10 @@
 @echo off
 setlocal
-powershell.exe -NoProfile -ExecutionPolicy RemoteSigned -File "%~dp0preview.ps1" -Action Start -Snapshot %*
+if "%~1"=="" (
+  powershell.exe -NoProfile -ExecutionPolicy RemoteSigned -File "%~dp0preview.ps1" -Action Start -Snapshot -ChooseUpdate
+) else (
+  powershell.exe -NoProfile -ExecutionPolicy RemoteSigned -File "%~dp0preview.ps1" -Action Start -Snapshot %*
+)
 set "result=%errorlevel%"
 if not "%result%"=="0" (pause) else (
   start "" "http://127.0.0.1:4173/"

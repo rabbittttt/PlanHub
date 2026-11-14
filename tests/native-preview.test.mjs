@@ -150,6 +150,35 @@ test('detached preview reuses the owned actual mapping after a preferred static 
   await stopNativePreview(f.runtimeRoot);await freePreviewPort(PORT);assert.equal(foreign.listening,true);
 });
 
+test('a runtime-free delivery starts a static preview using an unchanged sibling Windows Node runtime',async t=>{
+  const f=await fixture(t,{dynamic:false,staticChild:true});await stopOnExit(t,f);
+  const runtime=path.join(f.packageRoot,'runtime');
+  assert.equal(path.dirname(runtime),f.packageRoot);assert.equal(path.basename(runtime),'runtime');
+  await rm(runtime,{recursive:true});
+  f.manifest.runtimeMode='reuse';
+  for(const name of Object.keys(f.manifest.files))if(name.startsWith('runtime/'))delete f.manifest.files[name];
+  await put(path.join(f.packageRoot,'delivery.json'),f.manifest);
+  const previous=path.join(f.root,'planhub-001'),node=path.join(previous,'runtime/node/node.exe');
+  await mkdir(path.dirname(node),{recursive:true});await cp(process.execPath,node);
+  const {hashFile}=await fromHarness('delivery-validation.mjs'),nodeHash=await hashFile(node);
+  await put(path.join(previous,'delivery.json'),{schemaVersion:2,platform:'windows/amd64+linux/amd64',complete:true,runtimeMode:'included',files:{'runtime/node/node.exe':nodeHash}});
+  const environmentBefore=await hashFiles(previous),saved=path.join(f.runtimeRoot,'data/fixture/saved.txt');
+  await put(saved,'retain test maintenance data');
+  const configBefore=await readFile(path.join(f.runtimeRoot,'config.json'));
+  const plan=await loadNativePlan(f.packageRoot,f.runtimeRoot);
+  assert.equal(plan.node,node);assert.equal(plan.runtimeDirectory,path.join(previous,'runtime'));
+  const first=await startNativePreview(f.packageRoot,f.runtimeRoot,{settleMs:100,timeoutMs:10000});
+  assert.equal(first.reused,false);
+  assert.equal(await (await fetch(ORIGIN+'/leads/')).text(),'Fixture static application');
+  const identity=await probePortal(PORT);assert.notEqual(identity.pid,process.pid);
+  assert.equal(identity.configId,plan.configId);
+  await stopNativePreview(f.runtimeRoot);await freePreviewPort(PORT);
+  await assert.rejects(readFile(path.join(f.packageRoot,'runtime/node/node.exe')),/ENOENT/);
+  assert.deepEqual(await hashFiles(previous),environmentBefore);
+  assert.equal(await readFile(saved,'utf8'),'retain test maintenance data');
+  assert.deepEqual(await readFile(path.join(f.runtimeRoot,'config.json')),configBefore);
+});
+
 test('a failed child startup releases all reservations and its own metadata',async t=>{
   const f=await fixture(t),plan=await loadNativePlan(f.packageRoot,f.runtimeRoot);
   await assert.rejects(runNativePreview(plan,{startService(command,args,options){return spawnService(process.execPath,['-e','process.exit(7)'],options);},serviceTimeoutMs:1000}),/did not start/);

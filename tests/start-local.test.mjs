@@ -4,12 +4,36 @@ import net from 'node:net';
 import {spawnSync} from 'node:child_process';
 import path from 'node:path';
 import {fileURLToPath} from 'node:url';
+import {mkdtemp,mkdir,writeFile,realpath,rm} from 'node:fs/promises';
+import os from 'node:os';
 import {previewOptions} from '../scripts/dev-sop.mjs';
+import {readServicePorts} from '../scripts/service-ports.mjs';
 
 const root=path.resolve(path.dirname(fileURLToPath(import.meta.url)),'..');
-test('the default SOP integration port matches the standalone project default',()=>{
-  assert.equal(previewOptions([]).backendPort,8876);
+test('the default SOP and portal ports come from the shared registry',()=>{
+  const ports=readServicePorts(root);
+  assert.equal(previewOptions([]).backendPort,ports.applications.sop);
+  assert.equal(previewOptions([]).port,ports.portal);
   assert.equal(previewOptions(['--backend-port','19876']).backendPort,19876);
+});
+
+test('preview defaults follow registry changes and explicit flags take precedence',async t=>{
+  const temporary=await mkdtemp(path.join(os.tmpdir(),'planhub-preview-ports-'));
+  t.after(async()=>{
+    const resolved=await realpath(temporary);
+    assert.equal(path.dirname(resolved),await realpath(os.tmpdir()));
+    assert.ok(path.basename(resolved).startsWith('planhub-preview-ports-'));
+    await rm(resolved,{recursive:true,force:true});
+  });
+  assert.equal(previewOptions([],{root:temporary}).backendPort,readServicePorts(root).applications.sop);
+  await mkdir(path.join(temporary,'integration'));
+  for(const sop of [18876,18877]) {
+    await writeFile(path.join(temporary,'integration/ports.json'),JSON.stringify({schemaVersion:1,portal:14173,applications:{sop}}));
+    const options=previewOptions([],{root:temporary});
+    assert.equal(options.port,14173);assert.equal(options.backendPort,sop);
+  }
+  const explicit=previewOptions(['--port','24173','--backend-port','28876'],{root:temporary});
+  assert.equal(explicit.port,24173);assert.equal(explicit.backendPort,28876);
 });
 async function listener() {
   const server=net.createServer();

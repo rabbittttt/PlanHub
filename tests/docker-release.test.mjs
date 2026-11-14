@@ -10,6 +10,8 @@ import {buildDelivery} from '../scripts/build-delivery.mjs';
 import {collectWindowsRuntime} from '../scripts/build-delivery.mjs';
 import {spawnSync} from 'node:child_process';
 import {hashFile,validateDelivery,runtimeContract,validateBindings} from '../scripts/delivery-validation.mjs';
+import {loadRuntimeBindings} from '../scripts/service-ports.mjs';
+import {loadAppIntegrations} from '../scripts/app-integrations.mjs';
 import {readRelease} from '../scripts/release-validation.mjs';
 import {validateRuntime,containerSpec,createContainerPortal,checkService} from '../scripts/container-runtime.mjs';
 const root=path.resolve(path.dirname(fileURLToPath(import.meta.url)),'..');
@@ -64,6 +66,20 @@ test('runtime failure publishes no completed folder and undeclared files fail va
   await buildDelivery([app],destination,{collectRuntime:fakeRuntime});
   await writeFile(path.join(destination,'extra.txt'),'undeclared');await assert.rejects(validateDelivery(destination),/file set/);
 });
+
+test('complete program-only update skips Windows environment collection and remains a valid Docker delivery',async t=>{
+  const base=await temporary(t);
+  const portal=await release(base,'planhub',{'index.html':'portal','config/apps.json':JSON.stringify({groups:[{apps:[{id:'leads',enabled:true}]}]})});
+  const leads=await release(base,'leads',{'index.html':'updated page'}),destination=path.join(base,'planhub-update');
+  await buildDelivery([portal,leads],destination,{complete:true,withoutRuntime:true,collectRuntime(){throw new Error('Program-only update must not collect an environment');}});
+  const {manifest}=await validateDelivery(destination,{requireComplete:true});
+  assert.equal(manifest.runtimeMode,'reuse');assert.match(manifest.snapshotContractHash,/^[a-f0-9]{64}$/);
+  assert.ok(!(await readdir(destination)).includes('runtime'));assert.ok(!Object.keys(manifest.files).some(name=>name.startsWith('runtime/')));
+  assert.ok(Object.keys(manifest.files).includes('runtime-common.ps1'));
+  await assert.rejects(buildDelivery([leads],path.join(base,'partial'),{withoutRuntime:true}),/complete application set/);
+  manifest.runtimeMode='included';await json(path.join(destination,'delivery.json'),manifest);
+  await assert.rejects(validateDelivery(destination),/runtime\/node/);
+});
 test('dynamic delivery includes its Python dependencies and pins Linux build content',async t=>{
   const base=await temporary(t),app=await release(base,'quicklook',{'server.py':'# source-owned fixture','requirements.txt':'openpyxl>=3.1,<4\n'},{type:'service',healthPath:'/healthz'});
   let seen;
@@ -101,7 +117,7 @@ test('release validation rejects undeclared private data and checksum or case co
   await assert.rejects(readRelease(app,'leads'),/清单无效/);
 });
 test('container contracts keep original loopback, public prefix, external paths and required identities',async()=>{
-  const bindings=JSON.parse(await readFile(path.join(root,'deploy/docker/bindings.json')));
+  const bindings=await loadRuntimeBindings(root);
   assert.equal(validateRuntime(config),config);
   assert.throws(()=>validateRuntime({...config,sharedDirectory:'../private'}),/relative paths/);
   assert.throws(()=>validateRuntime({...config,publicOrigin:'https://portal.example.invalid'}),/publicOrigin/);
@@ -111,11 +127,11 @@ test('container contracts keep original loopback, public prefix, external paths 
   const quick=containerSpec('quicklook',bindings.quicklook,{...config,quicklookSourceBase:'old-source-base'});assert.equal(quick.env.DATA_QUICKLOOK_SOURCE_BASE,'/runtime/old-source-base');
 });
 test('child defaults use one port registration and retired preview preferences cannot create a second source',async()=>{
-  const bindings=JSON.parse(await readFile(path.join(root,'deploy/docker/bindings.json')));
+  const bindings=await loadRuntimeBindings(root);
   assert.ok(Object.values(bindings).every(binding=>!Object.hasOwn(binding,'previewPort')));
   assert.equal(bindings.quicklook.port,9473);assert.equal(bindings.sop.port,8876);
-  const integration=JSON.parse(await readFile(path.join(root,'integration/apps.json')));
-  assert.equal(new URL(integration.applications.quicklook.target).port,String(bindings.quicklook.port));
+  const integration=await loadAppIntegrations(root);
+  assert.equal(new URL(integration.quicklook.target).port,String(bindings.quicklook.port));
   const legacy=structuredClone(bindings);legacy.quicklook.previewPort=43175;
   assert.deepEqual(runtimeContract(legacy),runtimeContract(bindings));
   const changed=structuredClone(bindings);changed.quicklook.port=changed.sop.port;

@@ -13,6 +13,8 @@ function Read-Delivery([string]$Package){
     $manifest=Get-Content -LiteralPath $file -Raw -Encoding UTF8|ConvertFrom-Json
     if($manifest.schemaVersion -ne 2 -or $manifest.platform -cne 'windows/amd64+linux/amd64'){throw 'Unsupported delivery folder. Create a new package on A.'}
     if($manifest.complete -isnot [bool] -or -not @($manifest.applications).Count){throw 'Invalid delivery application set.'}
+    $runtimeMode=if($manifest.PSObject.Properties['runtimeMode']){[string]$manifest.runtimeMode}else{'included'}
+    if($runtimeMode -cnotin @('included','reuse') -or ($runtimeMode -ceq 'reuse' -and -not $manifest.complete)){throw 'Invalid Windows runtime mode.'}
     $ids=New-Object 'Collections.Generic.HashSet[string]' ([StringComparer]::OrdinalIgnoreCase)
     foreach($id in $manifest.applications){if($id -cnotmatch '^[a-z][a-z0-9-]{0,39}$' -or $id -eq 'network' -or -not $ids.Add($id)){throw 'Invalid application ID.'}}
     $expected=New-Object 'Collections.Generic.HashSet[string]' ([StringComparer]::OrdinalIgnoreCase)
@@ -32,7 +34,9 @@ function Read-Delivery([string]$Package){
         }
     }
     if($actual.Count -ne $expected.Count -or @($actual|Where-Object {-not $expected.Contains($_)}).Count){throw 'Delivery contains missing or undeclared files.'}
-    foreach($name in @('compose.json','bindings.json','README.md','deploy.ps1','delivery-common.ps1','build-docker.ps1','runtime.example.json','runtime/node/node.exe')){if(-not $expected.Contains($name)){throw ('Missing delivery file: '+$name)}}
+    foreach($name in @('compose.json','bindings.json','README.md','deploy.ps1','delivery-common.ps1','build-docker.ps1','runtime.example.json')){if(-not $expected.Contains($name)){throw ('Missing delivery file: '+$name)}}
+    if($runtimeMode -ceq 'included' -and -not $expected.Contains('runtime/node/node.exe')){throw 'Missing bundled Node.js.'}
+    if($runtimeMode -ceq 'reuse' -and @($actual|Where-Object {$_.StartsWith('runtime/')}).Count){throw 'Program-only delivery must not include a Windows runtime.'}
     $images=@($manifest.images.PSObject.Properties)
     if($images.Count -ne $ids.Count+1 -or $null -eq $manifest.images.PSObject.Properties['network']){throw 'Invalid Docker image set.'}
     foreach($entry in $images){

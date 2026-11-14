@@ -1,9 +1,11 @@
-#requires -Version 5.1
+﻿#requires -Version 5.1
 [CmdletBinding()]
 param(
     [ValidateSet('Start','Stop')][string]$Action='Start',
     [switch]$Snapshot,
     [switch]$RefreshSnapshot,
+    [ValidateSet('Keep','Refresh')][string]$UpdateMode='Keep',
+    [switch]$ChooseUpdate,
     [string]$SourceDirectory=''
 )
 $ErrorActionPreference='Stop'
@@ -21,6 +23,9 @@ function No-Link([string]$Path){
         if(Test-Path -LiteralPath $current){$item=Get-Item -LiteralPath $current -Force;if($item.Attributes -band [IO.FileAttributes]::ReparsePoint){throw ('Linked snapshot path is not allowed: '+$current)}}
         $next=Split-Path -Parent $current;if($next -eq $current){break};$current=$next
     }
+}
+function Relative-Path([string]$Value){
+    if(-not $Value -or $Value -match '[\\:]' -or $Value.StartsWith('/') -or @($Value.Split('/')|Where-Object {-not $_ -or $_.StartsWith('.')}).Count){throw 'Snapshot configuration paths must be relative to their runtime directory.'}
 }
 function Source-Path([string]$Value){
     if(-not $Value -or $Value -match '[\\:]' -or $Value.StartsWith('/') -or @($Value.Split('/')|Where-Object {-not $_ -or $_.StartsWith('.')}).Count){throw 'Source configuration paths must be relative to planhub-runtime.'}
@@ -49,6 +54,29 @@ function Native([string]$Mode,[string]$Runtime){
     & $node (Join-Path $package 'launcher/native-preview.mjs') $Mode --package $package --runtime $Runtime
     if($LASTEXITCODE -ne 0){throw 'Native preview failed. Check the output and snapshot logs above.'}
 }
+function Snapshot-Contract($State,$Manifest,[string]$Runtime){
+    $current=$Manifest.PSObject.Properties['snapshotContractHash']
+    $previous=$State.PSObject.Properties['snapshotContractHash']
+    if($State.contractHash -ceq $Manifest.contractHash){return}
+    if($null -ne $current -and $null -ne $previous -and $previous.Value -ceq $current.Value){return}
+    if($null -eq $current -or -not $current.Value){throw 'This package cannot verify snapshot compatibility. Use a newly built complete package; existing trial data was retained.'}
+    Remove-Item Env:NODE_OPTIONS -ErrorAction SilentlyContinue
+    Remove-Item Env:NODE_PATH -ErrorAction SilentlyContinue
+    $proof=& $node (Join-Path $package 'launcher/native-preview.mjs') check-snapshot --package $package --runtime $Runtime --contract-hash $State.contractHash
+    if($LASTEXITCODE -ne 0){throw 'The startup contract changed or its previous package is unavailable. Existing trial data was retained. Use a compatible package, or explicitly choose 2 / -RefreshSnapshot to create a separate snapshot.'}
+    try{$result=($proof -join [Environment]::NewLine)|ConvertFrom-Json}catch{throw 'Snapshot compatibility proof is invalid. Existing trial data was retained.'}
+    if($result.compatible -cne $true -or $result.snapshotContractHash -cne $current.Value){throw 'Snapshot startup contracts are incompatible. Existing trial data was retained; explicitly choose 2 / -RefreshSnapshot only if a fresh test copy is intended.'}
+}
+function Program-Signature($Manifest){
+    $versions=@($Manifest.versions.PSObject.Properties|Sort-Object Name|ForEach-Object {$_.Name+'='+[string]$_.Value}) -join ','
+    return ([string]$Manifest.contractHash)+'|'+$versions
+}
+function Adopt-Package($State,$Manifest){
+    $State|Add-Member -Force -NotePropertyName contractHash -NotePropertyValue $Manifest.contractHash
+    $State|Add-Member -Force -NotePropertyName packageDirectory -NotePropertyValue $package
+    $State|Add-Member -Force -NotePropertyName programSignature -NotePropertyValue (Program-Signature $Manifest)
+    if($null -ne $Manifest.PSObject.Properties['snapshotContractHash']){$State|Add-Member -Force -NotePropertyName snapshotContractHash -NotePropertyValue $Manifest.snapshotContractHash}
+}
 function Assert-CopyTree([string]$Path){
     No-Link $Path
     if(Test-Path -LiteralPath $Path -PathType Container){
@@ -63,9 +91,12 @@ function Copy-Tree([string]$From,[string]$To){
 No-Link $source;No-Link $previewRoot
 if((Within $source $previewRoot) -or (Within $previewRoot $source) -or (Within $package $source) -or (Within $source $package)){throw 'Preview snapshots, source data and the package must be separate directories.'}
 $manifest=& (Join-Path $package 'deploy.ps1') -Action Validate
-if(-not $manifest.complete){throw 'Use a complete package built with selection 0 for local preview.'}
-$node=Join-Path $package 'runtime/node/node.exe';No-Link $node
-if(-not(Test-Path -LiteralPath $node -PathType Leaf)){throw 'Bundled Windows Node.js is missing. Copy the complete delivery folder again.'}
+if(-not $manifest.complete){throw 'Use a complete package built with selection 0 or 8 for local preview.'}
+$runtimeHelper=Join-Path $package 'runtime-common.ps1';No-Link $runtimeHelper
+if(-not(Test-Path -LiteralPath $runtimeHelper -PathType Leaf)){throw 'Runtime resolver is missing. Copy the complete delivery folder again.'}
+. $runtimeHelper
+$node=Resolve-PreviewNode -Delivery $package
+No-Link $node
 if($Action -eq 'Start' -and -not $Snapshot){throw 'Local preview requires the explicit -Snapshot option. Use preview.cmd.'}
 if($Action -eq 'Stop' -and -not(Test-Path -LiteralPath $previewRoot -PathType Container)){Write-Host 'No local preview has been prepared.';return}
 [void][IO.Directory]::CreateDirectory($previewRoot)
@@ -88,23 +119,37 @@ try{
         Native 'stop' $runtime
         Write-Host 'Local preview stopped. Snapshot data retained; formal data was not changed.';return
     }
-    $sourceConfig=Join-Path $source 'config.json';No-Link $sourceConfig
-    if(-not(Test-Path -LiteralPath $sourceConfig -PathType Leaf)){throw 'Run prepare.cmd, then place shared rules and data as described in step 3 before local preview.'}
     $user=Actor
-    $settings=Read-Json $sourceConfig
-    if($null -ne $settings.PSObject.Properties['preview']){throw 'The snapshot source must be the original formal runtime configuration.'}
-    $sourceHash=(Get-FileHash -LiteralPath $sourceConfig).Hash
-    if($null -ne $state -and -not $RefreshSnapshot){
-        if($state.sourceConfigHash -cne $sourceHash -or $state.contractHash -cne $manifest.contractHash -or (@($state.applications|Sort-Object) -join ',') -cne (@($manifest.applications|Sort-Object) -join ',')){throw 'Source configuration or applications changed. Run preview.cmd -RefreshSnapshot.'}
+    if($null -ne $state -and $ChooseUpdate -and -not $RefreshSnapshot -and $UpdateMode -eq 'Keep'){
+        Write-Host '1. 只更新程序，保留当前试运行的数据、共享文件和配置（默认）。'
+        Write-Host '2. 从 planhub-runtime 的数据、共享文件和配置新建试运行副本，保留旧副本。'
+        do{$choice=Read-Host '输入 1 或 2，直接回车选择 1'}while($choice -notin @('','1','2'))
+        if($choice -eq '2'){$UpdateMode='Refresh'}
+    }
+    if($null -ne $state -and -not $RefreshSnapshot -and $UpdateMode -eq 'Keep'){
+        if((@($state.applications|Sort-Object) -join ',') -cne (@($manifest.applications|Sort-Object) -join ',')){throw 'The enabled applications changed. Existing trial data was retained. Explicitly choose 2 / -RefreshSnapshot to create a separate snapshot.'}
+        foreach($name in @('sharedDirectory','sopSharedConfig','quicklookSourceBase')){Relative-Path ([string]$previewConfig.$name)}
+        Snapshot-Contract $state $manifest $runtime
         Write-Host ('Reusing local snapshot: '+$runtime)
-        if($previewConfig.port -eq 4174 -and $previewConfig.publicOrigin -ceq 'http://127.0.0.1:4174'){
-            Native 'stop' $runtime
+        $legacyPort=$previewConfig.port -eq 4174 -and $previewConfig.publicOrigin -ceq 'http://127.0.0.1:4174'
+        $newActor=$previewConfig.preview.user -cne $user
+        $signature=Program-Signature $manifest
+        $newPackage=$null -eq $state.PSObject.Properties['packageDirectory'] -or $state.packageDirectory -ine $package -or $null -eq $state.PSObject.Properties['programSignature'] -or $state.programSignature -cne $signature
+        if($legacyPort -or $newActor -or $newPackage){Native 'stop' $runtime}
+        if($legacyPort){
             $previewConfig.port=4173;$previewConfig.publicOrigin='http://127.0.0.1:4173'
-            Save-Json (Join-Path $runtime 'config.json') $previewConfig
             Write-Host 'Local preview now uses port 4173. Existing trial data retained.'
         }
-        if($previewConfig.preview.user -cne $user){Native 'stop' $runtime;$previewConfig.preview.user=$user;Save-Json (Join-Path $runtime 'config.json') $previewConfig}
+        if($newActor){$previewConfig.preview.user=$user}
+        if($legacyPort -or $newActor){Save-Json (Join-Path $runtime 'config.json') $previewConfig}
+        Adopt-Package $state $manifest
+        Save-Json $stateFile $state
     }else{
+        $sourceConfig=Join-Path $source 'config.json';No-Link $sourceConfig
+        if(-not(Test-Path -LiteralPath $sourceConfig -PathType Leaf)){throw 'Run prepare.cmd, then place shared rules and data as described in step 3 before local preview.'}
+        $settings=Read-Json $sourceConfig
+        if($null -ne $settings.PSObject.Properties['preview']){throw 'The snapshot source must be the original formal runtime configuration.'}
+        $sourceHash=(Get-FileHash -LiteralPath $sourceConfig).Hash
         if($null -ne $state){
             Native 'stop' $runtime
         }
@@ -142,7 +187,8 @@ try{
         $settings.proxySecret=Secret;$settings.sopSecret=Secret;$settings.vehicleSecret=Secret
         $settings|Add-Member -NotePropertyName preview -NotePropertyValue ([pscustomobject]@{schemaVersion=1;user=$user;sourceDirectory=$source;createdAt=[DateTime]::UtcNow.ToString('o')})
         Save-Json (Join-Path $runtime 'config.json') $settings
-        $state=[ordered]@{schemaVersion=1;snapshot=$snapshotName;sourceDirectory=$source;sourceConfigHash=$sourceHash;contractHash=$manifest.contractHash;applications=@($manifest.applications)}
+        $state=[pscustomobject][ordered]@{schemaVersion=1;snapshot=$snapshotName;sourceDirectory=$source;sourceConfigHash=$sourceHash;contractHash=$manifest.contractHash;applications=@($manifest.applications)}
+        Adopt-Package $state $manifest
         Save-Json $stateFile $state
         $sourceLock.Dispose();$sourceLock=$null
     }

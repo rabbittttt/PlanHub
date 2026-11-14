@@ -2,6 +2,7 @@
 import {readFile} from 'node:fs/promises';
 import path from 'node:path';
 import {HEALTH_PATH,STOP_PATH} from './portal-instance.mjs';
+import {readServicePorts} from './service-ports.mjs';
 
 export const STATIC_MIME_TYPES = Object.freeze({
   '.html': 'text/html; charset=utf-8', '.css': 'text/css; charset=utf-8',
@@ -33,6 +34,7 @@ function expandServiceValue(value,bindings) {
 export async function loadAppIntegrations(root) {
   const defaults=await json(path.join(root,'integration/apps.json'),{applications:{}});
   const local=await json(path.join(root,'config.local/apps.json'),{applications:{}});
+  const ports=readServicePorts(root,{optional:true});
   if(!defaults.applications||!local.applications)throw new Error('应用接入配置必须包含 applications');
   const result={}; const routes=new Set();
   for(const id of new Set([...Object.keys(defaults.applications),...Object.keys(local.applications)])) {
@@ -63,6 +65,10 @@ export async function loadAppIntegrations(root) {
       if(typeof app.root!=='string'||!app.root.trim()||!relativeFile(app.entry)||!Array.isArray(app.publicPaths)||!app.publicPaths.every(relativeFile)||!publicFile(app,app.entry))throw new Error('无效静态接入: '+id);
       app.root=path.resolve(root,app.root);
     } else if(app.type==='proxy') {
+      if(typeof app.target==='string'&&app.target.includes('{port}')) {
+        if(!ports||!Object.hasOwn(ports.applications,id))throw new Error('应用默认端口未登记到 integration/ports.json: '+id);
+        app.target=app.target.replaceAll('{port}',String(ports.applications[id]));
+      }
       const target=new URL(app.target);
       if(target.protocol!=='http:'||target.hostname!=='127.0.0.1'||target.username||target.password||target.pathname!=='/'||target.search||target.hash)throw new Error('本地代理只允许固定的 HTTP 回环服务: '+id);
       const bindings={port:target.port||'80',host:target.hostname,basePath:`/${id}/`};

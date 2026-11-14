@@ -1,17 +1,14 @@
 {
   "planhub": {
-    "port": 4173,
     "type": "static",
     "healthPath": "/"
   },
   "leads": {
     "stripPrefix": true,
-    "port": 8781,
     "type": "static",
     "healthPath": "/"
   },
   "orderiq": {
-    "port": 8767,
     "arguments": [
       "-B",
       "{payload}/server.py",
@@ -42,7 +39,6 @@
     "healthPath": "/health"
   },
   "forecast": {
-    "port": 8780,
     "arguments": [
       "-B",
       "{payload}/dynamic/serve.py",
@@ -69,7 +65,6 @@
     "healthPath": "/healthz"
   },
   "quicklook": {
-    "port": 9473,
     "arguments": [
       "-B",
       "{payload}/server.py",
@@ -92,7 +87,6 @@
     "healthPath": "/healthz"
   },
   "sop": {
-    "port": 8876,
     "arguments": [
       "-B",
       "{payload}/server.py",
@@ -117,7 +111,6 @@
     "healthPath": "/sop/api/health"
   },
   "vehicle-config": {
-    "port": 8790,
     "arguments": [
       "-B",
       "{payload}/server.py",

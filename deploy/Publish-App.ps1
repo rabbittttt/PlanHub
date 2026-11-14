@@ -8,6 +8,7 @@ param(
     [ValidateSet('','Package')][string]$Action='',
     [switch]$NonInteractive,
     [switch]$All,
+    [switch]$WithoutRuntime,
     [switch]$BuildOnly
 )
 $ErrorActionPreference='Stop'
@@ -30,14 +31,21 @@ $apps+=@($registry.groups | ForEach-Object {$_.apps} | Where-Object {$_.enabled}
 if (-not $AppId -and -not $All) {
     if($NonInteractive){throw 'AppId is required.'}
     Write-Host '0. 打包全部应用及 Windows 运行环境（首次交付选此项）'
+    Write-Host '8. 打包全部应用，仅程序（B 复用旧完整包的运行环境）'
     Write-Host '其他编号用于单个应用更新：'
-    for($i=0;$i -lt $apps.Count;$i++){Write-Host ("{0}. {1} ({2})" -f ($i+1),$apps[$i].name,$apps[$i].id)}
+    $applicationChoices=@{}
+    for($i=0;$i -lt $apps.Count;$i++){
+        $choiceNumber=$i+1;if($choiceNumber -ge 8){$choiceNumber++}
+        $applicationChoices[[string]$choiceNumber]=$apps[$i].id
+        Write-Host ("{0}. {1} ({2})" -f $choiceNumber,$apps[$i].name,$apps[$i].id)
+    }
     $selected=Read-Host '选择需要发布的应用编号'
     $number=0
-    if(-not[int]::TryParse($selected,[ref]$number) -or $number -lt 0 -or $number -gt $apps.Count){throw 'Invalid selection.'}
-    if($number -eq 0){$All=$true}else{$AppId=$apps[$number-1].id}
+    if(-not[int]::TryParse($selected,[ref]$number) -or ($number -notin @(0,8) -and -not $applicationChoices.ContainsKey([string]$number))){throw 'Invalid selection.'}
+    if($number -eq 8){$All=$true;$WithoutRuntime=$true}elseif($number -eq 0){$All=$true}else{$AppId=$applicationChoices[[string]$number]}
 }
-if(-not $BuildOnly){
+if($WithoutRuntime -and (-not $All -or $BuildOnly)){throw 'WithoutRuntime requires All and cannot be used with BuildOnly.'}
+if(-not $BuildOnly -and -not $WithoutRuntime){
     & node (Join-Path $root 'scripts/build-delivery.mjs') --check-node-runtime | Out-Host
     if($LASTEXITCODE -ne 0){throw 'Node.js runtime preflight failed. See the exact version and license error above; no applications have been rebuilt.'}
 }
@@ -64,13 +72,14 @@ if($All) {
     foreach($item in $completed){Write-Host ("已校验 {0} {1}" -f $item.appId,$item.version)}
     foreach($item in $failures){Write-Host ("失败 {0}：{1}" -f $item.appId,$item.message)}
     if($failures.Count){throw 'Some applications could not be packaged. See the summary above; this batch is incomplete.'}
-    Write-Host '正在整理应用及 Windows 运行环境；此步骤不需要 Docker。'
+    if($WithoutRuntime){Write-Host '正在整理全部应用程序，不打包 Windows 运行环境；此步骤不需要 Docker。'}else{Write-Host '正在整理应用及 Windows 运行环境；此步骤不需要 Docker。'}
     $bundleDestination=Join-Path $root ('release/planhub-'+(Get-Date -Format 'yyyyMMdd-HHmmss-fff'))
-    & node (Join-Path $root 'scripts/build-delivery.mjs') --complete --python $runtimePython $bundleDestination @($completed.releasePath) | Out-Host
+    $deliveryArguments=@('--complete');if($WithoutRuntime){$deliveryArguments+='--without-runtime'}
+    & node (Join-Path $root 'scripts/build-delivery.mjs') @deliveryArguments --python $runtimePython $bundleDestination @($completed.releasePath) | Out-Host
     if($LASTEXITCODE -ne 0){throw 'Delivery packaging failed. No completed delivery folder was published.'}
     Write-Host "`n打包完成。只需把下面这一个文件夹完整复制到电脑 B："
     Write-Host $bundleDestination
-    Write-Host 'B 无需安装 Python、Node.js 或 Docker：按 README.md 准备数据后运行 preview.cmd。Docker 部署交给同事。'
+    if($WithoutRuntime){Write-Host 'B 上保留同层旧完整包以复用运行环境；运行新包 preview.cmd。若依赖不兼容，请重新选择 0 打包。'}else{Write-Host 'B 无需安装 Python、Node.js 或 Docker：按 README.md 准备数据后运行 preview.cmd。Docker 部署交给同事。'}
     if($NonInteractive){return [pscustomobject]@{deliveryPath=$bundleDestination}}
     Open-PublishDeliveryFolder -Path $bundleDestination
     return

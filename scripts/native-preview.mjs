@@ -9,11 +9,13 @@ import {fileURLToPath,pathToFileURL} from 'node:url';
 import {parseArgs} from 'node:util';
 import {setTimeout as delay} from 'node:timers/promises';
 import {validateDelivery} from './delivery-validation.mjs';
+import {checkSnapshotCompatibility} from './preview-compatibility.mjs';
 import {containerSpec,checkService,createContainerPortal,validateRuntime,readJson} from './container-runtime.mjs';
 import {startLocalPreviewPortal,LOCAL_PREVIEW_PORT,LOCAL_PREVIEW_ORIGIN} from './local-preview-gateway.mjs';
 import {createServer} from './dev-server.mjs';
 import {spawnService,stopService} from './service-process.mjs';
 import {createPortalInstance,registerPortal,unregisterPortal,probePortal,stopPortal,workspaceId} from './portal-instance.mjs';
+import {resolveWindowsRuntime} from './windows-runtime.mjs';
 
 const SELF=fileURLToPath(import.meta.url);
 const PORT=LOCAL_PREVIEW_PORT;
@@ -53,7 +55,8 @@ export async function loadNativePlan(packageRoot,runtimeRoot){
   const config=validateRuntime(await readJson(configFile));
   if(!config.preview)throw new Error('Native preview requires an isolated snapshot configuration.');
   if(inside(runtimeRoot,path.resolve(config.preview.sourceDirectory))||inside(path.resolve(config.preview.sourceDirectory),runtimeRoot))throw new Error('Source data and preview snapshot must be separate.');
-  const python=path.join(packageRoot,'runtime/python/python.exe');
+  const windowsRuntime=await resolveWindowsRuntime(delivery);
+  const python=windowsRuntime.python;
   if(Object.values(delivery.releases).some(release=>release.manifest.type==='service'))await access(python);
   const bindings={};
   for(const id of delivery.manifest.applications){
@@ -62,8 +65,8 @@ export async function loadNativePlan(packageRoot,runtimeRoot){
     bindings[id]={...binding};
   }
   const source=path.resolve(config.preview.sourceDirectory);await noPreviewLinks(source);
-  const configId=digest(JSON.stringify({packageRoot,delivery:delivery.manifest,config}));
-  return {...delivery,packageRoot,runtimeRoot,config,configId,bindings,python,port:PORT};
+  const configId=digest(JSON.stringify({packageRoot,delivery:delivery.manifest,config,runtimeDirectory:windowsRuntime.directory,runtimeFingerprint:windowsRuntime.fingerprint}));
+  return {...delivery,packageRoot,runtimeRoot,config,configId,bindings,python,node:windowsRuntime.node,runtimeDirectory:windowsRuntime.directory,runtimeFingerprint:windowsRuntime.fingerprint,port:PORT};
 }
 async function existing(plan){
   const running=await probePortal(plan.port);if(!running)return false;
@@ -172,7 +175,7 @@ export async function runNativePreview(plan,{startService=spawnService,serviceTi
       const spec=containerSpec(id,binding,plan.config,{runtime:plan.runtimeRoot,payload:release.payload,python:plan.python,pathApi:path});
       spec.env.PLANHUB_PYTHON_APP_ROOT=release.payload;
       delete spec.env.VIRTUAL_ENV;
-      const nodeDirectory=path.join(plan.packageRoot,'runtime/node');
+      const nodeDirectory=path.join(plan.runtimeDirectory,'node');
       spec.env.PATH=[nodeDirectory,path.dirname(plan.python),spec.env.PATH??spec.env.Path??''].join(path.delimiter);
       delete spec.env.Path;
       if(id==='sop')spec.env.SOP_NODE_PATH=path.join(nodeDirectory,'node.exe');
@@ -217,7 +220,7 @@ export async function startNativePreview(packageRoot,runtimeRoot,{settleMs=3000,
   const logs=path.join(plan.runtimeRoot,'logs');await noPreviewLinks(logs);await mkdir(logs,{recursive:true});
   const logDirectory=await mkdtemp(path.join(logs,'launcher-'));
   const out=openSync(path.join(logDirectory,'stdout.log'),'a'),err=openSync(path.join(logDirectory,'stderr.log'),'a');let child;
-  try{child=spawn(process.execPath,[SELF,'worker','--package',plan.packageRoot,'--runtime',plan.runtimeRoot],{cwd:plan.packageRoot,detached:true,windowsHide:true,stdio:['ignore',out,err,'ipc']});}finally{closeSync(out);closeSync(err);}
+  try{child=spawn(plan.manifest.runtimeMode==='reuse'?plan.node:process.execPath,[SELF,'worker','--package',plan.packageRoot,'--runtime',plan.runtimeRoot],{cwd:plan.packageRoot,detached:true,windowsHide:true,stdio:['ignore',out,err,'ipc']});}finally{closeSync(out);closeSync(err);}
   let exited=false;child.once('exit',()=>{exited=true;});
   try{
     const message=await new Promise((resolve,reject)=>{
@@ -261,10 +264,11 @@ export async function stopNativePreview(runtimeRoot){
 if(process.argv[1]&&import.meta.url===pathToFileURL(path.resolve(process.argv[1])).href){
   try{
     const mode=process.argv[2];
-    const {values}=parseArgs({args:process.argv.slice(3),options:{package:{type:'string'},runtime:{type:'string'}},strict:true});
+    const {values}=parseArgs({args:process.argv.slice(3),options:{package:{type:'string'},runtime:{type:'string'},'contract-hash':{type:'string'}},strict:true});
     if(!values.runtime)throw new Error('Use preview.cmd to select an isolated runtime snapshot.');
     const packageRoot=path.resolve(values.package??path.join(path.dirname(SELF),'..')),runtimeRoot=path.resolve(values.runtime);
-    if(mode==='start')await startNativePreview(packageRoot,runtimeRoot);
+    if(mode==='check-snapshot')console.log(JSON.stringify(await checkSnapshotCompatibility(packageRoot,runtimeRoot,values['contract-hash'])));
+    else if(mode==='start')await startNativePreview(packageRoot,runtimeRoot);
     else if(mode==='stop')await stopNativePreview(runtimeRoot);
     else if(mode==='worker'){
       const plan=await loadNativePlan(packageRoot,runtimeRoot);await runNativePreview(plan);

@@ -8,7 +8,7 @@ $fixture=Join-Path $scratch 'workspace'
 function Put($Path,$Value){[void][IO.Directory]::CreateDirectory((Split-Path -Parent $Path));[IO.File]::WriteAllText($Path,$Value,(New-Object Text.UTF8Encoding($false)))}
 function Check($Value,$Message){if(-not $Value){throw $Message};$publishTestState.checks++}
 function Reject([scriptblock]$Run){$failed=$false;try{& $Run|Out-Null}catch{$failed=$true};Check $failed 'Expected rejection'}
-$publishTestState=[pscustomobject]@{checks=0;deliveryArgs=$null}
+$publishTestState=[pscustomobject]@{checks=0;deliveryArgs=$null;runtimePreflights=0}
 [void][IO.Directory]::CreateDirectory((Join-Path $fixture 'deploy'))
 foreach($name in @('Publish-App.ps1','Publish.Common.ps1','App.Release.ps1','Sop.Release.ps1','Deployment.Common.ps1','New-AppRelease.ps1','publish.example.json')){Copy-Item -LiteralPath (Join-Path $deploy $name) -Destination (Join-Path $fixture 'deploy')}
 Put (Join-Path $fixture 'portal/index.html') 'portal fixture'
@@ -46,9 +46,9 @@ try {
     function node {
         param([Parameter(ValueFromRemainingArguments=$true)][string[]]$Arguments)
         Check ($Arguments[0].EndsWith('build-delivery.mjs')) 'Packaging must not invoke the Docker image builder'
-        if($Arguments[1] -eq '--check-node-runtime'){$global:LASTEXITCODE=0;return}
+        if($Arguments[1] -eq '--check-node-runtime'){$publishTestState.runtimePreflights++;$global:LASTEXITCODE=0;return}
         $publishTestState.deliveryArgs=$Arguments
-        $output=if($Arguments[1] -eq '--complete'){$Arguments[4]}else{$Arguments[3]}
+        $output=if($Arguments -contains '--without-runtime'){$Arguments[5]}elseif($Arguments[1] -eq '--complete'){$Arguments[4]}else{$Arguments[3]}
         [void][IO.Directory]::CreateDirectory($output)
         $global:LASTEXITCODE=0
     }
@@ -60,6 +60,13 @@ try {
     Check ($publishTestState.deliveryArgs[1] -eq '--complete') 'Selection 0 must enforce a complete delivery package'
     Check (Test-Path -LiteralPath $all.deliveryPath -PathType Container) 'Selection 0 did not return a delivery folder'
     Check ($publishTestState.deliveryArgs.Count -eq 6) 'Complete package did not receive the built releases and runtime executable'
+    $preflights=$publishTestState.runtimePreflights
+    $programOnly=& $publish -All -WithoutRuntime -Version all-code-v4 -ConfigPath $config -NonInteractive
+    Check ($publishTestState.deliveryArgs[1] -eq '--complete' -and $publishTestState.deliveryArgs[2] -eq '--without-runtime') 'Program-only delivery must include the complete application set and omit Windows runtime'
+    Check ($publishTestState.runtimePreflights -eq $preflights) 'Program-only update must skip the Windows runtime license preflight'
+    Check (Test-Path -LiteralPath $programOnly.deliveryPath -PathType Container) 'Program-only update did not return a delivery folder'
+    Check ($publishTestState.deliveryArgs.Count -eq 7) 'Program-only update lost its built release'
+    Reject {& $publish -AppId planhub -WithoutRuntime -Version invalid-code -ConfigPath $config -NonInteractive}
     function node { $global:LASTEXITCODE=1 }
     Reject {& $publish -AppId planhub -Version docker-fail -ConfigPath $config -NonInteractive}
     Check (-not(Test-Path -LiteralPath (Join-Path $fixture 'staging/releases/planhub-docker-fail'))) 'Runtime preflight failure rebuilt the application before failing'

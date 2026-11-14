@@ -95,6 +95,7 @@ export async function planRegistration(root,input){
     for(const dir of ['portal/config','integration','config.local'])await mkdir(path.join(temporary,dir),{recursive:true});
     await writeFile(path.join(temporary,'portal/config/apps.json'),json(registry));
     await writeFile(path.join(temporary,'integration/apps.json'),await readFile(path.join(root,'integration/apps.json'),'utf8'));
+    try{await writeFile(path.join(temporary,'integration/ports.json'),await readFile(path.join(root,'integration/ports.json'),'utf8'));}catch(error){if(error.code!=='ENOENT')throw error;}
     await writeFile(path.join(temporary,'config.local/apps.json'),json(local));
     const integrations=await loadAppIntegrations(temporary);
     if(input.type==='proxy')for(const [id,item] of Object.entries(integrations))if(id!==input.id&&item.type==='proxy'&&item.target===integration.target)throw new Error('服务端口已由应用 '+id+' 使用');

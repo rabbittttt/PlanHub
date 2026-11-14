@@ -1,0 +1,12 @@
+{
+  "schemaVersion": 1,
+  "portal": 4173,
+  "applications": {
+    "leads": 8781,
+    "orderiq": 8767,
+    "sop": 8876,
+    "forecast": 8780,
+    "quicklook": 9473,
+    "vehicle-config": 8790
+  }
+}

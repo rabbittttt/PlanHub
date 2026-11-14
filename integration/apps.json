@@ -2,7 +2,7 @@
   "applications": {
     "orderiq": {
       "type": "proxy",
-      "target": "http://127.0.0.1:8767",
+      "target": "http://127.0.0.1:{port}",
       "stripPrefix": true,
       "rootRoutes": [],
       "healthPath": "/health",
@@ -23,7 +23,7 @@
     },
     "forecast": {
       "type": "proxy",
-      "target": "http://127.0.0.1:8780",
+      "target": "http://127.0.0.1:{port}",
       "stripPrefix": true,
       "rootRoutes": [],
       "healthPath": "/healthz",
@@ -54,7 +54,7 @@
     },
     "quicklook": {
       "type": "proxy",
-      "target": "http://127.0.0.1:9473",
+      "target": "http://127.0.0.1:{port}",
       "stripPrefix": true,
       "rootRoutes": [],
       "healthPath": "/healthz",
@@ -99,7 +99,7 @@
     },
     "vehicle-config": {
       "type": "proxy",
-      "target": "http://127.0.0.1:8790",
+      "target": "http://127.0.0.1:{port}",
       "stripPrefix": true,
       "rootRoutes": [],
       "healthPath": "/healthz",

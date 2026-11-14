@@ -4,13 +4,14 @@ import {writeFile,mkdir,cp,rename,access,mkdtemp,rm} from 'node:fs/promises';
 import {spawnSync} from 'node:child_process';
 import {fileURLToPath,pathToFileURL} from 'node:url';
 import {readRelease} from './release-validation.mjs';
-import {DELIVERY_SCHEMA,DELIVERY_PLATFORM,runtimeContract,readJson,hashFile,noLinks,deliveryFiles,validateReleases,validateBindings,validateDelivery} from './delivery-validation.mjs';
+import {DELIVERY_SCHEMA,DELIVERY_PLATFORM,runtimeContract,snapshotContractHash,readJson,hashFile,noLinks,deliveryFiles,validateReleases,validateBindings,validateDelivery} from './delivery-validation.mjs';
 import {createDockerMaterials} from './build-docker.mjs';
 import {resolveNodeLicense} from './node-runtime-license.mjs';
+import {loadRuntimeBindings} from './service-ports.mjs';
 
 const ROOT=path.resolve(path.dirname(fileURLToPath(import.meta.url)),'..');
-const modules=['native-preview.mjs','service-process.mjs','delivery-validation.mjs','container-runtime.mjs','local-preview-gateway.mjs','release-validation.mjs','dev-server.mjs','app-integrations.mjs','proxy-request.mjs','portal-instance.mjs'];
-const containerModules=['container-runtime.mjs','local-preview-gateway.mjs','release-validation.mjs','dev-server.mjs','app-integrations.mjs','proxy-request.mjs','portal-instance.mjs'];
+const modules=['native-preview.mjs','preview-compatibility.mjs','windows-runtime.mjs','check-windows-runtime.py','service-ports.mjs','service-process.mjs','delivery-validation.mjs','container-runtime.mjs','local-preview-gateway.mjs','release-validation.mjs','dev-server.mjs','app-integrations.mjs','proxy-request.mjs','portal-instance.mjs'];
+const containerModules=['service-ports.mjs','container-runtime.mjs','local-preview-gateway.mjs','release-validation.mjs','dev-server.mjs','app-integrations.mjs','proxy-request.mjs','portal-instance.mjs'];
 const json=(file,value)=>writeFile(file,JSON.stringify(value,null,2)+'\n');
 function run(command,args,options={}){
   const result=spawnSync(command,args,{windowsHide:true,stdio:'inherit',...options});
@@ -29,7 +30,8 @@ export async function collectWindowsRuntime(output,{python,requirements,root=ROO
     run(python,['-I','-B',path.join(root,'scripts/package-windows-runtime.py'),'--output',path.join(output,'python'),...requirements.flatMap(file=>['--requirements',file])]);
   }
 }
-export async function buildDelivery(releasePaths,destination,{complete=false,root=ROOT,python=path.resolve(ROOT,'../.venv/Scripts/python.exe'),collectRuntime=collectWindowsRuntime}={}){
+export async function buildDelivery(releasePaths,destination,{complete=false,withoutRuntime=false,root=ROOT,python=path.resolve(ROOT,'../.venv/Scripts/python.exe'),collectRuntime=collectWindowsRuntime}={}){
+  if(withoutRuntime&&!complete)throw new Error('Program-only packaging requires the complete application set.');
   destination=path.resolve(destination);
   await noLinks(destination);
   try{await access(destination);throw new Error('Destination already exists; choose a new version directory.');}catch(error){if(error.code!=='ENOENT')throw error;}
@@ -42,7 +44,7 @@ export async function buildDelivery(releasePaths,destination,{complete=false,roo
     if(!relative||(!relative.startsWith('..')&&!path.isAbsolute(relative)))throw new Error('Destination must be outside the input release');
   }
   await validateReleases(releases,{complete});
-  const bindings=await readJson(path.join(root,'deploy/docker/bindings.json'));validateBindings(bindings,releases);
+  const bindings=await loadRuntimeBindings(root);validateBindings(bindings,releases);
   await mkdir(path.dirname(destination),{recursive:true});
   const output=await mkdtemp(path.join(path.dirname(destination),'.planhub-partial-'));
   try{
@@ -51,13 +53,13 @@ export async function buildDelivery(releasePaths,destination,{complete=false,roo
     for(const name of modules)await cp(path.join(root,'scripts',name),path.join(output,'launcher',name));
     await json(path.join(output,'bindings.json'),bindings);
     for(const name of ['deploy.ps1','delivery-common.ps1','start.cmd','stop.cmd','runtime.example.json','build-docker.ps1','build-docker.cmd','prepare.cmd'])await cp(path.join(root,'deploy/docker',name),path.join(output,name));
-    for(const name of ['preview.ps1','preview.cmd','stop-preview.cmd'])await cp(path.join(root,'deploy/windows',name),path.join(output,name));
+    for(const name of ['preview.ps1','preview.cmd','stop-preview.cmd','runtime-common.ps1'])await cp(path.join(root,'deploy/windows',name),path.join(output,name));
     await cp(path.join(root,'docs/deployment.md'),path.join(output,'README.md'));
     const requirements=Object.values(releases).filter(release=>release.manifest.type==='service').map(release=>path.join(release.payload,'requirements.txt'));
-    await collectRuntime(path.join(output,'runtime'),{python,requirements,root});
+    if(!withoutRuntime)await collectRuntime(path.join(output,'runtime'),{python,requirements,root});
     const images=await createDockerMaterials(releases,output,{bindings,moduleNames:containerModules});
     const files={};for(const name of await deliveryFiles(output))files[name]=await hashFile(path.join(output,name));
-    await json(path.join(output,'delivery.json'),{schemaVersion:DELIVERY_SCHEMA,complete,platform:DELIVERY_PLATFORM,contractHash:crypto.createHash('sha256').update(JSON.stringify(runtimeContract(bindings))).digest('hex'),applications:Object.keys(releases),images,files,versions:Object.fromEntries(Object.entries(releases).map(([id,release])=>[id,release.manifest.version]))});
+    await json(path.join(output,'delivery.json'),{schemaVersion:DELIVERY_SCHEMA,complete,runtimeMode:withoutRuntime?'reuse':'included',platform:DELIVERY_PLATFORM,contractHash:crypto.createHash('sha256').update(JSON.stringify(runtimeContract(bindings))).digest('hex'),snapshotContractHash:snapshotContractHash(bindings),applications:Object.keys(releases),images,files,versions:Object.fromEntries(Object.entries(releases).map(([id,release])=>[id,release.manifest.version]))});
     await validateDelivery(output);
     await rename(output,destination);
   }catch(error){await rm(output,{recursive:true,force:true});throw error;}
@@ -70,8 +72,9 @@ if(process.argv[1]&&import.meta.url===pathToFileURL(path.resolve(process.argv[1]
       const license=await resolveNodeLicense();console.log(`Node.js ${license.version}: full license ready (${license.source}); no network required.`);
     }else{
       const args=process.argv.slice(2),complete=args[0]==='--complete';if(complete)args.shift();
+      const runtimeIndex=args.indexOf('--without-runtime'),withoutRuntime=runtimeIndex>=0;if(withoutRuntime)args.splice(runtimeIndex,1);
       let python;const pythonIndex=args.indexOf('--python');if(pythonIndex>=0){python=args[pythonIndex+1];args.splice(pythonIndex,2);if(!python)throw new Error('Missing Python executable');}
-      const destination=args.shift();if(!destination)throw new Error('Provide destination and release paths');await buildDelivery(args,destination,{complete,python});
+      const destination=args.shift();if(!destination)throw new Error('Provide destination and release paths');await buildDelivery(args,destination,{complete,withoutRuntime,python});
     }
   }catch(error){console.error(error.message);process.exitCode=1;}
 }
