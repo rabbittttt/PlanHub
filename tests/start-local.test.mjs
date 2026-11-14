@@ -4,8 +4,13 @@ import net from 'node:net';
 import {spawnSync} from 'node:child_process';
 import path from 'node:path';
 import {fileURLToPath} from 'node:url';
+import {previewOptions} from '../scripts/dev-sop.mjs';
 
 const root=path.resolve(path.dirname(fileURLToPath(import.meta.url)),'..');
+test('the default SOP integration port matches the standalone project default',()=>{
+  assert.equal(previewOptions([]).backendPort,8876);
+  assert.equal(previewOptions(['--backend-port','19876']).backendPort,19876);
+});
 async function listener() {
   const server=net.createServer();
   await new Promise(resolve=>server.listen(0,'127.0.0.1',resolve));

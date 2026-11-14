@@ -110,13 +110,16 @@ test('container contracts keep original loopback, public prefix, external paths 
   const vehicle=containerSpec('vehicle-config',bindings['vehicle-config'],config);assert.ok(vehicle.args.includes('--require-proxy-identity'));assert.equal(vehicle.env.VEHICLE_CONFIG_PROXY_SECRET,config.vehicleSecret);
   const quick=containerSpec('quicklook',bindings.quicklook,{...config,quicklookSourceBase:'old-source-base'});assert.equal(quick.env.DATA_QUICKLOOK_SOURCE_BASE,'/runtime/old-source-base');
 });
-test('native port preferences do not change the formal container contract or collide with its public entrance',async()=>{
+test('child defaults use one port registration and retired preview preferences cannot create a second source',async()=>{
   const bindings=JSON.parse(await readFile(path.join(root,'deploy/docker/bindings.json')));
-  const changed=structuredClone(bindings);changed.quicklook.previewPort=43275;
-  assert.deepEqual(runtimeContract(changed),runtimeContract(bindings));
-  assert.equal(bindings.quicklook.previewPort,43175);assert.equal(bindings.quicklook.port,8765);
-  changed.quicklook.previewPort=4173;assert.throws(()=>validateBindings(changed,{}),/preferred preview port/);
-  changed.quicklook.previewPort=changed.sop.previewPort;assert.throws(()=>validateBindings(changed,{}),/preferred preview port/);
+  assert.ok(Object.values(bindings).every(binding=>!Object.hasOwn(binding,'previewPort')));
+  assert.equal(bindings.quicklook.port,9473);assert.equal(bindings.sop.port,8876);
+  const integration=JSON.parse(await readFile(path.join(root,'integration/apps.json')));
+  assert.equal(new URL(integration.applications.quicklook.target).port,String(bindings.quicklook.port));
+  const legacy=structuredClone(bindings);legacy.quicklook.previewPort=43175;
+  assert.deepEqual(runtimeContract(legacy),runtimeContract(bindings));
+  const changed=structuredClone(bindings);changed.quicklook.port=changed.sop.port;
+  assert.throws(()=>validateBindings(changed,{}),/duplicate runtime port/);
 });
 async function listen(t,server){await new Promise(resolve=>server.listen(0,'127.0.0.1',resolve));t.after(()=>new Promise(resolve=>{server.closeAllConnections?.();server.close(resolve);}));return server.address().port;}
 function request(url,headers={}){return new Promise((resolve,reject)=>{const req=http.get(url,{headers},res=>{res.resume();res.on('end',()=>resolve({status:res.statusCode}));});req.on('error',reject);});}

@@ -6,6 +6,8 @@ import {readRelease} from './release-validation.mjs';
 
 export const DELIVERY_SCHEMA=2;
 export const DELIVERY_PLATFORM='windows/amd64+linux/amd64';
+// Retain checksum compatibility with deliveries containing the retired previewPort field.
+// New launchers use only port; an old per-preview preference never controls startup.
 export const runtimeContract=bindings=>Object.fromEntries(Object.entries(bindings).map(([id,{previewPort,...binding}])=>[id,binding]));
 export const readJson=async file=>JSON.parse((await readFile(file,'utf8')).replace(/^\uFEFF/,''));
 export async function hashFile(file){const hash=crypto.createHash('sha256');for await(const bytes of createReadStream(file))hash.update(bytes);return hash.digest('hex');}
@@ -42,14 +44,10 @@ export async function validateReleases(releases,{complete=false}={}){
   }
 }
 export function validateBindings(bindings,releases){
-  const ports=new Set(),previewPorts=new Set([4173]);
+  const ports=new Set();
   for(const [id,binding] of Object.entries(bindings)){
     if(!/^[a-z][a-z0-9-]{0,39}$/.test(id)||!Number.isInteger(binding.port)||binding.port<1024||binding.port>65535||ports.has(binding.port))throw new Error('Invalid or duplicate runtime port: '+id);
     ports.add(binding.port);
-    if(binding.previewPort!==undefined){
-      if(id==='planhub'||!Number.isInteger(binding.previewPort)||binding.previewPort<1024||binding.previewPort>65535||previewPorts.has(binding.previewPort))throw new Error('Invalid or duplicate preferred preview port: '+id);
-      previewPorts.add(binding.previewPort);
-    }
   }
   for(const [id,release] of Object.entries(releases)){
     if(!bindings[id]||bindings[id].type!==release.manifest.type)throw new Error('Configure the runtime binding for '+id);

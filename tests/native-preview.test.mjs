@@ -55,8 +55,8 @@ async function fixture(t,{dynamic=true,staticChild=false}={}){
   });
   while(port===PORT)port=await unusedPort();
   const bindings={planhub:{type:'static',port:4173,healthPath:'/'}},apps=[];
-  if(dynamic){bindings['vehicle-config']={type:'service',port:8790,previewPort:port,healthPath:'/healthz',healthExpected:{ok:true,app:'vehicle-config'},arguments:['-B','{payload}/server.py','--port','{port}','--data-dir','{data}'],environment:{}};apps.push({id:'vehicle-config',enabled:true});}
-  if(staticChild){bindings.leads={type:'static',port:8781,previewPort:port,healthPath:'/',stripPrefix:true};apps.push({id:'leads',enabled:true});}
+  if(dynamic){bindings['vehicle-config']={type:'service',port,healthPath:'/healthz',healthExpected:{ok:true,app:'vehicle-config'},arguments:['-B','{payload}/server.py','--port','{port}','--data-dir','{data}'],environment:{}};apps.push({id:'vehicle-config',enabled:true});}
+  if(staticChild){bindings.leads={type:'static',port,healthPath:'/',stripPrefix:true};apps.push({id:'leads',enabled:true});}
   await release(packageRoot,'planhub',{'index.html':'<title>Fixture portal</title>','config/apps.json':JSON.stringify({groups:[{apps}]})});
   if(dynamic)await release(packageRoot,'vehicle-config',{'server.py':'# Immutable fixture, never executed by tests.\n','requirements.txt':''},'service');
   if(staticChild)await release(packageRoot,'leads',{'index.html':'Fixture static application'});
@@ -78,12 +78,12 @@ function fixtureSpawner(f,seen=[]){
 }
 async function stopOnExit(t,f){t.after(async()=>{const identity=await probePortal(PORT);if(identity&&identity.workspaceId===await workspaceId(f.runtimeRoot))await stopNativePreview(f.runtimeRoot);});}
 
-test('native preview uses one public port with the preferred backend port and stops its owned child',async t=>{
+test('native preview uses the registered child default port without a separate preview preference',async t=>{
   const f=await fixture(t),plan=await loadNativePlan(f.packageRoot,f.runtimeRoot),seen=[];
   await stopOnExit(t,f);const configBefore=await readFile(path.join(f.runtimeRoot,'config.json')),bindingsBefore=await readFile(path.join(f.packageRoot,'bindings.json'));
   const server=await runNativePreview(plan,{startService:fixtureSpawner(f,seen),serviceTimeoutMs:5000});
   assert.equal(server.address().address,'127.0.0.1');assert.equal(server.address().port,PORT);
-  assert.equal(seen[0].port,f.port);assert.equal(plan.bindings['vehicle-config'].port,8790);
+  assert.equal(seen[0].port,f.port);assert.equal(plan.bindings['vehicle-config'].port,f.port);
   assert.equal(seen[0].command,path.join(f.packageRoot,'runtime/python/python.exe'));
   assert.ok(seen[0].args.map(value=>path.normalize(value)).includes(path.join(f.packageRoot,'releases/vehicle-config/payload/server.py')));
   assert.equal(seen[0].args[1],'-c');assert.match(seen[0].args[2],/sys\.path\.insert/);

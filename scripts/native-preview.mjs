@@ -55,16 +55,10 @@ export async function loadNativePlan(packageRoot,runtimeRoot){
   if(inside(runtimeRoot,path.resolve(config.preview.sourceDirectory))||inside(path.resolve(config.preview.sourceDirectory),runtimeRoot))throw new Error('Source data and preview snapshot must be separate.');
   const python=path.join(packageRoot,'runtime/python/python.exe');
   if(Object.values(delivery.releases).some(release=>release.manifest.type==='service'))await access(python);
-  const bindings={};const ports=new Set([PORT]);
+  const bindings={};
   for(const id of delivery.manifest.applications){
     const binding=delivery.bindings[id],release=delivery.releases[id];
     if(!binding||binding.type!==release.manifest.type)throw new Error('Release binding differs for '+id);
-    if(id!=='planhub'){
-      if(binding.previewPort!==undefined){
-        if(!Number.isInteger(binding.previewPort)||binding.previewPort<1024||binding.previewPort>65535||ports.has(binding.previewPort))throw new Error('Invalid or duplicate preferred native service port: '+id);
-        ports.add(binding.previewPort);
-      }
-    }
     bindings[id]={...binding};
   }
   const source=path.resolve(config.preview.sourceDirectory);await noPreviewLinks(source);
@@ -102,7 +96,6 @@ async function reserveBackendPort(preferred){
     await listen(listener,port);
     return {port:listener.address().port,release:()=>new Promise((resolve,reject)=>{if(!listener.listening){resolve();return;}listener.close(error=>error?reject(error):resolve());})};
   }
-  if(preferred===undefined)return reserve(0);
   try{return await reserve(preferred);}catch(error){if(!['EADDRINUSE','EACCES'].includes(error.code))throw error;return reserve(0);}
 }
 async function allocateBackendBindings(plan){
@@ -110,7 +103,7 @@ async function allocateBackendBindings(plan){
   try{
     for(const [id,binding] of Object.entries(plan.bindings)){
       if(id==='planhub')continue;
-      const reservation=await reserveBackendPort(binding.previewPort);reservations.set(id,reservation);
+      const reservation=await reserveBackendPort(binding.port);reservations.set(id,reservation);
       bindings[id]={...binding,port:reservation.port};
     }
     return {bindings,reservations};

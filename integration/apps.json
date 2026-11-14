@@ -54,7 +54,7 @@
     },
     "quicklook": {
       "type": "proxy",
-      "target": "http://127.0.0.1:8765",
+      "target": "http://127.0.0.1:9473",
       "stripPrefix": true,
       "rootRoutes": [],
       "healthPath": "/healthz",

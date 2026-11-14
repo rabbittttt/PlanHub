@@ -7,13 +7,11 @@
   "leads": {
     "stripPrefix": true,
     "port": 8781,
-    "previewPort": 43171,
     "type": "static",
     "healthPath": "/"
   },
   "orderiq": {
     "port": 8767,
-    "previewPort": 43172,
     "arguments": [
       "-B",
       "{payload}/server.py",
@@ -45,7 +43,6 @@
   },
   "forecast": {
     "port": 8780,
-    "previewPort": 43174,
     "arguments": [
       "-B",
       "{payload}/dynamic/serve.py",
@@ -72,8 +69,7 @@
     "healthPath": "/healthz"
   },
   "quicklook": {
-    "port": 8765,
-    "previewPort": 43175,
+    "port": 9473,
     "arguments": [
       "-B",
       "{payload}/server.py",
@@ -96,8 +92,7 @@
     "healthPath": "/healthz"
   },
   "sop": {
-    "port": 8877,
-    "previewPort": 43173,
+    "port": 8876,
     "arguments": [
       "-B",
       "{payload}/server.py",
@@ -123,7 +118,6 @@
   },
   "vehicle-config": {
     "port": 8790,
-    "previewPort": 43176,
     "arguments": [
       "-B",
       "{payload}/server.py",

@@ -49,7 +49,7 @@ export function previewOptions(args=process.argv.slice(2)) {
   if(values['seed-from']&&!values.snapshot)throw new Error('--seed-from 仅用于 --snapshot 测试；日常持久数据目录请用 --data-root。');
   if(values['seed-from']&&values['data-root'])throw new Error('--seed-from 与 --data-root 不能同时使用。');
   if(values.demo&&(!values.snapshot||values['seed-from']||values['data-root']))throw new Error('--demo 只允许与 --snapshot 一起使用，不能指定真实数据来源。');
-  const port=Number(values.port??'4173'),backendPort=Number(values['backend-port']??'8877');
+  const port=Number(values.port??'4173'),backendPort=Number(values['backend-port']??'8876');
   if(![port,backendPort].every(p=>Number.isInteger(p)&&p>0&&p<65536)||port===backendPort)throw new Error('门户和 SOP 端口必须为两个不同的 1–65535 整数。');
   return {...values,port,backendPort};
 }
@@ -273,7 +273,7 @@ export async function runPreview(args=process.argv.slice(2),options={}) {
 
 if(process.argv[1]&&import.meta.url===pathToFileURL(path.resolve(process.argv[1])).href) {
   try {
-    if(previewOptions().help)console.log('npm run dev:sop -- [--sop-source <独立SOP项目>] [--data-root <持久数据项目>] [--shared-config <规则文件>] [--port 4173 --backend-port 8877]\n默认直接使用原项目持久数据。只有显式 --snapshot 才使用测试副本；--snapshot --demo 使用演示数据。');
+    if(previewOptions().help)console.log('npm run dev:sop -- [--sop-source <独立SOP项目>] [--data-root <持久数据项目>] [--shared-config <规则文件>] [--port 4173 --backend-port 8876]\n默认直接使用原项目持久数据。只有显式 --snapshot 才使用测试副本；--snapshot --demo 使用演示数据。');
     else await runPreview();
   } catch(error) {console.error(`本地门户未启动：${error.message}`);process.exitCode=1;}
 }
