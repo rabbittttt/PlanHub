@@ -29,7 +29,8 @@ document.querySelector('.skip-link').addEventListener('click', event => {
   $('main').focus();
 });
 const labels = { ready: '已接入', pending: '待接入', maintenance: '维护中' };
-let config, current = 'home', sequence = 0, controller, timer, frame;
+let config, current = 'home', sequence = 0, controller, timer, activeFrame;
+const appFrames = new Map();
 
 function element(tag, className, text) {
   const node = document.createElement(tag);
@@ -84,12 +85,33 @@ function renderNavigation() {
     $('app-nav').append(link);
   }
 }
+function discardFrame(entry) {
+  if (!entry) return;
+  entry.disposed = true;
+  entry.node.remove();
+  if (appFrames.get(entry.app.id) === entry) appFrames.delete(entry.app.id);
+  if (activeFrame === entry) activeFrame = null;
+}
+function frameIsValid(entry) {
+  try {
+    const doc = entry.node.contentDocument;
+    const url = new URL(entry.node.contentWindow.location.href);
+    return !!doc?.body && url.origin === location.origin && url.pathname.startsWith(entry.app.url);
+  } catch {
+    return false;
+  }
+}
 function stopLoading() {
   sequence++;
   controller?.abort();
   clearTimeout(timer);
-  frame?.remove();
-  frame = null;
+  if (activeFrame?.ready) {
+    activeFrame.node.hidden = true;
+    activeFrame.node.removeAttribute('id');
+  } else {
+    discardFrame(activeFrame);
+  }
+  activeFrame = null;
 }
 function overlay(title, detail, loading = false) {
   $('frame-overlay').hidden = false;
@@ -98,27 +120,37 @@ function overlay(title, detail, loading = false) {
   $('frame-message').textContent = title;
   $('frame-detail').textContent = detail;
 }
-async function openApp(app) {
+async function openApp(app, { reload = false } = {}) {
   stopLoading();
   const ownSequence = sequence;
   $('app-title').textContent = app.name;
   $('retry-app').hidden = app.status !== 'ready';
+  if (reload || app.status !== 'ready') discardFrame(appFrames.get(app.id));
   if (app.status !== 'ready') {
     overlay(app.status === 'maintenance' ? '应用正在维护' : '应用尚未接入', app.status === 'maintenance' ? '请稍后重试，或先返回工作台使用其他应用。' : '该应用接入完成后将在这里开放，请先使用工作台中已接入的应用。');
     return;
   }
+  const retained = appFrames.get(app.id);
+  if (retained?.ready && frameIsValid(retained)) {
+    activeFrame = retained;
+    retained.node.id = 'app-frame';
+    retained.node.hidden = false;
+    $('frame-overlay').hidden = true;
+    return;
+  }
+  discardFrame(retained);
   overlay('正在打开' + app.name, '正在连接业务应用，请稍候…', true);
   controller = new AbortController();
   const signal = controller.signal;
   timer = setTimeout(() => {
     if (ownSequence !== sequence) return;
     controller.abort();
-    frame?.remove(); frame = null;
+    discardFrame(activeFrame);
     sequence++;
     overlay('应用加载超时', '服务暂未响应。请点击“重新加载”重试，或联系应用负责人检查服务。');
   }, config.platform.loadTimeoutMs);
   try {
-    // HEAD avoids downloading a large report twice, while exposing HTTP failures before embedding.
+    // Probe only a new document. Switching apps preserves the live page, not an HTTP/data cache.
     const response = await fetch(app.url, { method: 'HEAD', credentials: 'same-origin', cache: 'no-store', signal });
     if (ownSequence !== sequence) return;
     if (!response.ok && response.status !== 405 && response.status !== 501) {
@@ -128,33 +160,42 @@ async function openApp(app) {
     const finalUrl = new URL(response.url);
     if (finalUrl.origin !== location.origin || !finalUrl.pathname.startsWith(app.url)) throw new Error('应用跳转到了约定路径之外，请联系负责人检查认证或路由配置。');
     if (/\bDENY\b/i.test(response.headers.get('x-frame-options') || '') || /frame-ancestors\s+'none'/i.test(response.headers.get('content-security-policy') || '')) throw new Error('该应用禁止嵌入工作区，请联系负责人调整同源嵌入配置。');
-    frame = element('iframe');
-    frame.id = 'app-frame';
-    frame.title = `${app.name}工作区`;
-    frame.referrerPolicy = 'same-origin';
-    frame.addEventListener('load', () => {
-      if (ownSequence !== sequence) return;
-      try {
-        const doc = frame.contentDocument;
-        const url = new URL(frame.contentWindow.location.href);
-        if (!doc || url.origin !== location.origin || !url.pathname.startsWith(app.url) || !doc.body) throw new Error('未能显示应用页面，请检查同源嵌入策略与应用路由。');
+    const node = element('iframe');
+    const entry = { app, node, ready: false, disposed: false };
+    activeFrame = entry;
+    appFrames.set(app.id, entry);
+    node.id = 'app-frame';
+    node.dataset.app = app.id;
+    node.title = `${app.name}工作区`;
+    node.referrerPolicy = 'same-origin';
+    const failed = (title, detail) => {
+      if (entry.disposed) return;
+      const wasActive = activeFrame === entry;
+      discardFrame(entry);
+      if (wasActive) {
+        clearTimeout(timer);
+        overlay(title, detail);
+      }
+    };
+    node.addEventListener('load', () => {
+      if (entry.disposed) return;
+      if (!frameIsValid(entry)) {
+        failed('应用未能显示', '请联系应用负责人检查页面错误、同源地址和 iframe 嵌入设置，再重新加载。');
+        return;
+      }
+      entry.ready = true;
+      if (activeFrame === entry) {
         clearTimeout(timer);
         $('frame-overlay').hidden = true;
-      } catch {
-        clearTimeout(timer);
-        overlay('应用未能显示', '请联系应用负责人检查页面错误、同源地址和 iframe 嵌入设置，再重新加载。');
       }
     });
-    frame.addEventListener('error', () => {
-      if (ownSequence !== sequence) return;
-      clearTimeout(timer);
-      overlay('应用连接失败', '请检查网络后重新加载，或联系应用负责人。');
-    });
-    frame.src = app.url;
-    $('frame-container').append(frame);
+    node.addEventListener('error', () => failed('应用连接失败', '请检查网络后重新加载，或联系应用负责人。'));
+    node.src = app.url;
+    $('frame-container').append(node);
   } catch (error) {
     if (ownSequence !== sequence || signal.aborted) return;
     clearTimeout(timer);
+    discardFrame(activeFrame);
     overlay('暂时无法打开应用', error instanceof TypeError ? '无法连接业务应用，请检查网络或联系应用负责人。' : error.message);
   }
 }
@@ -196,6 +237,6 @@ async function boot() {
     $('boot-state').replaceChildren(title, hint, retry);
   }
 }
-$('retry-app').addEventListener('click', () => { const app = config.apps.find(a => a.id === current); if (app) openApp(app); });
+$('retry-app').addEventListener('click', () => { const app = config.apps.find(a => a.id === current); if (app) openApp(app, { reload: true }); });
 window.addEventListener('hashchange', navigate);
 boot();
