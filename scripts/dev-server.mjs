@@ -44,6 +44,7 @@ export function createServer({ root = PROJECT_ROOT, portalRoot = path.join(root,
     const proxyEntry = Object.entries(applications || {}).find(([id, app]) => app.type === 'proxy' && (parts[0] === id || app.rootRoutes.includes(pathname)));
     if (proxyEntry) {
       const [id, app] = proxyEntry;
+      if(app.startupUnavailable)return send(503,'Application startup failed; stop the old independent service and restart the portal.');
       if (pathname === '/' + id) return send(308, 'Redirecting', {Location: '/' + id + '/' + (request.url.includes('?') ? request.url.slice(request.url.indexOf('?')) : '')});
       const upstreamPath = parts[0] === id && app.stripPrefix ? request.url.slice(id.length + 1) : request.url;
       proxyRequest(request, response, app, upstreamPath, send);

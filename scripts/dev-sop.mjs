@@ -166,6 +166,7 @@ export async function runPreview(args=process.argv.slice(2),options={}) {
   const userHeader=localSopUserHeader();
   const configId=await configurationId({...settings,userHeader},applications,python);
   if(existing){
+    if(existing.unavailableApps?.length)throw new Error('门户有未成功启动或已退出的服务（'+existing.unavailableApps.join('、')+'）；请处理启动日志中的原因，再停止并重新启动门户。');
     if(existing.configId!==configId)throw new Error('已有门户使用不同代码版本或配置；请先运行“停止本地门户.cmd”再启动。');
     try {
       const session=await fetch('http://127.0.0.1:'+port+'/sop/api/session',{signal:AbortSignal.timeout(2000)});
@@ -246,6 +247,7 @@ export async function runPreview(args=process.argv.slice(2),options={}) {
     server=createServer({root,applications,runtime,sopProxy:{port:backendPort,secret,user:userHeader}});
   } catch(error) {cleanupOwned();process.removeListener('exit',cleanupOwned);throw error;}
   server.startupWarnings=stopApplications.failures??[];
+  runtime.identity.unavailableApps=stopApplications.unavailableApps??[];
   const closeChild=()=>{stopping=true;cleanupOwned();process.removeListener('exit',cleanupOwned);process.removeListener('SIGINT',stop);process.removeListener('SIGTERM',stop);};
   function stop(){stopping=true;stopService(child);stopApplications();server.close();setTimeout(()=>server.closeAllConnections?.(),1000).unref();}
   runtime.stop=stop;

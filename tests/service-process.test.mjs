@@ -1,3 +1,5 @@
+import {createPortalInstance,probePortal} from '../scripts/portal-instance.mjs';
+import {createServer} from '../scripts/dev-server.mjs';
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {mkdtemp,readFile,realpath,rm} from 'node:fs/promises';
@@ -57,11 +59,38 @@ test('partial startup reports warnings and stopping the portal preserves a reuse
  try{
   await healthy('http://127.0.0.1:'+listenPort);
   const stop=await startAppServices({
-   reused:{type:'proxy',target:'http://127.0.0.1:'+listenPort,healthPath:'/',healthKeys:['app']},
+   reused:{type:'proxy',target:'http://127.0.0.1:'+listenPort,healthPath:'/',healthKeys:['app'],healthExpected:{app:'reused-fixture'}},
    missing:{type:'proxy',target:'http://127.0.0.1:'+missingPort,healthPath:'/',healthKeys:['app']}
   },{root});
   assert.equal(stop.failures.length,1);assert.match(stop.failures[0],/missing.*暂不可用/);
   stop();
   assert.equal((await healthy('http://127.0.0.1:'+listenPort)).app,'reused-fixture');
  }finally{stopService(independent);await new Promise(r=>setTimeout(r,200));}
+});
+
+
+test('managed services reject healthy foreign listeners and their portal routes stay unavailable',async t=>{
+ const root=await fixture(t),listenPort=await port();
+ const code="require('http').createServer((q,r)=>r.end(JSON.stringify({app:'foreign'}))).listen("+listenPort+",'127.0.0.1');";
+ const independent=spawnService(process.execPath,['-e',code],{cwd:root,logDirectory:root});
+ let portal,stop;
+ try{
+  await healthy('http://127.0.0.1:'+listenPort);
+  const apps={example:{type:'proxy',target:'http://127.0.0.1:'+listenPort,stripPrefix:true,rootRoutes:['/api/legacy'],healthPath:'/',healthKeys:['app'],healthExpected:{app:'foreign'},start:{cwd:root,command:process.execPath,args:['-e',code]}}};
+  stop=await startAppServices(apps,{root});
+  assert.equal(stop.failures.length,1);assert.match(stop.failures[0],/不自动复用/);
+  assert.deepEqual(stop.unavailableApps,['example']);
+  const portalPort=await port();
+  const runtime=await createPortalInstance(root,portalPort,'fixture-config');
+  runtime.identity.unavailableApps=stop.unavailableApps;
+  portal=createServer({root,applications:apps,runtime});
+  await new Promise(resolve=>portal.listen(portalPort,'127.0.0.1',resolve));
+  assert.deepEqual((await probePortal(portalPort)).unavailableApps,['example']);
+  const origin='http://127.0.0.1:'+portal.address().port;
+  for(const endpoint of ['/example/','/example/api/new','/api/legacy']){
+   assert.equal((await fetch(origin+endpoint)).status,503);
+   assert.equal((await fetch(origin+endpoint,{method:'POST',body:'must not reach old service'})).status,503);
+  }
+  stop();assert.equal((await healthy('http://127.0.0.1:'+listenPort)).app,'foreign');
+ }finally{stop?.();if(portal){portal.closeAllConnections();await new Promise(resolve=>portal.close(resolve));}stopService(independent);await new Promise(r=>setTimeout(r,200));}
 });
