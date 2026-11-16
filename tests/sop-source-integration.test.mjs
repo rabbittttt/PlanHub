@@ -277,3 +277,19 @@ test('missing private shared rules explain the Git omission and explicit path op
     return true;
   });
 });
+
+
+test('SOP uses the same portal shared root and never silently falls back when it is missing',async t=>{
+  const {base,root}=await fixture(t);
+  const original=await source(path.join(base,'source'));await data(original);
+  const rules=path.join(base,'shared_config.py');await writeFile(rules,'MERGE_GROUPS = {}');
+  await mkdir(path.join(root,'integration'));
+  await writeFile(path.join(root,'integration/apps.json'),JSON.stringify({sharedDataRoot:'../shared inputs',applications:{}}));
+  const args=['--sop-source',original,'--shared-config',rules];
+  await assert.rejects(resolvePreviewSettings(args,{root,env:{}}),/销售来源目录不存在/);
+  const orders=path.join(base,'shared inputs','订单汇总');await mkdir(orders,{recursive:true});
+  const settings=await resolvePreviewSettings(args,{root,env:{}});
+  assert.equal(settings.salesSourceDir,orders);
+  assert.equal(settings.sharedDataRoot,path.dirname(orders));
+  assert.equal(settings.dataDirectory,path.join(original,'data'));
+});

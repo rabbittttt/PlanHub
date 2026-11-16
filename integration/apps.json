@@ -1,4 +1,5 @@
 {
+  "sharedDataRoot": "../共享数据",
   "applications": {
     "orderiq": {
       "type": "proxy",

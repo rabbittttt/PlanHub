@@ -29,12 +29,26 @@ export function publicFile(app, relative) {
 }
 // Only these reserved placeholders belong to the portal. Other braces belong to the app.
 function expandServiceValue(value,bindings) {
-  return value.replace(/\{(port|host|basePath)\}/g,(_,name)=>bindings[name]);
+  return value.replace(/\{(port|host|basePath|shared)\}/g,(whole,name)=>bindings[name]??whole);
 }
-export async function loadAppIntegrations(root) {
+function resolveSharedDataRoot(root, defaults, local, env) {
+  const environmentRoot=typeof env.SHARED_DATA_ROOT==='string'&&!env.SHARED_DATA_ROOT.trim()?undefined:env.SHARED_DATA_ROOT;
+  const value=environmentRoot ?? local.sharedDataRoot ?? defaults.sharedDataRoot;
+  if(value===undefined)return null;
+  if(typeof value!=='string'||!value.trim()||value.includes('\0'))throw new Error('sharedDataRoot 须为非空目录路径');
+  return path.resolve(root,value);
+}
+export async function loadSharedDataRoot(root,{env=process.env}={}) {
+  const defaults=await json(path.join(root,'integration/apps.json'),{});
+  const local=await json(path.join(root,'config.local/apps.json'),{});
+  return resolveSharedDataRoot(root,defaults,local,env);
+}
+export async function loadAppIntegrations(root,{env=process.env}={}) {
   const defaults=await json(path.join(root,'integration/apps.json'),{applications:{}});
   const local=await json(path.join(root,'config.local/apps.json'),{applications:{}});
+  if(local.applications===undefined)local.applications={};
   const ports=readServicePorts(root,{optional:true});
+  const sharedDataRoot=resolveSharedDataRoot(root,defaults,local,env);
   if(!defaults.applications||!local.applications)throw new Error('应用接入配置必须包含 applications');
   const result={}; const routes=new Set();
   for(const id of new Set([...Object.keys(defaults.applications),...Object.keys(local.applications)])) {
@@ -71,7 +85,7 @@ export async function loadAppIntegrations(root) {
       }
       const target=new URL(app.target);
       if(target.protocol!=='http:'||target.hostname!=='127.0.0.1'||target.username||target.password||target.pathname!=='/'||target.search||target.hash)throw new Error('本地代理只允许固定的 HTTP 回环服务: '+id);
-      const bindings={port:target.port||'80',host:target.hostname,basePath:`/${id}/`};
+      const bindings={port:target.port||'80',host:target.hostname,basePath:`/${id}/`,shared:sharedDataRoot};
       if(typeof app.stripPrefix!=='boolean'||!Array.isArray(app.rootRoutes)||!Array.isArray(app.healthKeys)||!app.healthKeys.every(k=>typeof k==='string'&&k.trim()))throw new Error('无效代理配置: '+id);
       const textMode=typeof app.healthText==='string'&&app.healthText.trim().length>0&&app.healthText.length<=200;
       if(app.healthExpected!==undefined&&(!app.healthExpected||Array.isArray(app.healthExpected)||typeof app.healthExpected!=='object'||!app.healthKeys.length||!Object.entries(app.healthExpected).every(([key,value])=>key.trim()&&['string','boolean','number'].includes(typeof value)&&(typeof value!=='number'||Number.isFinite(value)))))throw new Error('健康检查期望值须为 JSON 标量对象: '+id);
@@ -97,6 +111,14 @@ export async function loadAppIntegrations(root) {
         app.start={...app.start,cwd:path.resolve(root,app.start.cwd),command:path.resolve(root,app.start.command),
           args:app.start.args.map(value=>expandServiceValue(value,bindings)),
           ...(app.start.env===undefined?{}:{env:Object.fromEntries(Object.entries(app.start.env).map(([key,value])=>[key,expandServiceValue(value,bindings)]))})};
+        if(sharedDataRoot){
+          const serviceEnv={...app.start.env};
+          for(const key of Object.keys(serviceEnv))if(key.toUpperCase()==='SHARED_DATA_ROOT'){
+            if(serviceEnv[key]!==sharedDataRoot)throw new Error(id+': 请通过顶层 sharedDataRoot 统一设置共享目录，不在 start.env 重复配置');
+            delete serviceEnv[key];
+          }
+          app.start.env={...serviceEnv,SHARED_DATA_ROOT:sharedDataRoot};
+        }
       }
     } else throw new Error('未知接入类型: '+id);
     result[id]=app;

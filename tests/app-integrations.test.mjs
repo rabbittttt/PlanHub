@@ -246,3 +246,28 @@ test('a template-launched fixture listens on the portal target and keeps its pub
     stopService(child);await new Promise(r=>setTimeout(r,200));
   }
 });
+
+
+test('one shared root reaches every service without local patches and survives workspace moves',async t=>{
+  const f=await fixture(t);
+  const template=JSON.parse(await readFile(new URL('../integration/apps.json',import.meta.url),'utf8'));
+  await writeFile(path.join(f.root,'integration/apps.json'),JSON.stringify(template));
+  await writeFile(path.join(f.root,'integration/ports.json'),await readFile(new URL('../integration/ports.json',import.meta.url)));
+  async function check(root,relative){
+    const apps=await loadAppIntegrations(root,{env:{}});
+    for(const app of Object.values(apps))if(app.start)assert.equal(app.start.env.SHARED_DATA_ROOT,path.resolve(root,relative));
+    assert.ok(!apps.orderiq.start.args.includes('--input'),'Default order startup uses the common source contract');
+  }
+  await check(f.root,'../共享数据');
+  await writeFile(path.join(f.root,'config.local/apps.json'),JSON.stringify({sharedDataRoot:'../other shared'}));
+  await check(f.root,'../other shared');
+  const moved=path.join(f.base,'moved workspace');await rename(path.dirname(f.root),moved);
+  const root=path.join(moved,'portal');await check(root,'../other shared');
+  const apps=await loadAppIntegrations(root,{env:{SHARED_DATA_ROOT:'../environment shared'}});
+  assert.equal(apps.orderiq.start.env.SHARED_DATA_ROOT,path.resolve(root,'../environment shared'));
+  const service={...template.applications.orderiq,start:{...template.applications.orderiq.start,env:{SHARED_DATA_ROOT:'../conflicting'}}};
+  await writeFile(path.join(root,'config.local/apps.json'),JSON.stringify({applications:{orderiq:service}}));
+  await assert.rejects(loadAppIntegrations(root,{env:{}}),/顶层 sharedDataRoot/);
+  await writeFile(path.join(root,'config.local/apps.json'),JSON.stringify({sharedDataRoot:''}));
+  await assert.rejects(loadAppIntegrations(root,{env:{}}),/sharedDataRoot/);
+});

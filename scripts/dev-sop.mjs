@@ -11,7 +11,7 @@ import {parseArgs} from 'node:util';
 import {fileURLToPath,pathToFileURL} from 'node:url';
 import {createServer} from './dev-server.mjs';
 import {resolveSopPython} from './sop-python.mjs';
-import {loadAppIntegrations} from './app-integrations.mjs';
+import {loadAppIntegrations,loadSharedDataRoot} from './app-integrations.mjs';
 import {startAppServices,serviceHealthy} from './app-services.mjs';
 import {probePortal,workspaceId,configurationId,createPortalInstance,registerPortal,unregisterPortal} from './portal-instance.mjs';
 import {readServicePorts} from './service-ports.mjs';
@@ -85,6 +85,7 @@ export async function resolvePreviewSettings(args=process.argv.slice(2),{root=RO
   if(values.help)return null;
   root=await realpath(path.resolve(root));
   const local=await integrationConfig(root);
+  const sharedDataRoot=await loadSharedDataRoot(root,{env});
   const configured=(value)=>value?path.resolve(root,value):null;
   const sourceRoot=configured(values['sop-source']||env.SOP_SOURCE_ROOT||local.sourceRoot)||path.resolve(root,'..','SOP维护');
   try {await requirePath(path.join(sourceRoot,'server.py'),'独立 SOP 源码入口');}
@@ -108,8 +109,8 @@ export async function resolvePreviewSettings(args=process.argv.slice(2),{root=RO
   let salesSourceDir=dataRoot?path.join(dataRoot,'input_file'):null;
   let planSourceFile=dataRoot?path.join(dataRoot,'input_file','SOP计划维护.xlsx'):null;
   if(dataRoot) {
-    const sharedRoot=configured(env.SHARED_DATA_ROOT)||path.resolve(resolvedSource,'..','共享数据');
-    let useShared=Boolean(env.SHARED_DATA_ROOT);
+    const sharedRoot=sharedDataRoot||path.resolve(resolvedSource,'..','共享数据');
+    let useShared=Boolean(sharedDataRoot);
     if(!useShared&&!dataRootExplicit&&(!env.SOP_SOURCE_DIR||!env.SOP_PLAN_DIR)) {
       try {
         if(!(await stat(sharedRoot)).isDirectory())throw new Error(`共享数据根路径不是目录：${sharedRoot}`);
@@ -129,7 +130,7 @@ export async function resolvePreviewSettings(args=process.argv.slice(2),{root=RO
       throw new Error(error.message + '\nSOP 需要原项目的真实规则文件。订单仓库的本机 config 目录不随 Git 下载，请核对原规则文件是否存在。\n也可用 --shared-config 或 SOP_SHARED_CONFIG 指定现有文件，相对路径以门户根目录为准。');
     }
   }
-  return {root,sourceRoot:resolvedSource,dataRoot,dataDirectory,dataRootExplicit,snapshot:Boolean(values.snapshot),demo:Boolean(values.demo),salesSourceDir,planSourceFile,sharedConfig,port:values.port,backendPort:values.backendPort};
+  return {root,sharedDataRoot,sourceRoot:resolvedSource,dataRoot,dataDirectory,dataRootExplicit,snapshot:Boolean(values.snapshot),demo:Boolean(values.demo),salesSourceDir,planSourceFile,sharedConfig,port:values.port,backendPort:values.backendPort};
 }
 
 export async function assertPreviewPortsAvailable(port,backendPort) {
@@ -158,7 +159,8 @@ export async function runPreview(args=process.argv.slice(2),options={}) {
   const settings=await resolvePreviewSettings(args,options);
   const {root,sourceRoot,dataRoot,dataDirectory,snapshot,salesSourceDir,planSourceFile,sharedConfig,port,backendPort}=settings;
   const runtimeEnv={...process.env,...(options.env||{})};
-  const applications=await loadAppIntegrations(root);
+  if(settings.sharedDataRoot)runtimeEnv.SHARED_DATA_ROOT=settings.sharedDataRoot;
+  const applications=await loadAppIntegrations(root,{env:runtimeEnv});
   for(const [id,app] of Object.entries(applications))if(app.type==='proxy'&&[port,backendPort].includes(Number(new URL(app.target).port||80)))throw new Error(id+' 服务端口不能与门户或 SOP 端口相同');
   const python=resolveSopPython({root,sourceRoot,env:runtimeEnv});
   const userHeader=localSopUserHeader();

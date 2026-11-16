@@ -97,7 +97,7 @@ node scripts/register-app.mjs --config config.local/new-app.json
 - **车型配置**：动态服务 `/vehicle-config/`，开发源码 `../配置管理`，健康接口 `/healthz`；`scripts/build_release.py` 生成独立通用包。Docker 显式启用 `--require-proxy-identity`，保留原有 `X-Config-User`、`X-Config-Proxy-Key` 及 ASCII 操作人契约，不使用容器账号冒充业务用户。
 
 - **SOP计划管理**：继续使用原网关、整段 /sop/ 代理与原构建器；业务新增标签不需门户逐项登记。新版计划保存在数据库，Excel 从页面导出、修改后导入；服务器旧维护表仅归档，不再自动同步。正式资料对账来源通过 SOP_RECONCILE_DIR 指向 shared/对账资料。
-- **订单分析**：动态服务 /orderiq/，健康接口 /health。本地沿用原项目的数据选择；正式部署显式传 --input、--data-dir、--state-dir、--web-dir。原 Git 仓库在订单分析/scripts，构建入口 generate_html/package_release.py；直接从同版模板生成发布前端，不依赖 Excel、旧 runtime 或已生成批次。业务数据由部署后的原服务处理，打包无需先运行 main.py。
+- **订单分析**：动态服务 /orderiq/，健康接口 /health。本地由门户统一传入 SHARED_DATA_ROOT，读取共享订单目录；正式部署显式传 --input、--data-dir、--state-dir、--web-dir。原 Git 仓库在订单分析/scripts，构建入口 generate_html/package_release.py；直接从同版模板生成发布前端，不依赖 Excel、旧 runtime 或已生成批次。业务数据由部署后的原服务处理，打包无需先运行 main.py。
 - **数据速查**：动态服务 /quicklook/，健康接口 /healthz；新版自动扫描使用 SHARED_DATA_ROOT，工作区来源的相对路径仍由 DATA_QUICKLOOK_SOURCE_BASE 解释。
 - **线索声量**：当前可见交付仍是 lead-dashboard.html 静态样例。若内网已改动态，在内网重新运行接入向导更新同一 leads ID，再配置该项目发布包；不能将样例当作正式动态验收。
 - **销量预测**：动态服务 /forecast/，dynamic/serve.py 启动；scripts/build_release.py 构建标准包。--public-prefix 配置公共前缀，--data-dir 或 SALES_FORECAST_DATA_DIR 外置页面、缓存和日志，SHARED_DATA_ROOT 指定共享输入。/healthz 只检测服务，/readyz 区分首次等待、就绪与生成失败；/api/status 提供更新状态。首次生成前页面自动等待，不把尚无报表当成进程启动失败。静态入口仍可在原项目独立使用。
@@ -135,3 +135,11 @@ Node.js 完整许可证从运行程序所在目录读取（支持文本和 RTF�
 后续版本继续使用同一 `planhub-runtime/`，只更新程序时不重复迁移数据或覆盖配置；数据、共享文件或配置也要变化时，由同事停服、备份并按本次需求明确修改。新旧程序文件夹并排保留，不覆盖版本产物；用 `8` 本机测试时保留供其复用环境的旧 `0` 包。全部应用包（`0` 或 `8`）更新切换整套容器；单应用包只更新该容器，要求已有完整部署、环境配置未变且运行契约兼容。本机试运行必须使用全部应用包。不要用另一个 Compose 项目名同时运行第二套服务写入相同目录。重启策略不代替 Docker 宿主开机配置和重启验收。
 
 公司入口负责认证，门户只校验约定的可信代理密钥并转发真实操作人。密钥在 B 首次准备时生成，后续不轮换、不进镜像、不进仓库；SOP 和车型配置仍使用各自原有密钥接口。业务验收必须检查真实操作人，容器健康检查使用只读健康身份，不代表用户登录。
+
+## 共享输入目录
+
+源码联调只在 `integration/apps.json` 顶层登记 `sharedDataRoot`，默认 `../共享数据`。其他电脑目录不同，在 `config.local/apps.json` 顶层覆盖一次；`SHARED_DATA_ROOT` 环境变量优先。相对路径统一按门户根目录解析，启动器把解析后的绝对路径传给所有动态服务和 SOP。不要逐个应用复制这个路径；公开启动参数需要子目录时可用 `{shared}/子目录`，新应用须按自己的公开接口消费它。
+
+正式版由包外 `planhub-runtime/config.json` 的 `sharedDirectory` 提供共享根，绑定将它传给各应用；发布包试运行使用该目录的测试副本。共享输入与应用数据库、上传和缓存是不同用途，程序更新不迁移数据。数据速查仍支持用户上传及历史来源；车型配置维护自己的数据库；线索声量当前为静态样例，不能视为共享数据消费者。
+
+旧 `config.local/apps.json` 若为订单单独设置了 `--input`，应核对后移除这项冗余 `start` 覆盖，让统一共享根生效；显式输入参数或原应用已有来源设置仍按其自身优先级执行。配置变更后先停止原服务再启动；已独立启动的业务服务也需按原方式重启。
