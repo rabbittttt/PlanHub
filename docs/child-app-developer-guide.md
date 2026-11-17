@@ -96,7 +96,7 @@ node scripts/register-app.mjs --config config.local/new-app.json
 
 - **车型配置**：动态服务 `/vehicle-config/`，开发源码 `../配置管理`，健康接口 `/healthz`；`scripts/build_release.py` 生成独立通用包。Docker 显式启用 `--require-proxy-identity`，保留原有 `X-Config-User`、`X-Config-Proxy-Key` 及 ASCII 操作人契约，不使用容器账号冒充业务用户。
 
-- **SOP计划管理**：继续使用原网关、整段 /sop/ 代理与原构建器；业务新增标签不需门户逐项登记。新版计划保存在数据库，Excel 从页面导出、修改后导入；服务器旧维护表仅归档，不再自动同步。正式资料对账来源通过 SOP_RECONCILE_DIR 指向 shared/对账资料。
+- **SOP管理**：继续使用原网关、整段 /sop/ 代理与原构建器；业务新增标签不需门户逐项登记。新版计划保存在数据库，Excel 从页面导出、修改后导入；服务器旧维护表仅归档，不再自动同步。正式资料对账来源通过 SOP_RECONCILE_DIR 指向 shared/对账资料。
 - **订单分析**：动态服务 /orderiq/，健康接口 /health。本地由门户统一传入 SHARED_DATA_ROOT，读取共享订单目录；正式部署显式传 --input、--data-dir、--state-dir、--web-dir。原 Git 仓库在订单分析/scripts，构建入口 generate_html/package_release.py；直接从同版模板生成发布前端，不依赖 Excel、旧 runtime 或已生成批次。业务数据由部署后的原服务处理，打包无需先运行 main.py。
 - **数据速查**：动态服务 /quicklook/，健康接口 /healthz；新版自动扫描使用 SHARED_DATA_ROOT，工作区来源的相对路径仍由 DATA_QUICKLOOK_SOURCE_BASE 解释。
 - **线索声量**：当前可见交付仍是 lead-dashboard.html 静态样例。若内网已改动态，在内网重新运行接入向导更新同一 leads ID，再配置该项目发布包；不能将样例当作正式动态验收。
