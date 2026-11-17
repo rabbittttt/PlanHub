@@ -162,6 +162,25 @@ try{
     Check ((Read $statePath).snapshot -ceq $next.snapshot -and (Read $statePath).packageDirectory -ceq $newPackage -and ($newCalls[($newCalls.Length-2)..($newCalls.Length-1)] -join ',') -ceq 'stop,start') 'A new delivery folder did not safely adopt the retained snapshot'
     Put (Join-Path $newRuntime 'fixture-fail.json') 'fixture'
     Reject {& $entry -Action Start -Snapshot}
+    Remove-Item -LiteralPath (Join-Path $newRuntime 'fixture-fail.json')
+    & $entry -Action Stop -Snapshot
+    foreach($databaseRoot in @('database','state/database')){
+        $settings.databaseDirectory=$databaseRoot
+        $settings.quicklookSourceBase=$databaseRoot+'/quicklook'
+        Save (Join-Path $source 'config.json') $settings
+        Put (Join-Path $source ($databaseRoot+'/quicklook/uploads/input.xlsx')) 'fixture uploaded source'
+        & $entry -Action Start -Snapshot -RefreshSnapshot
+        $centralRuntime=Join-Path (Join-Path $scratch 'planhub-preview') (Read $statePath).snapshot
+        Check ((Read (Join-Path $centralRuntime 'config.json')).databaseDirectory -ceq $databaseRoot) 'Snapshot lost the configured database directory'
+        Check ([IO.File]::ReadAllText((Join-Path $centralRuntime ($databaseRoot+'/quicklook/uploads/input.xlsx'))) -ceq 'fixture uploaded source') 'Snapshot did not copy the configured source data'
+        Check (-not(Test-Path -LiteralPath (Join-Path $centralRuntime 'data'))) 'Snapshot copied unconfigured legacy data'
+        & $entry -Action Stop -Snapshot
+    }
+    foreach($outside in @('data/quicklook','state/database-other/quicklook')){
+        $settings.quicklookSourceBase=$outside
+        Save (Join-Path $source 'config.json') $settings
+        Reject {& $entry -Action Start -Snapshot -RefreshSnapshot}
+    }
     Write-Output ('Native snapshot checks passed: '+$script:checks)
 }finally{
     Remove-Item Function:docker -ErrorAction SilentlyContinue

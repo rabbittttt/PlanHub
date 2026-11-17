@@ -92,7 +92,7 @@ node scripts/register-app.mjs --config config.local/new-app.json
 > 使用本手册登记内网应用。仅修改门户配置及通用工具，优先复用 register-app 和发布工具；不修改业务源码、页面、权限或数据规则。路径保持可迁移，不把实际数据与本机配置提交 Git。无法访问真实网页时说明已验证范围，不把替代样例验收当成正式业务验收。
 
 <a id="current-contracts"></a>
-## 当前版本核对（2026-11-12）
+## 当前版本核对（2026-11-17）
 
 - **车型配置**：动态服务 `/vehicle-config/`，开发源码 `../配置管理`，健康接口 `/healthz`；`scripts/build_release.py` 生成独立通用包。Docker 显式启用 `--require-proxy-identity`，保留原有 `X-Config-User`、`X-Config-Proxy-Key` 及 ASCII 操作人契约，不使用容器账号冒充业务用户。
 

@@ -208,11 +208,11 @@ try{
         $shared=Source-Path $settings.sharedDirectory;$rules=Source-Path $settings.sopSharedConfig
         $null=Source-Path $settings.quicklookSourceBase
         $base=[string]$settings.quicklookSourceBase
-        if($base -cne $settings.sharedDirectory -and -not $base.StartsWith(([string]$settings.sharedDirectory)+'/',[StringComparison]::Ordinal) -and $base -cne 'data' -and -not $base.StartsWith('data/',[StringComparison]::Ordinal)){throw 'quicklookSourceBase must stay within the copied shared directory or data directory for native preview.'}
-        if(-not(Test-Path -LiteralPath $rules -PathType Leaf)){throw 'Place the real shared_config.py at the configured source path before preview.'}
-        if(-not(Test-Path -LiteralPath $shared -PathType Container)){throw 'Prepare the shared data directory before preview.'}
         $databaseDirectory=if($null -ne $settings.PSObject.Properties['databaseDirectory']){[string]$settings.databaseDirectory}else{'data'}
         Source-Path $databaseDirectory | Out-Null
+        if($base -cne $settings.sharedDirectory -and -not $base.StartsWith(([string]$settings.sharedDirectory)+'/',[StringComparison]::Ordinal) -and $base -cne $databaseDirectory -and -not $base.StartsWith($databaseDirectory+'/',[StringComparison]::Ordinal)){throw 'quicklookSourceBase must stay within the copied sharedDirectory or databaseDirectory (legacy default: data) for native preview.'}
+        if(-not(Test-Path -LiteralPath $rules -PathType Leaf)){throw 'Place the real shared_config.py at the configured source path before preview.'}
+        if(-not(Test-Path -LiteralPath $shared -PathType Container)){throw 'Prepare the shared data directory before preview.'}
         $data=Join-Path $source $databaseDirectory
         Assert-CopyTree $shared;Assert-CopyTree $data;No-Link $rules
         $snapshotName='snapshot-'+[Guid]::NewGuid().ToString('N')

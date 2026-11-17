@@ -36,6 +36,8 @@ A 打包、B 本机测试都不需要 Docker，也不需要在 B 安装 Python �
 
 它只会在版本文件夹旁边创建 `planhub-runtime` 及配置、数据目录，尚未启动工作台。已有配置和数据保留。
 
+下面的 `database/` 是首次准备环境的默认目录。**B 已经运行过旧包时，不要重新搬数据或直接修改 `databaseDirectory`。** 新包会沿用旧 `config.json`：没有该字段时，继续使用原来的 `data/<应用编号>/`，车型配置继续使用原共享根下的 `车型配置/`。只更新代码按[后续更新步骤](#updates)操作；统一迁移目录需另行停服、备份和核对。
+
 ### 2. 放入规则和共享数据
 
 - 将真实 `shared_config.py` 放入 `planhub-runtime/config/`。默认来源是 A 的 `../订单分析/scripts/config/shared_config.py`，这里的相对路径以门户源码目录为基准。
