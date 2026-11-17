@@ -43,7 +43,17 @@ try {
     foreach($name in @('sharedDirectory','sopSharedConfig','quicklookSourceBase')){$null=Private-Path $config.$name}
     if($Action -eq 'Prepare'){
         foreach($dir in @('config','data',$config.sharedDirectory)){[void][IO.Directory]::CreateDirectory((Join-Path $runtime $dir))}
-        foreach($id in $manifest.applications){if($id -ne 'planhub' -and $id -ne 'leads'){[void][IO.Directory]::CreateDirectory((Join-Path $runtime ('data/'+$id)))}}
+        $bindings=Get-Content -LiteralPath (Join-Path $package 'bindings.json') -Raw -Encoding UTF8|ConvertFrom-Json
+        foreach($id in $manifest.applications){
+            $binding=$bindings.PSObject.Properties[$id].Value
+            if($binding.type -ne 'service'){continue}
+            $relative='data/'+$id
+            if($null -ne $binding.PSObject.Properties['sharedDataDirectory']){
+                $null=Private-Path $binding.sharedDataDirectory
+                $relative=$config.sharedDirectory+'/'+$binding.sharedDataDirectory
+            }
+            [void][IO.Directory]::CreateDirectory((Private-Path $relative))
+        }
         Write-Host ('Data directory prepared: '+$runtime)
         Write-Host 'Supply rules and data, then use preview.cmd for local testing. Docker is not required.'
         return

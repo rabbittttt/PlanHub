@@ -51,6 +51,7 @@ export function validateBindings(bindings,releases){
   for(const [id,binding] of Object.entries(bindings)){
     if(!/^[a-z][a-z0-9-]{0,39}$/.test(id)||!Number.isInteger(binding.port)||binding.port<1024||binding.port>65535||ports.has(binding.port))throw new Error('Invalid or duplicate runtime port: '+id);
     ports.add(binding.port);
+    if(Object.hasOwn(binding,'sharedDataDirectory')&&!safeName(binding.sharedDataDirectory))throw new Error('Invalid shared data directory: '+id);
   }
   for(const [id,release] of Object.entries(releases)){
     if(!bindings[id]||bindings[id].type!==release.manifest.type)throw new Error('Configure the runtime binding for '+id);

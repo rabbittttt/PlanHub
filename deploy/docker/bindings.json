@@ -134,6 +134,7 @@
       "public_prefix": "{basePath}"
     },
     "type": "service",
-    "healthPath": "/healthz"
+    "healthPath": "/healthz",
+    "sharedDataDirectory": "车型配置"
   }
 }

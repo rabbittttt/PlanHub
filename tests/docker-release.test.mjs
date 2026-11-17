@@ -124,6 +124,15 @@ test('container contracts keep original loopback, public prefix, external paths 
   const order=containerSpec('orderiq',bindings.orderiq,config);assert.ok(order.args.includes('/runtime/data/orderiq/runtime'));assert.ok(order.args.includes('127.0.0.1'));
   const sop=containerSpec('sop',bindings.sop,config);assert.equal(sop.env.SOP_LOCAL_RELEASE_SECRET,config.sopSecret);
   const vehicle=containerSpec('vehicle-config',bindings['vehicle-config'],config);assert.ok(vehicle.args.includes('--require-proxy-identity'));assert.equal(vehicle.env.VEHICLE_CONFIG_PROXY_SECRET,config.vehicleSecret);
+  assert.equal(vehicle.data,'/runtime/shared/车型配置');
+  assert.equal(vehicle.args[vehicle.args.indexOf('--data-dir')+1],vehicle.data);
+  const custom=containerSpec('vehicle-config',bindings['vehicle-config'],{...config,sharedDirectory:'business/shared'});
+  assert.equal(custom.data,'/runtime/business/shared/车型配置');
+  const windows=containerSpec('vehicle-config',bindings['vehicle-config'],config,{runtime:'C:/runtime',pathApi:path.win32});
+  assert.equal(windows.data,path.win32.join('C:/runtime','shared','车型配置'));
+  assert.ok(windows.args.includes(windows.data));
+  assert.throws(()=>containerSpec('vehicle-config',{...bindings['vehicle-config'],sharedDataDirectory:'../outside'},config),/relative paths/);
+  assert.throws(()=>validateBindings({...bindings,'vehicle-config':{...bindings['vehicle-config'],sharedDataDirectory:'../outside'}},{}),/shared data directory/);
   const quick=containerSpec('quicklook',bindings.quicklook,{...config,quicklookSourceBase:'old-source-base'});assert.equal(quick.env.DATA_QUICKLOOK_SOURCE_BASE,'/runtime/old-source-base');
 });
 test('child defaults use one port registration and retired preview preferences cannot create a second source',async()=>{
@@ -154,4 +163,18 @@ test('authenticated gateway forwards verified per-request identity; forged heade
   assert.equal((await request(url,{...headers,'X-PlanHub-Key':'bad'})).status,403);
   assert.equal((await request(url,{...headers,Host:'attacker.internal'})).status,403);
   await checkService('planhub',{port,healthPath:'/',type:'static'},config);
+});
+
+test('prepare creates the vehicle catalog inside the configured shared root without a duplicate private directory',{skip:process.platform!=='win32'},async t=>{
+  const base=await temporary(t),app=await release(base,'vehicle-config',{'server.py':'# fixture only','requirements.txt':''},{type:'service',healthPath:'/healthz'});
+  const destination=path.join(base,'delivery'),runtime=path.join(base,'planhub-runtime');
+  await buildDelivery([app],destination,{collectRuntime:fakeRuntime});
+  await mkdir(runtime);await json(path.join(runtime,'config.json'),{...config,sharedDirectory:'business/shared'});
+  const result=spawnSync('powershell.exe',['-NoProfile','-ExecutionPolicy','Bypass','-File',path.join(destination,'deploy.ps1'),'-Action','Prepare','-RuntimeDirectory',runtime],{encoding:'utf8',windowsHide:true,env:Object.fromEntries(Object.entries(process.env).filter(([key])=>key.toUpperCase()!=='PSMODULEPATH'))});
+  assert.equal(result.status,0,result.stderr||result.stdout);
+  assert.deepEqual(await readdir(path.join(runtime,'business/shared/车型配置')),[]);
+  await assert.rejects(readdir(path.join(runtime,'data/vehicle-config')),/ENOENT/);
+  const marker=path.join(runtime,'business/shared/车型配置/current.json');await writeFile(marker,'preserve existing catalog');
+  const again=spawnSync('powershell.exe',['-NoProfile','-ExecutionPolicy','Bypass','-File',path.join(destination,'deploy.ps1'),'-Action','Prepare','-RuntimeDirectory',runtime],{encoding:'utf8',windowsHide:true,env:Object.fromEntries(Object.entries(process.env).filter(([key])=>key.toUpperCase()!=='PSMODULEPATH'))});
+  assert.equal(again.status,0,again.stderr||again.stdout);assert.equal(await readFile(marker,'utf8'),'preserve existing catalog');
 });

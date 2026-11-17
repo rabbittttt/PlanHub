@@ -39,7 +39,12 @@ export function trustedActor(request,config){
 }
 export function containerSpec(id,binding,config,{runtime='/runtime',payload='/app/release/payload',python='/usr/local/bin/python',pathApi=path.posix}={}){
   const localPath=value=>{privatePath('/runtime',value);return pathApi.join(runtime,...value.split('/'));};
-  const shared=localPath(config.sharedDirectory),data=pathApi.join(runtime,'data',id);
+  const shared=localPath(config.sharedDirectory);
+  let data=pathApi.join(runtime,'data',id);
+  if(Object.hasOwn(binding,'sharedDataDirectory')){
+    privatePath('/runtime',binding.sharedDataDirectory);
+    data=pathApi.join(shared,...binding.sharedDataDirectory.split('/'));
+  }
   const tokens={payload,data,shared,runtime,host:'127.0.0.1',port:String(binding.port),basePath:`/${id}/`,publicOrigin:config.publicOrigin,publicHost:new URL(config.publicOrigin).hostname};
   const args=(binding.arguments??[]).map(v=>expand(v,tokens));
   const env={...process.env,PYTHONDONTWRITEBYTECODE:'1',PYTHONIOENCODING:'utf-8',PYTHONUNBUFFERED:'1'};

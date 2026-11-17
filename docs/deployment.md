@@ -48,10 +48,12 @@ A 打包、B 本机测试都不需要 Docker，也不需要在 B 安装 Python �
 |---|---|---|
 | SOP 计划 | `../SOP维护/data/` 的内容，包括 `sop.sqlite3`、`sales.json`、`source_settings.json`、历史备份；不用旧 `service.json`、`service.pid` | `data/sop/` |
 | 订单分析批注 | `../订单分析/data/order_dashboard/` 的内容，关键文件为 `annotations.sqlite3` | `data/orderiq/annotations/` |
-| 车型配置 | `../共享数据/车型配置/` 的全部内容，包括 `catalog.sqlite3`、`current.json`、`drafts/`、`history/` | `data/vehicle-config/` |
+| 车型配置 | `../共享数据/车型配置/` 的全部内容，包括 `catalog.sqlite3`、`current.json`、`drafts/`、`history/` | `shared/车型配置/`（随共享数据一起复制，无需另存一份） |
 | 订单旧报表批次（可选） | `../订单分析/output_file/runtime/` 的全部内容，包括 `current.json` 和 `datasets/`；不保留可从共享 Excel 重新生成 | `data/orderiq/runtime/` |
 | 数据速查 | 本次全新使用，不复制旧文件 | `data/quicklook/` 留空 |
 | 销量预测 | 页面和缓存可从共享 Excel 重新生成，通常不用复制旧文件 | `data/forecast/` 留空 |
+
+车型配置在 Windows 试运行和 Docker 中都使用配置的共享根下的 `车型配置/`，默认 `shared/车型配置/`。如果旧发布包已向 `data/vehicle-config/` 写入记录，先停止服务并核对两处数据，备份后由部署人员选择完整的一份迁入共享目录；程序不会自动搬动、合并或覆盖。已有发布包不可原地修改，需重新打包后使用新版本。
 
 如果原服务用过其他数据目录，取它实际使用的目录。SOP 已保存的计划在数据库中，不能只复制旧维护 Excel 代替。销量预测的人工参数保存在原浏览器中，不随服务器文件迁移。门户和线索声量已在程序包里，不用放进 `data/`。
 

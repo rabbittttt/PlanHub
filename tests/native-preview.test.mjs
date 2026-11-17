@@ -55,7 +55,7 @@ async function fixture(t,{dynamic=true,staticChild=false}={}){
   });
   while(port===PORT)port=await unusedPort();
   const bindings={planhub:{type:'static',port:4173,healthPath:'/'}},apps=[];
-  if(dynamic){bindings['vehicle-config']={type:'service',port,healthPath:'/healthz',healthExpected:{ok:true,app:'vehicle-config'},arguments:['-B','{payload}/server.py','--port','{port}','--data-dir','{data}'],environment:{}};apps.push({id:'vehicle-config',enabled:true});}
+  if(dynamic){bindings['vehicle-config']={type:'service',sharedDataDirectory:'车型配置',port,healthPath:'/healthz',healthExpected:{ok:true,app:'vehicle-config'},arguments:['-B','{payload}/server.py','--port','{port}','--data-dir','{data}'],environment:{}};apps.push({id:'vehicle-config',enabled:true});}
   if(staticChild){bindings.leads={type:'static',port,healthPath:'/',stripPrefix:true};apps.push({id:'leads',enabled:true});}
   await release(packageRoot,'planhub',{'index.html':'<title>Fixture portal</title>','config/apps.json':JSON.stringify({groups:[{apps}]})});
   if(dynamic)await release(packageRoot,'vehicle-config',{'server.py':'# Immutable fixture, never executed by tests.\n','requirements.txt':''},'service');
@@ -85,12 +85,12 @@ test('direct local services read changing shared files and preserve external con
   const before=await readFile(path.join(f.runtimeRoot,'config.json'));
   const derived={...source,publicOrigin:ORIGIN,preview:{...f.config.preview,mode:'direct',sourceConfigHash:sha(before).toUpperCase()}};
   await put(path.join(f.runtimeRoot,'native-preview.json'),derived);
-  const input=path.join(f.runtimeRoot,'shared/input.txt'),saved=path.join(f.runtimeRoot,'data/vehicle-config/saved.txt');
+  const input=path.join(f.runtimeRoot,'shared/input.txt'),saved=path.join(f.runtimeRoot,'shared/车型配置/saved.txt');
   await put(input,'before');await put(saved,'persistent');
   const plan=await loadNativePlan(f.packageRoot,f.runtimeRoot);
   await put(f.fake,"import http from 'node:http';import fs from 'node:fs';http.createServer((req,res)=>{res.setHeader('Content-Type','application/json');res.end(JSON.stringify(req.url==='/healthz'?{ok:true,app:'vehicle-config'}:{value:fs.readFileSync(process.argv[3],'utf8')}));}).listen(Number(process.argv[2]),'127.0.0.1');");
   await runNativePreview(plan,{startService:(command,args,options)=>{
-    assert.ok(args.includes(path.join(f.runtimeRoot,'data/vehicle-config')));
+    assert.ok(args.includes(path.join(f.runtimeRoot,'shared/车型配置')));
     return spawnService(process.execPath,[f.fake,args[args.indexOf('--port')+1],input],options);
   },serviceTimeoutMs:5000});
   assert.equal((await (await fetch(ORIGIN+'/vehicle-config/input')).json()).value,'before');
@@ -116,7 +116,7 @@ test('native preview uses the registered child default port without a separate p
   assert.equal(seen[0].command,path.join(f.packageRoot,'runtime/python/python.exe'));
   assert.ok(seen[0].args.map(value=>path.normalize(value)).includes(path.join(f.packageRoot,'releases/vehicle-config/payload/server.py')));
   assert.equal(seen[0].args[1],'-c');assert.match(seen[0].args[2],/sys\.path\.insert/);
-  assert.ok(seen[0].args.includes(path.join(f.runtimeRoot,'data/vehicle-config')));
+  assert.ok(seen[0].args.includes(path.join(f.runtimeRoot,'shared/车型配置')));
   assert.equal(seen[0].options.env.VEHICLE_CONFIG_PROXY_SECRET,f.config.vehicleSecret);
   assert.equal(seen[0].options.env.PLANHUB_PYTHON_APP_ROOT,path.join(f.packageRoot,'releases/vehicle-config/payload'));
   assert.equal(seen[0].options.env.PATH.split(path.delimiter)[0],path.join(f.packageRoot,'runtime/node'));
