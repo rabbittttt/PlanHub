@@ -138,7 +138,7 @@ Node.js 完整许可证从运行程序所在目录读取（支持文本和 RTF�
 
 ## 共享输入目录
 
-源码联调只在 `integration/apps.json` 顶层登记 `sharedDataRoot`，默认 `../共享数据`。其他电脑目录不同，在 `config.local/apps.json` 顶层覆盖一次；`SHARED_DATA_ROOT` 环境变量优先。相对路径统一按门户根目录解析，启动器把解析后的绝对路径传给所有动态服务和 SOP。不要逐个应用复制这个路径；公开启动参数需要子目录时可用 `{shared}/子目录`，新应用须按自己的公开接口消费它。
+源码联调只在 `integration/apps.json` 顶层登记 `sharedDataRoot`，默认 `../工作台数据/shared`。其他电脑目录不同，在 `config.local/apps.json` 顶层覆盖一次；`SHARED_DATA_ROOT` 环境变量优先。相对路径统一按门户根目录解析，启动器把解析后的绝对路径传给所有动态服务和 SOP。不要逐个应用复制这个路径；公开启动参数需要子目录时可用 `{shared}/子目录`，新应用须按自己的公开接口消费它。
 
 正式版由包外 `planhub-runtime/config.json` 的 `sharedDirectory` 提供共享根，绑定将它传给各应用；`databaseDirectory` 统一指定应用持久目录；绑定中的 `sharedDataDirectory` 仅兼容未迁移的旧配置，新环境优先使用集中目录；发布包试运行默认直接使用实际共享目录，仅显式 -Snapshot / -RefreshSnapshot 时使用隔离副本。共享输入与应用数据库、上传和缓存是不同用途，程序更新不迁移数据。数据速查仍支持用户上传及历史来源；车型配置的数据库、发布快照、草稿及历史一起保存在集中持久目录 `database/vehicle-config/`；线索声量当前为静态样例，不能视为共享数据消费者。
 

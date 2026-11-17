@@ -110,7 +110,7 @@ export async function resolvePreviewSettings(args=process.argv.slice(2),{root=RO
   let salesSourceDir=dataRoot?path.join(dataRoot,'input_file'):null;
   let planSourceFile=dataRoot?path.join(dataRoot,'input_file','SOP计划维护.xlsx'):null;
   if(dataRoot) {
-    const sharedRoot=sharedDataRoot||path.resolve(resolvedSource,'..','共享数据');
+    const sharedRoot=sharedDataRoot||path.resolve(resolvedSource,'..','工作台数据','shared');
     let useShared=Boolean(sharedDataRoot);
     if(!useShared&&!dataRootExplicit&&(!env.SOP_SOURCE_DIR||!env.SOP_PLAN_DIR)) {
       try {

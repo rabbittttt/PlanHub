@@ -258,7 +258,7 @@ test('one shared root reaches every service without local patches and survives w
     for(const app of Object.values(apps))if(app.start)assert.equal(app.start.env.SHARED_DATA_ROOT,path.resolve(root,relative));
     assert.ok(!apps.orderiq.start.args.includes('--input'),'Default order startup uses the common source contract');
   }
-  await check(f.root,'../共享数据');
+  await check(f.root,'../工作台数据/shared');
   await writeFile(path.join(f.root,'config.local/apps.json'),JSON.stringify({sharedDataRoot:'../other shared'}));
   await check(f.root,'../other shared');
   const moved=path.join(f.base,'moved workspace');await rename(path.dirname(f.root),moved);

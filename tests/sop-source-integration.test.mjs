@@ -86,7 +86,7 @@ test('relative CLI paths and the default template resolve against the portal roo
   const seed=await data(path.join(base,'historical-data'));
   const rules=path.join(base,'订单分析','scripts','config','shared_config.py');
   await mkdir(path.dirname(rules),{recursive:true});await writeFile(rules,'MERGE_GROUPS = {}\n');
-  const shared=path.join(base,'共享数据','订单汇总');await mkdir(shared,{recursive:true});
+  const shared=path.join(base,'工作台数据','shared','订单汇总');await mkdir(shared,{recursive:true});
   // The test process cwd is outside this disposable portal tree.
   assert.notEqual(path.resolve(process.cwd()),root);
   const settings=await resolvePreviewSettings(['--sop-source','../SOP维护','--snapshot','--seed-from','../historical-data',
@@ -96,7 +96,7 @@ test('relative CLI paths and the default template resolve against the portal roo
   await writeFile(path.join(root,'config.local','sop.json'),await readFile(new URL('../integration/sop.example.json',import.meta.url)));
   const defaults=await resolvePreviewSettings([],{root,env:{},requireData:true});
   assert.equal(defaults.dataRootExplicit,false);assert.equal(defaults.salesSourceDir,shared);
-  assert.equal(defaults.planSourceFile,path.join(base,'共享数据','SOP计划','SOP计划维护.xlsx'));
+  assert.equal(defaults.planSourceFile,path.join(base,'工作台数据','shared','SOP计划','SOP计划维护.xlsx'));
 });
 
 test('missing gateway and the removed portal copy are rejected instead of silently selecting other code',async t=>{
@@ -115,7 +115,7 @@ test('shared sales inputs are selected independently from project state without 
   const args=['--shared-config',rules];
   const resolve=env=>resolvePreviewSettings(args,{root,env,requireData:true});
   assert.equal((await resolve({})).salesSourceDir,path.join(original,'input_file'));
-  const shared=path.join(base,'共享数据');await mkdir(shared);
+  const shared=path.join(base,'工作台数据','shared');await mkdir(shared,{recursive:true});
   await assert.rejects(resolve({}),/SOP 销售来源目录不存在/);
   const orders=path.join(shared,'订单汇总');await mkdir(orders);
   assert.equal((await resolve({})).salesSourceDir,orders);
@@ -131,7 +131,7 @@ test('explicit seed and local dataRoot keep their sales inputs when default shar
   const {base,root}=await fixture(t);
   const original=await source(path.join(base,'SOP维护'));await data(original);
   const seed=await data(path.join(base,'historical-data'));
-  const shared=path.join(base,'共享数据');const orders=path.join(shared,'订单汇总');
+  const shared=path.join(base,'工作台数据','shared');const orders=path.join(shared,'订单汇总');
   await mkdir(orders,{recursive:true});
   const rules=path.join(base,'rules.py');await writeFile(rules,'MERGE_GROUPS = {}\n');
   const args=['--shared-config',rules];
@@ -179,8 +179,8 @@ test('preview executes independent source with a separate writable snapshot with
   const prepared=spawnSync(python,['-B','-c',"import sqlite3,sys; db=sqlite3.connect(sys.argv[1]); db.execute('CREATE TABLE marker (value TEXT)'); db.execute(\"INSERT INTO marker VALUES ('original-db')\"); db.commit(); db.close()",seedDb],{encoding:'utf8'});
   assert.equal(prepared.status,0,prepared.stderr||prepared.error?.message);
   const seedDbBefore=await readFile(seedDb);
-  const shared=path.join(base,'共享数据','订单汇总');await mkdir(shared,{recursive:true});
-  const sharedPlan=path.join(base,'共享数据','SOP计划','SOP计划维护.xlsx');
+  const shared=path.join(base,'工作台数据','shared','订单汇总');await mkdir(shared,{recursive:true});
+  const sharedPlan=path.join(base,'工作台数据','shared','SOP计划','SOP计划维护.xlsx');
   await mkdir(path.dirname(sharedPlan));await writeFile(sharedPlan,'formal shared plan');
   await writeFile(path.join(shared,'current-sales.xlsx'),'shared sales');
   await writeFile(path.join(shared,'SOP计划维护.xlsx'),'shared plan must not be used');

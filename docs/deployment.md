@@ -39,7 +39,7 @@ A 打包、B 本机测试都不需要 Docker，也不需要在 B 安装 Python �
 ### 2. 放入规则和共享数据
 
 - 将真实 `shared_config.py` 放入 `planhub-runtime/config/`。默认来源是 A 的 `../订单分析/scripts/config/shared_config.py`，这里的相对路径以门户源码目录为基准。
-- 将现有“共享数据”文件夹**里面的内容**复制到 `planhub-runtime/shared/`，保留 `订单汇总`、`对账资料` 等业务子目录名；`原始销量/` 供其他项目使用，即使为空也保留，首次准备环境时若不存在则创建。
+- 将 `../工作台数据/shared/` **里面的内容**复制到 `planhub-runtime/shared/`，保留 `订单汇总`、`对账资料` 等业务子目录名；`原始销量/` 供其他项目使用，即使为空也保留，首次准备环境时若不存在则创建。
 - 如果以前用过网页并保存过记录，按下表复制需要保留的数据；完全没有旧记录的应用，对应目录留空即可。
 
 复制旧数据前先停止使用原数据的服务，并保留原件作备份。取旧目录里面的内容，例如 `sop.sqlite3` 直接放在 `database/sop/` 下。
@@ -71,7 +71,7 @@ planhub/
 └─ planhub-runtime/            ← 配置和数据，长期保留
    ├─ config.json
    ├─ config/shared_config.py
-   ├─ shared/                 ← 共享数据文件夹里面的内容
+   ├─ shared/                 ← 工作台数据/shared 里面的内容
    └─ database/               ← 上表中需要保留的记录
 ```
 
@@ -199,10 +199,12 @@ A 打包时选择是否携带 Windows 运行环境：
 
 ## 集中持久目录（2026-11-17）
 
-不新增公共数据服务项目。开发数据根默认 `../工作台数据`，由 `integration/apps.json` 的 `dataRoot` 统一配置，环境变量 `PLANHUB_DATA_ROOT` 可覆盖；各应用独立运行默认指向同一工作区的数据根。共享 Excel 仍使用 `sharedDataRoot`，本次不移动原始文件。`工作台数据/shared/原始销量/` 保留给其他项目使用，即使工作台当前不读取、目录为空也不能作为无用目录清理。当前开发版共享读取仍指向 `../共享数据`；保留目录不代表自动迁移文件或切换读取路径。发布环境对应保留配置的共享根下的 `原始销量/`。
+不新增公共数据服务项目。开发数据根默认 `../工作台数据`，由 `integration/apps.json` 的 `dataRoot` 统一配置，环境变量 `PLANHUB_DATA_ROOT` 可覆盖；各应用独立运行默认指向同一工作区的数据根。共享 Excel 统一位于 `../工作台数据/shared`，由 `sharedDataRoot` 配置；子项目独立运行也默认读取该位置。`工作台数据/shared/原始销量/` 保留给其他项目使用，即使工作台当前不读取、目录为空也不能作为无用目录清理。旧同级 `共享数据/` 不再作为默认输入。发布环境对应保留配置的共享根下的 `原始销量/`。
 
 数据库及配套文件按 `database/sop`、`database/orderiq/annotations`、`database/orderiq/runtime`、`database/forecast`、`database/quicklook`、`database/vehicle-config` 分开保存，不建立第二份运行副本。上传、草稿、历史及运行批次随所属应用目录保留，不只复制单个数据库文件。
 
-开发首次迁移：可双击根目录 `迁移持久数据.cmd`，核对计划后确认执行；命令行方式为停止所有 Python 业务服务，运行 `../.venv/Scripts/python.exe -B scripts/migrate-storage.py integration/storage-migration.example.json` 核对计划，再加 `--apply` 执行。目录不同先复制模板到本机位置并修改其中相对路径；所有相对路径基于清单文件位置。目标已存在时拒绝合并覆盖。逐文件校验、数据库检查通过后，原目录改名为 `.pre-central-*` 恢复备份，目标的 `migration.json` 记录映射。数据速查的原件路径由其自己的迁移脚本调整。
+开发首次迁移：双击根目录 `迁移持久数据.cmd`，选 1 迁移旧数据库，再选 2 迁移旧共享目录，分别核对计划后执行；数据库已经集中时只选 2。命令行方式为停止所有 Python 业务服务，运行 `../.venv/Scripts/python.exe -B scripts/migrate-storage.py integration/storage-migration.example.json` 核对计划，再加 `--apply` 执行。目录不同先复制模板到本机位置并修改其中相对路径；所有相对路径基于清单文件位置。目标已存在时拒绝合并覆盖。逐文件校验、数据库检查通过后，原目录改名为 `.pre-central-*` 恢复备份，目标的 `migration.json` 记录映射。数据速查的原件路径由其自己的迁移脚本调整。
 
 新发布环境在 `planhub-runtime/config.json` 设置 `databaseDirectory: "database"`，Windows 与 Docker 共用该目录。旧配置未设置此字段时保持旧 `data/` 与车型配置共享子目录映射，不能只改字段后直接启动。旧 B 环境先停服，按原实际目录编写同格式迁移清单，使用包内 `launcher/migrate-storage.py` 迁移到尚不存在的 `planhub-runtime/central/`（清单中的目标子目录仍为 `database/...`），验证后将 `databaseDirectory` 设置为 `central/database`。迁移完成后不要再移动目标目录，以免数据速查保存的原件路径失效。数据速查迁移钩子在其发布物 `scripts/migrate_storage.py` 中；路径按实际发布物填写。首次从 A 到 B 时复制集中目录中的持久数据；数据速查先复制到 B 的临时目录，在 B 停服期间运行其 `scripts/migrate_storage.py --staged <B临时复制目录> --old <A数据速查目录> --new <B正式数据速查目录>`，检查后将临时目录移到该正式位置（正式目录必须尚不存在），并在页面重新选择实际的共享来源。后续只换程序包。
+
+共享目录迁移：选项 2 会逐文件校验复制内容、保留 `原始销量/`，调用数据速查自己的迁移工具更新已保存的来源路径。原共享目录与迁移前的数据速查状态移入数据根的 `backups/shared-migration-*`，旧共享目录退出使用。目标已有业务文件时拒绝覆盖，需先核对冲突。非默认布局使用 `scripts/migrate-shared.py --source ... --destination ... --quicklook ... --hook ... --source-base ...`，先检查计划，再加 `--apply`；相对参数从当前命令目录解析。不得仅移动 Excel 而遗漏数据库中的来源路径。
