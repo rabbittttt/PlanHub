@@ -39,7 +39,7 @@ A 打包、B 本机测试都不需要 Docker，也不需要在 B 安装 Python �
 ### 2. 放入规则和共享数据
 
 - 将真实 `shared_config.py` 放入 `planhub-runtime/config/`。默认来源是 A 的 `../订单分析/scripts/config/shared_config.py`，这里的相对路径以门户源码目录为基准。
-- 将现有“共享数据”文件夹**里面的内容**复制到 `planhub-runtime/shared/`，保留 `订单汇总`、`对账资料` 等业务子目录名。
+- 将现有“共享数据”文件夹**里面的内容**复制到 `planhub-runtime/shared/`，保留 `订单汇总`、`对账资料` 等业务子目录名；`原始销量/` 供其他项目使用，即使为空也保留，首次准备环境时若不存在则创建。
 - 如果以前用过网页并保存过记录，按下表复制需要保留的数据；完全没有旧记录的应用，对应目录留空即可。
 
 复制旧数据前先停止使用原数据的服务，并保留原件作备份。取旧目录里面的内容，例如 `sop.sqlite3` 直接放在 `database/sop/` 下。
@@ -199,7 +199,7 @@ A 打包时选择是否携带 Windows 运行环境：
 
 ## 集中持久目录（2026-11-17）
 
-不新增公共数据服务项目。开发数据根默认 `../工作台数据`，由 `integration/apps.json` 的 `dataRoot` 统一配置，环境变量 `PLANHUB_DATA_ROOT` 可覆盖；各应用独立运行默认指向同一工作区的数据根。共享 Excel 仍使用 `sharedDataRoot`，本次不移动原始文件。
+不新增公共数据服务项目。开发数据根默认 `../工作台数据`，由 `integration/apps.json` 的 `dataRoot` 统一配置，环境变量 `PLANHUB_DATA_ROOT` 可覆盖；各应用独立运行默认指向同一工作区的数据根。共享 Excel 仍使用 `sharedDataRoot`，本次不移动原始文件。`工作台数据/shared/原始销量/` 保留给其他项目使用，即使工作台当前不读取、目录为空也不能作为无用目录清理。当前开发版共享读取仍指向 `../共享数据`；保留目录不代表自动迁移文件或切换读取路径。发布环境对应保留配置的共享根下的 `原始销量/`。
 
 数据库及配套文件按 `database/sop`、`database/orderiq/annotations`、`database/orderiq/runtime`、`database/forecast`、`database/quicklook`、`database/vehicle-config` 分开保存，不建立第二份运行副本。上传、草稿、历史及运行批次随所属应用目录保留，不只复制单个数据库文件。
 
