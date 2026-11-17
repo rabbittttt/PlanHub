@@ -42,20 +42,20 @@ A 打包、B 本机测试都不需要 Docker，也不需要在 B 安装 Python �
 - 将现有“共享数据”文件夹**里面的内容**复制到 `planhub-runtime/shared/`，保留 `订单汇总`、`对账资料` 等业务子目录名。
 - 如果以前用过网页并保存过记录，按下表复制需要保留的数据；完全没有旧记录的应用，对应目录留空即可。
 
-复制旧数据前先停止使用原数据的服务，并保留原件作备份。取旧目录里面的内容，例如 `sop.sqlite3` 直接放在 `data/sop/` 下。
+复制旧数据前先停止使用原数据的服务，并保留原件作备份。取旧目录里面的内容，例如 `sop.sqlite3` 直接放在 `database/sop/` 下。
 
 | 应用 | 从 A 取哪些内容（默认位置，相对门户源码目录） | 放到 B 的哪里（相对 `planhub-runtime/`） |
 |---|---|---|
-| SOP 计划 | `../SOP维护/data/` 的内容，包括 `sop.sqlite3`、`sales.json`、`source_settings.json`、历史备份；不用旧 `service.json`、`service.pid` | `data/sop/` |
-| 订单分析批注 | `../订单分析/data/order_dashboard/` 的内容，关键文件为 `annotations.sqlite3` | `data/orderiq/annotations/` |
-| 车型配置 | `../共享数据/车型配置/` 的全部内容，包括 `catalog.sqlite3`、`current.json`、`drafts/`、`history/` | `shared/车型配置/`（随共享数据一起复制，无需另存一份） |
-| 订单旧报表批次（可选） | `../订单分析/output_file/runtime/` 的全部内容，包括 `current.json` 和 `datasets/`；不保留可从共享 Excel 重新生成 | `data/orderiq/runtime/` |
-| 数据速查 | 本次全新使用，不复制旧文件 | `data/quicklook/` 留空 |
-| 销量预测 | 页面和缓存可从共享 Excel 重新生成，通常不用复制旧文件 | `data/forecast/` 留空 |
+| SOP 计划 | `../工作台数据/database/sop/` 的内容，包括 `sop.sqlite3`、`sales.json`、`source_settings.json`、历史备份；不用旧 `service.json`、`service.pid` | `database/sop/` |
+| 订单分析批注 | `../工作台数据/database/orderiq/annotations/` 的内容，关键文件为 `annotations.sqlite3` | `database/orderiq/annotations/` |
+| 车型配置 | `../工作台数据/database/vehicle-config/` 的全部内容，包括 `catalog.sqlite3`、`current.json`、`drafts/`、`history/` | `database/vehicle-config/` |
+| 订单旧报表批次（可选） | `../工作台数据/database/orderiq/runtime/` 的全部内容，包括 `current.json` 和 `datasets/`；不保留可从共享 Excel 重新生成 | `database/orderiq/runtime/` |
+| 数据速查 | `../工作台数据/database/quicklook/` 的数据库、上传及设置；迁移电脑须核对来源与原件路径 | `database/quicklook/` |
+| 销量预测 | 页面和缓存可从共享 Excel 重新生成，通常不用复制旧文件 | `database/forecast/` 留空 |
 
-车型配置在 Windows 试运行和 Docker 中都使用配置的共享根下的 `车型配置/`，默认 `shared/车型配置/`。如果旧发布包已向 `data/vehicle-config/` 写入记录，先停止服务并核对两处数据，备份后由部署人员选择完整的一份迁入共享目录；程序不会自动搬动、合并或覆盖。已有发布包不可原地修改，需重新打包后使用新版本。
+车型配置同其他应用一样使用 `database/vehicle-config/`。旧环境如在共享目录或旧 `data/vehicle-config/` 留有记录，先停服核对唯一有效来源，再执行迁移；禁止自动合并两份记录。旧发布包保持原样，重新打包交付。
 
-如果原服务用过其他数据目录，取它实际使用的目录。SOP 已保存的计划在数据库中，不能只复制旧维护 Excel 代替。销量预测的人工参数保存在原浏览器中，不随服务器文件迁移。门户和线索声量已在程序包里，不用放进 `data/`。
+如果原服务用过其他数据目录，取它实际使用的目录。SOP 已保存的计划在数据库中，不能只复制旧维护 Excel 代替。销量预测的人工参数保存在原浏览器中，不随服务器文件迁移。门户和线索声量已在程序包里，不用放进 `database/`。
 
 此时目录应是：
 
@@ -72,7 +72,7 @@ planhub/
    ├─ config.json
    ├─ config/shared_config.py
    ├─ shared/                 ← 共享数据文件夹里面的内容
-   └─ data/                   ← 上表中需要保留的记录
+   └─ database/               ← 上表中需要保留的记录
 ```
 
 ### 3. 启动本机测试
@@ -152,7 +152,7 @@ A 打包时选择是否携带 Windows 运行环境：
 ### 已正式部署 Docker，更新上线
 
 1. **A 打包：** 只改一个应用，就在 `发布应用.bat` 选择该应用；整套更新选 `8`，需要重新附带 Windows 环境时选 `0`。新增导航入口还需更新门户；新增应用、修改运行配置或运行契约时选 `0` 或 `8`，交付全部应用。单应用包只适用于已有完整部署且环境配置未变的情况。
-2. **B 放包：** 将新程序文件夹与旧包并排放在原 `planhub/` 下，继续使用旁边的同一份 `planhub-runtime/`。**只更新代码时，不再复制 `data/`、`shared/` 或配置，不重做首次迁移。**
+2. **B 放包：** 将新程序文件夹与旧包并排放在原 `planhub/` 下，继续使用旁边的同一份 `planhub-runtime/`。**只更新代码时，不再复制 `database/`、`shared/` 或配置，不重做首次迁移。**
 3. **同事切换：** 在新包运行 `build-docker.cmd`，构建成功后，等当前业务操作结束，再运行新包的 `start.cmd`。单应用包只切换对应应用；全部应用包切换整套。
 4. **部门验收：** 从公司入口检查改动功能和原有记录。旧包保留供同事核对，工具不回滚数据库。
 
@@ -195,3 +195,14 @@ A 打包时选择是否携带 Windows 运行环境：
 恢复前核对实际文件、来源和数据一致性，不直接覆盖运行中的数据。
 
 </details>
+
+
+## 集中持久目录（2026-11-17）
+
+不新增公共数据服务项目。开发数据根默认 `../工作台数据`，由 `integration/apps.json` 的 `dataRoot` 统一配置，环境变量 `PLANHUB_DATA_ROOT` 可覆盖；各应用独立运行默认指向同一工作区的数据根。共享 Excel 仍使用 `sharedDataRoot`，本次不移动原始文件。
+
+数据库及配套文件按 `database/sop`、`database/orderiq/annotations`、`database/orderiq/runtime`、`database/forecast`、`database/quicklook`、`database/vehicle-config` 分开保存，不建立第二份运行副本。上传、草稿、历史及运行批次随所属应用目录保留，不只复制单个数据库文件。
+
+开发首次迁移：可双击根目录 `迁移持久数据.cmd`，核对计划后确认执行；命令行方式为停止所有 Python 业务服务，运行 `../.venv/Scripts/python.exe -B scripts/migrate-storage.py integration/storage-migration.example.json` 核对计划，再加 `--apply` 执行。目录不同先复制模板到本机位置并修改其中相对路径；所有相对路径基于清单文件位置。目标已存在时拒绝合并覆盖。逐文件校验、数据库检查通过后，原目录改名为 `.pre-central-*` 恢复备份，目标的 `migration.json` 记录映射。数据速查的原件路径由其自己的迁移脚本调整。
+
+新发布环境在 `planhub-runtime/config.json` 设置 `databaseDirectory: "database"`，Windows 与 Docker 共用该目录。旧配置未设置此字段时保持旧 `data/` 与车型配置共享子目录映射，不能只改字段后直接启动。旧 B 环境先停服，按原实际目录编写同格式迁移清单，使用包内 `launcher/migrate-storage.py` 迁移到尚不存在的 `planhub-runtime/central/`（清单中的目标子目录仍为 `database/...`），验证后将 `databaseDirectory` 设置为 `central/database`。迁移完成后不要再移动目标目录，以免数据速查保存的原件路径失效。数据速查迁移钩子在其发布物 `scripts/migrate_storage.py` 中；路径按实际发布物填写。首次从 A 到 B 时复制集中目录中的持久数据；数据速查先复制到 B 的临时目录，在 B 停服期间运行其 `scripts/migrate_storage.py --staged <B临时复制目录> --old <A数据速查目录> --new <B正式数据速查目录>`，检查后将临时目录移到该正式位置（正式目录必须尚不存在），并在页面重新选择实际的共享来源。后续只换程序包。

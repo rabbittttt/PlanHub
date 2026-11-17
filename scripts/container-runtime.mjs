@@ -15,6 +15,7 @@ export function validateRuntime(config,{allowLegacyPreview=false}={}){
   if(config.schemaVersion!==1||!['http:','https:'].includes(origin.protocol)||origin.origin!==config.publicOrigin||origin.hostname.endsWith('.invalid'))throw new Error('Set publicOrigin to the company gateway origin, without a path or trailing slash.');
   for(const key of ['proxySecret','sopSecret','vehicleSecret'])if(!/^[a-zA-Z0-9_-]{32,}$/.test(config[key]??''))throw new Error('Missing external secret: '+key);
   for(const key of ['sharedDirectory','sopSharedConfig','quicklookSourceBase'])privatePath('/runtime',config[key]);
+  if(config.databaseDirectory!==undefined)privatePath('/runtime',config.databaseDirectory);
   if(Object.hasOwn(config,'preview'))validatePreviewConfig(config,{allowLegacy:allowLegacyPreview});
   return config;
 }
@@ -40,18 +41,18 @@ export function trustedActor(request,config){
 export function containerSpec(id,binding,config,{runtime='/runtime',payload='/app/release/payload',python='/usr/local/bin/python',pathApi=path.posix}={}){
   const localPath=value=>{privatePath('/runtime',value);return pathApi.join(runtime,...value.split('/'));};
   const shared=localPath(config.sharedDirectory);
-  let data=pathApi.join(runtime,'data',id);
-  if(Object.hasOwn(binding,'sharedDataDirectory')){
+  let data=pathApi.join(localPath(config.databaseDirectory??'data'),id);
+  if(!config.databaseDirectory&&Object.hasOwn(binding,'sharedDataDirectory')){
     privatePath('/runtime',binding.sharedDataDirectory);
     data=pathApi.join(shared,...binding.sharedDataDirectory.split('/'));
   }
   const tokens={payload,data,shared,runtime,host:'127.0.0.1',port:String(binding.port),basePath:`/${id}/`,publicOrigin:config.publicOrigin,publicHost:new URL(config.publicOrigin).hostname};
   const args=(binding.arguments??[]).map(v=>expand(v,tokens));
   const env={...process.env,PYTHONDONTWRITEBYTECODE:'1',PYTHONIOENCODING:'utf-8',PYTHONUNBUFFERED:'1'};
-  for(const key of Object.keys(env))if(/^(SOP_.*|ORDER_DASHBOARD_.*|DATA_QUICKLOOK_.*|SALES_FORECAST_.*|SHARED_DATA_ROOT|VEHICLE_CONFIG_.*|PYTHONPATH|PYTHONHOME|PLANHUB_PYTHON_APP_ROOT)$/.test(key))delete env[key];
+  for(const key of Object.keys(env))if(/^(SOP_.*|ORDER_DASHBOARD_.*|DATA_QUICKLOOK_.*|SALES_FORECAST_.*|SHARED_DATA_ROOT|PLANHUB_DATA_ROOT|VEHICLE_CONFIG_.*|PYTHONPATH|PYTHONHOME|PLANHUB_PYTHON_APP_ROOT)$/.test(key))delete env[key];
   for(const [key,value] of Object.entries(binding.environment??{}))env[key]=expand(value,tokens);
   if(id==='sop'){env.SOP_LOCAL_RELEASE_SECRET=config.sopSecret;env.SOP_PYTHON_PATH=python;}
-  if(id==='vehicle-config')env.VEHICLE_CONFIG_PROXY_SECRET=config.vehicleSecret;
+  if(id==='vehicle-config'){env.VEHICLE_CONFIG_PROXY_SECRET=config.vehicleSecret;if(config.sopSharedConfig)env.VEHICLE_CONFIG_SHARED_CONFIG=localPath(config.sopSharedConfig);}
   if(id==='quicklook')env.DATA_QUICKLOOK_SOURCE_BASE=localPath(config.quicklookSourceBase);
   return {args,env,data,shared,healthExpected:Object.fromEntries(Object.entries(binding.healthExpected??{}).map(([k,v])=>[k,typeof v==='string'?expand(v,tokens):v]))};
 }

@@ -130,5 +130,6 @@
         "public_prefix": "{basePath}"
       }
     }
-  }
+  },
+  "dataRoot": "../工作台数据"
 }

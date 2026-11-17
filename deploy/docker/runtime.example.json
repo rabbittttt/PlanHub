@@ -8,5 +8,6 @@
   "vehicleSecret": "",
   "sharedDirectory": "shared",
   "sopSharedConfig": "config/shared_config.py",
-  "quicklookSourceBase": "shared"
+  "quicklookSourceBase": "shared",
+  "databaseDirectory": "database"
 }

@@ -1,0 +1,36 @@
+{
+  "destination": "../../工作台数据",
+  "stores": [
+    {
+      "source": "../../SOP维护/data",
+      "destination": "database/sop"
+    },
+    {
+      "source": "../../订单分析/data/order_dashboard",
+      "destination": "database/orderiq/annotations"
+    },
+    {
+      "source": "../../订单分析/output_file/runtime",
+      "destination": "database/orderiq/runtime"
+    },
+    {
+      "source": "../../销量预测/output_file",
+      "destination": "database/forecast"
+    },
+    {
+      "source": "../../数据速查/output_file",
+      "destination": "database/quicklook"
+    },
+    {
+      "source": "../../共享数据/车型配置",
+      "destination": "database/vehicle-config"
+    }
+  ],
+  "hooks": [
+    {
+      "script": "../../数据速查/scripts/migrate_storage.py",
+      "store": "database/quicklook",
+      "source": "../../数据速查/output_file"
+    }
+  ]
+}

@@ -38,6 +38,14 @@ function resolveSharedDataRoot(root, defaults, local, env) {
   if(typeof value!=='string'||!value.trim()||value.includes('\0'))throw new Error('sharedDataRoot 须为非空目录路径');
   return path.resolve(root,value);
 }
+export async function loadPersistentDataRoot(root,{env=process.env}={}) {
+  const defaults=await json(path.join(root,'integration/apps.json'),{});
+  const local=await json(path.join(root,'config.local/apps.json'),{});
+  const value=env.PLANHUB_DATA_ROOT || local.dataRoot || defaults.dataRoot;
+  if(value===undefined)return null;
+  if(typeof value!=='string'||!value.trim()||value.includes('\0'))throw new Error('dataRoot 须为非空目录路径');
+  return path.resolve(root,value);
+}
 export async function loadSharedDataRoot(root,{env=process.env}={}) {
   const defaults=await json(path.join(root,'integration/apps.json'),{});
   const local=await json(path.join(root,'config.local/apps.json'),{});
@@ -50,6 +58,7 @@ export async function loadAppIntegrations(root,{env=process.env}={}) {
   const ports=readServicePorts(root,{optional:true});
   const sharedDataRoot=resolveSharedDataRoot(root,defaults,local,env);
   if(!defaults.applications||!local.applications)throw new Error('应用接入配置必须包含 applications');
+  const persistentRoot=await loadPersistentDataRoot(root,{env});
   const result={}; const routes=new Set();
   for(const id of new Set([...Object.keys(defaults.applications),...Object.keys(local.applications)])) {
     if(!/^[a-z][a-z0-9-]*$/.test(id)||['sop','api','assets','config','css','js','home','data','scripts','services','deploy','logs','tests'].includes(id))throw new Error('无效或保留的接入 ID: '+id);
@@ -111,6 +120,7 @@ export async function loadAppIntegrations(root,{env=process.env}={}) {
         app.start={...app.start,cwd:path.resolve(root,app.start.cwd),command:path.resolve(root,app.start.command),
           args:app.start.args.map(value=>expandServiceValue(value,bindings)),
           ...(app.start.env===undefined?{}:{env:Object.fromEntries(Object.entries(app.start.env).map(([key,value])=>[key,expandServiceValue(value,bindings)]))})};
+        if(persistentRoot)app.start.env={...app.start.env,PLANHUB_DATA_ROOT:persistentRoot};
         if(sharedDataRoot){
           const serviceEnv={...app.start.env};
           for(const key of Object.keys(serviceEnv))if(key.toUpperCase()==='SHARED_DATA_ROOT'){

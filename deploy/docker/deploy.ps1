@@ -41,14 +41,16 @@ try {
     $config=Get-Content -LiteralPath $configFile -Raw -Encoding UTF8|ConvertFrom-Json
     if($null -ne $config.PSObject.Properties['preview']){throw 'Preview snapshots cannot be used for formal deployment.'}
     foreach($name in @('sharedDirectory','sopSharedConfig','quicklookSourceBase')){$null=Private-Path $config.$name}
+    $databaseDirectory=if($null -ne $config.PSObject.Properties['databaseDirectory']){[string]$config.databaseDirectory}else{'data'}
+    $null=Private-Path $databaseDirectory
     if($Action -eq 'Prepare'){
-        foreach($dir in @('config','data',$config.sharedDirectory)){[void][IO.Directory]::CreateDirectory((Join-Path $runtime $dir))}
+        foreach($dir in @('config',$databaseDirectory,$config.sharedDirectory)){[void][IO.Directory]::CreateDirectory((Join-Path $runtime $dir))}
         $bindings=Get-Content -LiteralPath (Join-Path $package 'bindings.json') -Raw -Encoding UTF8|ConvertFrom-Json
         foreach($id in $manifest.applications){
             $binding=$bindings.PSObject.Properties[$id].Value
             if($binding.type -ne 'service'){continue}
-            $relative='data/'+$id
-            if($null -ne $binding.PSObject.Properties['sharedDataDirectory']){
+            $relative=$databaseDirectory+'/'+$id
+            if($null -eq $config.PSObject.Properties['databaseDirectory'] -and $null -ne $binding.PSObject.Properties['sharedDataDirectory']){
                 $null=Private-Path $binding.sharedDataDirectory
                 $relative=$config.sharedDirectory+'/'+$binding.sharedDataDirectory
             }

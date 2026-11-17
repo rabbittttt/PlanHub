@@ -41,3 +41,7 @@
 线索声量当前接入文件是样例，正式发布必须换成内网真实页面。首页计划周期 Demo 只在页面内存中，不写业务数据。
 
 开发契约见[应用接入手册](docs/child-app-developer-guide.md)，协作边界见 [AGENTS.md](AGENTS.md)，界面基准见[设计规范](design-system/planning-portal/MASTER.md)。
+
+## 集中持久目录
+
+开发版使用同级 `工作台数据/database/应用ID/`，发布版使用包外 `planhub-runtime/database/应用ID/`；旧版迁移、恢复备份与配置规则统一见[部署说明](docs/deployment.md#集中持久目录2026-11-17)。不新增公共数据服务项目。车型配置也使用集中目录，不再以共享 Excel 目录作为新环境的数据库位置。

@@ -11,7 +11,7 @@ import {parseArgs} from 'node:util';
 import {fileURLToPath,pathToFileURL} from 'node:url';
 import {createServer} from './dev-server.mjs';
 import {resolveSopPython} from './sop-python.mjs';
-import {loadAppIntegrations,loadSharedDataRoot} from './app-integrations.mjs';
+import {loadAppIntegrations,loadSharedDataRoot,loadPersistentDataRoot} from './app-integrations.mjs';
 import {startAppServices,serviceHealthy} from './app-services.mjs';
 import {probePortal,workspaceId,configurationId,createPortalInstance,registerPortal,unregisterPortal} from './portal-instance.mjs';
 import {readServicePorts} from './service-ports.mjs';
@@ -100,7 +100,8 @@ export async function resolvePreviewSettings(args=process.argv.slice(2),{root=RO
   } catch(error) {throw new Error(`${error.message}\n请先把必要的 gateway 适配合入独立 SOP 项目；启动器不会回退到另一套业务源码。`);}
   const dataRoot=values.demo?null:(configured(values['data-root']||values['seed-from']||local.dataRoot)||sourceRoot);
   const dataRootExplicit=!values.demo&&Boolean(values['data-root']||values['seed-from']||local.dataRoot);
-  const dataDirectory=dataRoot?(configured(env.SOP_DATA_DIR)||path.join(dataRoot,'data')):null;
+  const persistentRoot=await loadPersistentDataRoot(root,{env});
+  const dataDirectory=dataRoot?(configured(env.SOP_DATA_DIR)||(!dataRootExplicit&&persistentRoot?path.join(persistentRoot,'database','sop'):path.join(dataRoot,'data'))):null;
   if(!values.snapshot&&dataDirectory) {
     const rel=path.relative(path.join(root,'artifacts'),dataDirectory);
     if(rel===''||(!path.isAbsolute(rel)&&rel!=='..'&&!rel.startsWith('..'+path.sep)))throw new Error('日常持久数据不能指向门户 artifacts 临时快照；请配置原 SOP 数据目录。');
