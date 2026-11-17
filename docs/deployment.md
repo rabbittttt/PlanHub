@@ -178,3 +178,20 @@ A 打包时选择是否携带 Windows 运行环境：
 - 正式 Docker 使用容器内固定后台端口，只向宿主发布门户端口；同事无需开放子服务端口。本机测试和正式服务共用默认门户端口 `4173`，切换前先停止当前服务。测试操作人来自 B 的实际 Windows 登录身份，正式认证仍由公司入口负责。
 
 </details>
+
+
+<details>
+<summary>历史恢复备份位置</summary>
+
+以下为开发工作区曾记录的恢复备份，路径相对于门户根目录；不随 Git 或发布包交付。本次文档清理不删除这些备份，旧实施记录可从 Git 历史查阅。
+
+| 内容 | 原记录位置 |
+|---|---|
+| 单一 SOP 源码调整前的源码、Git 与补丁 | `artifacts/single-source-backup-20261102-180733/` |
+| 部门功能调整前 | `artifacts/uniform-access-before-20261103/` |
+| 目录迁移前数据库与迁移时版本 | `artifacts/relocation-live-preview-backup-20261103/`、`artifacts/relocation-copied-versions-20261103/` |
+| 持久化切换前的数据库及相关数据 | `artifacts/sop-before-persistence-usA4Bq/` |
+
+恢复前核对实际文件、来源和数据一致性，不直接覆盖运行中的数据。
+
+</details>
