@@ -8,7 +8,7 @@ import {access,lstat,readdir,writeFile,mkdir,unlink,mkdtemp} from 'node:fs/promi
 import {fileURLToPath,pathToFileURL} from 'node:url';
 import {parseArgs} from 'node:util';
 import {setTimeout as delay} from 'node:timers/promises';
-import {validateDelivery} from './delivery-validation.mjs';
+import {validateDelivery,hashFile} from './delivery-validation.mjs';
 import {checkSnapshotCompatibility} from './preview-compatibility.mjs';
 import {containerSpec,checkService,createContainerPortal,validateRuntime,readJson} from './container-runtime.mjs';
 import {startLocalPreviewPortal,LOCAL_PREVIEW_PORT,LOCAL_PREVIEW_ORIGIN} from './local-preview-gateway.mjs';
@@ -47,14 +47,23 @@ export async function loadNativePlan(packageRoot,runtimeRoot){
   packageRoot=path.resolve(packageRoot);runtimeRoot=path.resolve(runtimeRoot);
   await noPreviewLinks(runtimeRoot);
   const previewRoot=path.join(path.dirname(packageRoot),'planhub-preview');
-  if(path.dirname(runtimeRoot)!==previewRoot||!/^snapshot-[a-f0-9]{32}$/.test(path.basename(runtimeRoot)))throw new Error('Use the snapshot created by preview.cmd.');
+  const direct=runtimeRoot===path.join(path.dirname(packageRoot),'planhub-runtime');
+  if(!direct&&(path.dirname(runtimeRoot)!==previewRoot||!/^snapshot-[a-f0-9]{32}$/.test(path.basename(runtimeRoot))))throw new Error('Use the snapshot created by preview.cmd or its sibling planhub-runtime.');
   if(inside(packageRoot,runtimeRoot)||inside(runtimeRoot,packageRoot))throw new Error('Preview data must be outside the program package.');
   const delivery=await validateDelivery(packageRoot,{requireComplete:true});
   await noTreeLinks(runtimeRoot);
-  const configFile=path.join(runtimeRoot,'config.json');await noPreviewLinks(configFile);
+  const configFile=path.join(runtimeRoot,direct?'native-preview.json':'config.json');await noPreviewLinks(configFile);
   const config=validateRuntime(await readJson(configFile));
-  if(!config.preview)throw new Error('Native preview requires an isolated snapshot configuration.');
-  if(inside(runtimeRoot,path.resolve(config.preview.sourceDirectory))||inside(path.resolve(config.preview.sourceDirectory),runtimeRoot))throw new Error('Source data and preview snapshot must be separate.');
+  if(!config.preview)throw new Error('Use preview.cmd to prepare the local runtime identity.');
+  if(direct){
+    if(config.preview.mode!=='direct'||path.resolve(config.preview.sourceDirectory)!==runtimeRoot)throw new Error('Invalid direct runtime identity.');
+    const sourceFile=path.join(runtimeRoot,'config.json'),source=await readJson(sourceFile);
+    const expected={...source,publicOrigin:LOCAL_PREVIEW_ORIGIN,listenAddress:'127.0.0.1',port:PORT,preview:config.preview};
+    if(config.preview.sourceConfigHash!==(await hashFile(sourceFile)).toUpperCase()||JSON.stringify(Object.entries(expected).sort())!==JSON.stringify(Object.entries(config).sort()))throw new Error('Runtime configuration changed. Stop and restart preview.cmd.');
+    for(const [name,field] of [['deployment-active.json','mayBeRunning'],['deployment-state.json','running']]){
+      try{if((await readJson(path.join(runtimeRoot,name)))[field]!==false)throw new Error('Stop Docker services before direct local startup.');}catch(error){if(error.code!=='ENOENT')throw error;}
+    }
+  }else if(inside(runtimeRoot,path.resolve(config.preview.sourceDirectory))||inside(path.resolve(config.preview.sourceDirectory),runtimeRoot))throw new Error('Source data and preview snapshot must be separate.');
   const windowsRuntime=await resolveWindowsRuntime(delivery);
   const python=windowsRuntime.python;
   if(Object.values(delivery.releases).some(release=>release.manifest.type==='service'))await access(python);
@@ -236,14 +245,15 @@ export async function startNativePreview(packageRoot,runtimeRoot,{settleMs=3000,
       await delay(Math.min(100,Math.max(0,end-Date.now())));
     }while(Date.now()<end);
     if(child.connected)child.disconnect();child.unref();
-    console.log('Local preview: '+LOCAL_PREVIEW_ORIGIN+'/');console.log('Snapshot and logs: '+plan.runtimeRoot);
+    console.log('Local preview: '+LOCAL_PREVIEW_ORIGIN+'/');console.log('Data and logs: '+plan.runtimeRoot);
     return {reused:false,port:plan.port};
   }catch(error){stopService(child);if(child.connected)child.disconnect();child.unref();throw new Error(error.message+' See launcher logs: '+logDirectory);}
 }
 export async function stopNativePreview(runtimeRoot){
   await noPreviewLinks(runtimeRoot);
-  const config=validateRuntime(await readJson(path.join(runtimeRoot,'config.json')),{allowLegacyPreview:true});
-  if(!config.preview)throw new Error('Stop requires a native preview snapshot.');
+  const direct=path.basename(runtimeRoot)==='planhub-runtime';
+  const config=validateRuntime(await readJson(path.join(runtimeRoot,direct?'native-preview.json':'config.json')),{allowLegacyPreview:true});
+  if(!config.preview)throw new Error('Stop requires a native local runtime identity.');
   const port=config.port,identity=await probePortal(port);
   if(!identity){
     try{const owner=await readJson(path.join(runtimeRoot,'native-owner.json'));try{process.kill(owner.pid,0);throw new Error('Preview is still starting or has not finished stopping. Retry shortly.');}catch(error){if(error.code!=='ESRCH')throw error;}}catch(error){if(error.code!=='ENOENT')throw error;}
@@ -255,7 +265,7 @@ export async function stopNativePreview(runtimeRoot){
       if(error.code!=='ENOENT')throw error;
       let exited=identity.pid===process.pid;
       if(!exited){try{process.kill(identity.pid,0);}catch(error){if(error.code==='ESRCH')exited=true;else throw error;}}
-      if(exited){console.log('Local preview and its child services stopped. Snapshot retained.');return;}
+      if(exited){console.log('Local preview and its child services stopped. Data retained.');return;}
     }
     await delay(100);
   }

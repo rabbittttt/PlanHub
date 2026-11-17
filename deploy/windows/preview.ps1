@@ -97,7 +97,44 @@ if(-not(Test-Path -LiteralPath $runtimeHelper -PathType Leaf)){throw 'Runtime re
 . $runtimeHelper
 $node=Resolve-PreviewNode -Delivery $package
 No-Link $node
-if($Action -eq 'Start' -and -not $Snapshot){throw 'Local preview requires the explicit -Snapshot option. Use preview.cmd.'}
+if($RefreshSnapshot -or $UpdateMode -eq 'Refresh' -or $ChooseUpdate){$Snapshot=$true}
+if($Action -eq 'Stop' -and -not(Test-Path -LiteralPath (Join-Path $source 'native-preview.json')) -and (Test-Path -LiteralPath (Join-Path $previewRoot 'active.json'))){$Snapshot=$true}
+if(-not $Snapshot){
+    if($source -ine (Join-Path $parent 'planhub-runtime')){throw 'Direct local use requires the sibling planhub-runtime directory.'}
+    $directLock=$null
+    try{
+        $lockFile=Join-Path $source 'deployment.lock';No-Link $lockFile
+        $directLock=[IO.File]::Open($lockFile,[IO.FileMode]::Open,[IO.FileAccess]::ReadWrite,[IO.FileShare]::None)
+        $derived=Join-Path $source 'native-preview.json';No-Link $derived
+        $marker=Join-Path $source 'native-direct.json';No-Link $marker
+        if($Action -eq 'Stop'){
+            if(-not(Test-Path -LiteralPath $derived) -and (Test-Path -LiteralPath (Join-Path $source 'native-owner.json'))){throw 'Local owner exists but its derived configuration is missing. Restore that configuration before stopping.'}
+            if(Test-Path -LiteralPath $derived){Native 'stop' $source}
+            Save-Json $marker @{schemaVersion=1;mayBeRunning=$false}
+            Write-Host 'Local services stopped. Persistent data retained.'
+            return
+        }
+        foreach($item in @(@('deployment-active.json','mayBeRunning'),@('deployment-state.json','running'))){
+            $file=Join-Path $source $item[0];No-Link $file
+            if(Test-Path -LiteralPath $file){$record=Read-Json $file;if($record.($item[1]) -cne $false){throw 'Stop formal Docker services with stop.cmd before direct local startup.'}}
+        }
+        $sourceFile=Join-Path $source 'config.json';No-Link $sourceFile
+        $settings=Read-Json $sourceFile
+        if($settings.PSObject.Properties['preview']){throw 'Use the original runtime configuration, not a snapshot configuration.'}
+        foreach($name in @('sharedDirectory','sopSharedConfig','quicklookSourceBase')){$null=Source-Path $settings.$name}
+        if(-not(Test-Path -LiteralPath (Source-Path $settings.sharedDirectory) -PathType Container)){throw 'Prepare the shared data directory first.'}
+        if('sop' -in $manifest.applications -and -not(Test-Path -LiteralPath (Source-Path $settings.sopSharedConfig) -PathType Leaf)){throw 'Provide the real shared_config.py before startup.'}
+        if(Test-Path -LiteralPath $derived){Native 'stop' $source}
+        $settings.publicOrigin='http://127.0.0.1:4173';$settings.listenAddress='127.0.0.1';$settings.port=4173
+        $settings|Add-Member -NotePropertyName preview -NotePropertyValue ([pscustomobject]@{schemaVersion=1;mode='direct';user=(Actor);sourceDirectory=$source;sourceConfigHash=(Get-FileHash -LiteralPath $sourceFile -Algorithm SHA256).Hash;createdAt=[DateTime]::UtcNow.ToString('o')})
+        Save-Json $derived $settings
+        Save-Json $marker @{schemaVersion=1;mayBeRunning=$true}
+        Native 'start' $source
+        Write-Host ('Reading and saving live data in: '+$source)
+        Write-Host 'Open http://127.0.0.1:4173/. Shared updates follow each application refresh cycle.'
+        return
+    }finally{if($null -ne $directLock){$directLock.Dispose()}}
+}
 if($Action -eq 'Stop' -and -not(Test-Path -LiteralPath $previewRoot -PathType Container)){Write-Host 'No local preview has been prepared.';return}
 [void][IO.Directory]::CreateDirectory($previewRoot)
 $lock=$null;$sourceLock=$null
@@ -156,6 +193,8 @@ try{
         No-Link (Join-Path $source 'deployment.lock')
         try{$sourceLock=[IO.File]::Open((Join-Path $source 'deployment.lock'),[IO.FileMode]::Open,[IO.FileAccess]::Read,[IO.FileShare]::None)}catch{throw 'Source runtime is busy or not prepared. Complete step 3 Prepare and wait for any deployment to finish.'}
         if((Get-FileHash -LiteralPath $sourceConfig).Hash -cne $sourceHash){throw 'Source configuration changed during snapshot preparation. Retry preview.cmd.'}
+        $directMarker=Join-Path $source 'native-direct.json';No-Link $directMarker
+        if(Test-Path -LiteralPath $directMarker){if((Read-Json $directMarker).mayBeRunning -cne $false){throw 'Stop direct local services before copying a snapshot.'}}
         $activeMarker=Join-Path $source 'deployment-active.json';No-Link $activeMarker
         if(Test-Path -LiteralPath $activeMarker){
             $active=Read-Json $activeMarker

@@ -47,7 +47,15 @@ Put (Join-Path $source 'data/sop/sop.sqlite3') 'fixture saved plan bytes'
 $entry=Join-Path $package 'preview.ps1'
 function docker {throw 'Native preview must not invoke Docker.'}
 try{
-    Reject {& $entry -Action Start}
+    $originalConfig=(Get-FileHash -LiteralPath (Join-Path $source 'config.json')).Hash
+    & $entry -Action Start
+    Check ((Read (Join-Path $source 'native-preview.json')).preview.mode -eq 'direct') 'Default startup must use direct persistent data'
+    Check (-not(Test-Path -LiteralPath (Join-Path $scratch 'planhub-preview'))) 'Direct startup must not create a snapshot'
+    Check ((Get-FileHash -LiteralPath (Join-Path $source 'config.json')).Hash -eq $originalConfig) 'Direct startup changed source configuration'
+    Reject {& $entry -Action Start -Snapshot}
+    & $entry -Action Stop
+    Check ((Read (Join-Path $source 'native-direct.json')).mayBeRunning -eq $false) 'Direct stop must release Docker exclusion'
+    Remove-Item -LiteralPath (Join-Path $source 'native-preview.json')
     Remove-Item -LiteralPath (Join-Path $source 'deployment.lock')
     Reject {& $entry -Action Start -Snapshot}
     Check (-not(Test-Path -LiteralPath (Join-Path $source 'deployment.lock'))) 'Preview created a missing source lock'

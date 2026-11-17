@@ -60,6 +60,11 @@ try{
     Check ($dockerTestState.calls.Count -eq 0) 'Preparing B data must not require Docker'
     Reject {& $entry -Action Start}
     $config.publicOrigin='https://portal.internal';Save $configFile $config
+    Save (Join-Path $runtime 'native-direct.json') @{schemaVersion=1;mayBeRunning=$true}
+    $dockerTestState.calls.Clear()
+    Reject {& $entry -Action Start}
+    Check ($dockerTestState.calls.Count -eq 0) 'Docker must not be called while direct local services may be running'
+    Save (Join-Path $runtime 'native-direct.json') @{schemaVersion=1;mayBeRunning=$false}
     Reject {& $entry -Action Start}
     Check (($dockerTestState.calls|Where-Object {$_ -match ' stop |up -d'}).Count -eq 0) 'Missing build record touched services'
     $dockerTestState.calls.Clear();& $builder

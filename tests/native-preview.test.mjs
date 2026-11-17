@@ -76,6 +76,35 @@ function fixtureSpawner(f,seen=[]){
     const port=Number(args[args.indexOf('--port')+1]),child=spawnService(process.execPath,[f.fake,String(port)],options);seen.push({command,args,options,port,pid:child.pid});return child;
   };
 }
+
+test('direct local services read changing shared files and preserve external configuration and data',async t=>{
+  const f=await fixture(t);f.runtimeRoot=path.join(f.root,'planhub-runtime');
+  await stopOnExit(t,f);
+  const source={...f.config,publicOrigin:'https://company.example.invalid'};delete source.preview;
+  await put(path.join(f.runtimeRoot,'config.json'),source);
+  const before=await readFile(path.join(f.runtimeRoot,'config.json'));
+  const derived={...source,publicOrigin:ORIGIN,preview:{...f.config.preview,mode:'direct',sourceConfigHash:sha(before).toUpperCase()}};
+  await put(path.join(f.runtimeRoot,'native-preview.json'),derived);
+  const input=path.join(f.runtimeRoot,'shared/input.txt'),saved=path.join(f.runtimeRoot,'data/vehicle-config/saved.txt');
+  await put(input,'before');await put(saved,'persistent');
+  const plan=await loadNativePlan(f.packageRoot,f.runtimeRoot);
+  await put(f.fake,"import http from 'node:http';import fs from 'node:fs';http.createServer((req,res)=>{res.setHeader('Content-Type','application/json');res.end(JSON.stringify(req.url==='/healthz'?{ok:true,app:'vehicle-config'}:{value:fs.readFileSync(process.argv[3],'utf8')}));}).listen(Number(process.argv[2]),'127.0.0.1');");
+  await runNativePreview(plan,{startService:(command,args,options)=>{
+    assert.ok(args.includes(path.join(f.runtimeRoot,'data/vehicle-config')));
+    return spawnService(process.execPath,[f.fake,args[args.indexOf('--port')+1],input],options);
+  },serviceTimeoutMs:5000});
+  assert.equal((await (await fetch(ORIGIN+'/vehicle-config/input')).json()).value,'before');
+  await put(input,'after');
+  assert.equal((await (await fetch(ORIGIN+'/vehicle-config/input')).json()).value,'after');
+  await stopNativePreview(f.runtimeRoot);
+  assert.deepEqual(await readFile(path.join(f.runtimeRoot,'config.json')),before);
+  assert.equal(await readFile(saved,'utf8'),'persistent');
+  await put(path.join(f.runtimeRoot,'deployment-active.json'),{mayBeRunning:true});
+  await assert.rejects(loadNativePlan(f.packageRoot,f.runtimeRoot),/Stop Docker/);
+  await put(path.join(f.runtimeRoot,'deployment-active.json'),{mayBeRunning:false});
+  await put(path.join(f.runtimeRoot,'config.json'),{...source,sharedDirectory:'changed'});
+  await assert.rejects(loadNativePlan(f.packageRoot,f.runtimeRoot),/configuration changed/);
+});
 async function stopOnExit(t,f){t.after(async()=>{const identity=await probePortal(PORT);if(identity&&identity.workspaceId===await workspaceId(f.runtimeRoot))await stopNativePreview(f.runtimeRoot);});}
 
 test('native preview uses the registered child default port without a separate preview preference',async t=>{

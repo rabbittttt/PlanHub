@@ -26,6 +26,11 @@ $lock=$null
 try {
     $lockFile=Join-Path $runtime 'deployment.lock';Assert-DeliveryNoLink $lockFile
     try{$lock=[IO.File]::Open($lockFile,[IO.FileMode]::OpenOrCreate,[IO.FileAccess]::ReadWrite,[IO.FileShare]::None)}catch{throw 'Another command is using this runtime. Wait for it to finish.'}
+    $nativeMarker=Join-Path $runtime 'native-direct.json';Assert-DeliveryNoLink $nativeMarker
+    if($Action -eq 'Start' -and (Test-Path -LiteralPath $nativeMarker)){
+        $native=Get-Content -LiteralPath $nativeMarker -Raw -Encoding UTF8|ConvertFrom-Json
+        if($native.mayBeRunning -cne $false){throw 'Run stop-preview.cmd before starting Docker against the same data.'}
+    }
     $configFile=Join-Path $runtime 'config.json';Assert-DeliveryNoLink $configFile
     if(-not(Test-Path -LiteralPath $configFile)){
         if($Action -ne 'Prepare'){throw 'Run prepare.cmd and supply the real rules/data first.'}
