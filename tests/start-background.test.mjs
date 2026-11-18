@@ -142,10 +142,7 @@ async function fixture(t){
 }
 
 async function launchedLogs(root){
-  const artifacts=path.join(root,'artifacts');
-  const directories=(await readdir(artifacts)).filter(name=>name.startsWith('portal-launch-'));
-  assert.equal(directories.length,1,'A single launch must retain its own log directory');
-  const logDirectory=path.join(artifacts,directories[0]);
+  const logDirectory=path.join(root,'artifacts','logs','launcher');
   return {logDirectory,stdout:await readFile(path.join(logDirectory,'stdout.log'),'utf8'),stderr:await readFile(path.join(logDirectory,'stderr.log'),'utf8')};
 }
 
@@ -176,8 +173,7 @@ await writeFile(${JSON.stringify(output)},JSON.stringify(result));
   assert.notEqual(health.pid,launcher.pid);
   assert.equal(health.workspaceId,await workspaceId(f.root));
   assert.equal((await fixtureResponse(port)).logFiles,true,'Worker stdout and stderr must be real files, not inherited terminal handles');
-  assert.equal(path.dirname(result.logDirectory),path.join(f.root,'artifacts'));
-  assert.ok(path.basename(result.logDirectory).startsWith('portal-launch-'));
+  assert.equal(result.logDirectory,path.join(f.root,'artifacts','logs','launcher'));
   assert.match(await readFile(path.join(result.logDirectory,'stdout.log'),'utf8'),/fixture-worker-start/);
   assert.match(await readFile(path.join(result.logDirectory,'stderr.log'),'utf8'),/fixture-stderr warning/);
   await stopPortal(f.root,port);

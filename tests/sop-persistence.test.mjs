@@ -78,11 +78,15 @@ test('default portal saves through the original SOP service and survives a full 
   const state=await fetch(instance.origin+'/sop/api/state').then(r=>r.json());
   assert.equal(state.plans.find(p=>p.product_id==='persistent-fixture'&&p.month===month)?.sop,246);
   assert.deepEqual(await readFile(workbook),archivedWorkbook,'Restart must not rewrite the archived workbook');
-  for(const folder of (await readdir(path.join(root,'artifacts'))).filter(name=>name!=='portal-instances')){
+  const logs=path.join(root,'artifacts','logs','sop');
+  assert.deepEqual((await readdir(logs)).sort(),['service.log','stderr.log','stdout.log']);
+  assert.equal((await readFile(path.join(logs,'stdout.log'),'utf8')).match(/Starting process/g).length,2);
+  assert.ok(!(await readdir(path.join(dataRoot,'data'))).includes('service.err.log'));
+  for(const folder of (await readdir(path.join(root,'artifacts'))).filter(name=>!['logs','portal-instances'].includes(name))){
    assert.ok(folder.startsWith('sop-runtime-'),'Default mode must not create data snapshots');
    const gateway=JSON.parse(await readFile(path.join(root,'artifacts',folder,'config/gateway.json'),'utf8'));
    assert.equal(gateway.data_dir,path.join(dataRoot,'data'));assert.equal(gateway.plan_file,workbook);
-   assert.deepEqual((await readdir(path.join(root,'artifacts',folder))).sort(),['config','logs']);
+   assert.deepEqual((await readdir(path.join(root,'artifacts',folder))).sort(),['config']);
   }
  }finally{await close(instance.server);}
 });

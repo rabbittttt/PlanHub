@@ -47,7 +47,9 @@ export async function startAppServices(applications,{root=ROOT,env=process.env}=
       if(!await portFree(app))throw new Error('端口已被独立进程占用；本应用由门户管理，不自动复用。请按原启动方式停止旧服务后重启门户；不会终止未知进程');
       await access(app.start.command);await access(app.start.cwd);
       const artifacts=path.join(root,'artifacts');await mkdir(artifacts,{recursive:true});
-      const logDirectory=await mkdtemp(path.join(artifacts,'service-'+id+'-'));
+      const logDirectory=['orderiq','forecast'].includes(id)
+        ? await mkdtemp(path.join(artifacts,'service-'+id+'-'))
+        : path.join(artifacts,'logs',id);
       const child=spawnService(app.start.command,app.start.args,{cwd:app.start.cwd,env:serviceEnvironment(app.start,env),logDirectory});
       children.push(child);
       let failed=false;child.on('error',()=>{failed=true;unavailable();});child.on('exit',()=>{failed=true;unavailable();});

@@ -53,6 +53,11 @@ async function pythonCheck(command,packages,run){
   }catch{return {ok:false,reason:'PYTHON_UNAVAILABLE'};}
 }
 async function latestLog(root,id){
+  const current=path.join(root,'artifacts','logs',id,'stderr.log');
+  try{
+    const info=await stat(current);
+    if(info.isFile())return {path:path.relative(root,current),modifiedAt:info.mtime.toISOString()};
+  }catch{}
   try{
     const entries=await readdir(path.join(root,'artifacts'),{withFileTypes:true});const logs=[];
     for(const entry of entries)if(entry.isDirectory()&&entry.name.startsWith('service-'+id+'-')){
@@ -113,7 +118,7 @@ export async function collectDiagnostics({root=ROOT,port,fetcher=fetch,run=execu
           }
         }
         result.latestLog=await latestLog(root,app.id);result.hint='检查原项目、配置的解释器及其 requirements；SOP 使用的解释器不一定与本服务相同。日志路径仅供定位，不据旧日志断定当前故障。';
-      }else if(app.id==='sop')result.type='sop';
+      }else if(app.id==='sop'){result.type='sop';result.latestLog=await latestLog(root,'sop');}
       else result.issues.push('没有配置实际挂载或代理');
     }catch(error){result.issues.push('此应用检查未完成：'+(error.code||'CHECK_FAILED'));}
   }

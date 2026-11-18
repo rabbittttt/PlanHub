@@ -2,11 +2,13 @@ import {createPortalInstance,probePortal} from '../scripts/portal-instance.mjs';
 import {createServer} from '../scripts/dev-server.mjs';
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import {mkdtemp,readFile,realpath,rm} from 'node:fs/promises';
+import {mkdtemp,readFile,realpath,rm,writeFile,stat} from 'node:fs/promises';
 import path from 'node:path';
 import os from 'node:os';
 import net from 'node:net';
-import {spawnService,stopService} from '../scripts/service-process.mjs';
+import {PassThrough,Readable} from 'node:stream';
+import {finished} from 'node:stream/promises';
+import {mirrorContainerLog,spawnService,stopService} from '../scripts/service-process.mjs';
 import {startAppServices} from '../scripts/app-services.mjs';
 
 async function fixture(t){
@@ -15,6 +17,18 @@ async function fixture(t){
 }
 async function port(){const probe=net.createServer();await new Promise(r=>probe.listen(0,'127.0.0.1',r));const value=probe.address().port;await new Promise(r=>probe.close(r));return value;}
 async function healthy(url){for(let i=0;i<60;i++){try{const res=await fetch(url,{signal:AbortSignal.timeout(300)});if(res.ok)return await res.json();await res.arrayBuffer();}catch{}await new Promise(r=>setTimeout(r,50));}throw Error('Fixture service did not respond');}
+
+test('container output reaches Compose and the rotated runtime log',async t=>{
+ const root=await fixture(t),filename=path.join(root,'stdout.log');
+ await writeFile(filename,Buffer.alloc(10*1024*1024));
+ const output=new PassThrough();
+ let consoleText='';output.on('data',chunk=>{consoleText+=chunk;});
+ const file=mirrorContainerLog(Readable.from(['first',' second']),output,filename);
+ await finished(file);
+ assert.equal(consoleText,'first second');
+ assert.match(await readFile(filename,'utf8'),/Starting process\nfirst second$/);
+ assert.equal((await stat(filename+'.1')).size,10*1024*1024);
+});
 
 test('large backend logs go directly to files and requests remain responsive',async t=>{
  const root=await fixture(t),listenPort=await port();
@@ -47,6 +61,7 @@ test('service launcher passes per-application environment without changing its p
  const stop=await startAppServices({fixture:{type:'proxy',target:'http://127.0.0.1:'+listenPort,healthPath:'/healthz',healthKeys:['app'],start:{cwd:root,command:process.execPath,args:['-e',code],env:{APP_PUBLIC_PREFIX:'/fixture/',APP_DATA_DIR:'../persistent'}}}},{root,env:inherited});
  try{
   const response=await healthy('http://127.0.0.1:'+listenPort+'/healthz');
+  assert.ok((await stat(path.join(root,'artifacts','logs','fixture','stderr.log'))).isFile());
   assert.equal(response.prefix,'/fixture/');assert.equal(response.data,'../persistent');
   assert.equal(inherited.APP_PUBLIC_PREFIX,'/previous/');
  }finally{stop();await new Promise(r=>setTimeout(r,200));}

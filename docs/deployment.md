@@ -162,6 +162,10 @@ A 打包时选择是否携带 Windows 运行环境：
 
 ## 常用操作与排错
 
+开发版从门户目录的 `artifacts/logs/` 查日志。后台门户启动信息在 `launcher/`，SOP 维护、数据速查和配置管理分别在 `sop/`、`quicklook/`、`vehicle-config/`。各目录内的 `stdout.log` 和 `stderr.log` 按启动时间追加，启动时达到 10 MiB 的文件轮转为 `.1`。SOP 另写 `service.log`，运行中按 10 MiB 轮转，保留三份历史文件。
+
+部署包的 Windows 本机运行使用包外 `planhub-runtime/logs/` 下的相同目录。显式快照模式写入快照自己的 `logs/`。Docker 的上述三个业务服务同时输出到 Compose 和包外应用日志目录，容器启动或镜像错误可用下表的 Logs 命令查看。订单分析和销量预测沿用原有应用日志位置。
+
 | 要做什么 | 操作 |
 |---|---|
 | 本机运行 | 全部应用包（`0` 或 `8`）的 `preview.cmd` / `stop-preview.cmd`；直接读写 `planhub-runtime/` |

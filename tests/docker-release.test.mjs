@@ -122,7 +122,7 @@ test('container contracts keep original loopback, public prefix, external paths 
   assert.throws(()=>validateRuntime({...config,sharedDirectory:'../private'}),/relative paths/);
   assert.throws(()=>validateRuntime({...config,publicOrigin:'https://portal.example.invalid'}),/publicOrigin/);
   const order=containerSpec('orderiq',bindings.orderiq,config);assert.ok(order.args.includes('/runtime/data/orderiq/runtime'));assert.ok(order.args.includes('127.0.0.1'));
-  const sop=containerSpec('sop',bindings.sop,config);assert.equal(sop.env.SOP_LOCAL_RELEASE_SECRET,config.sopSecret);
+  const sop=containerSpec('sop',bindings.sop,config);assert.equal(sop.env.SOP_LOCAL_RELEASE_SECRET,config.sopSecret);assert.equal(sop.env.SOP_LOG_DIR,'/runtime/logs/sop');
   const vehicle=containerSpec('vehicle-config',bindings['vehicle-config'],config);assert.ok(vehicle.args.includes('--require-proxy-identity'));assert.equal(vehicle.env.VEHICLE_CONFIG_PROXY_SECRET,config.vehicleSecret);
   assert.equal(vehicle.data,'/runtime/shared/车型配置');
   assert.equal(vehicle.args[vehicle.args.indexOf('--data-dir')+1],vehicle.data);

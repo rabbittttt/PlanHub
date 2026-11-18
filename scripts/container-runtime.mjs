@@ -3,6 +3,7 @@ import path from 'node:path';
 import crypto from 'node:crypto';
 import http from 'node:http';
 import {readFile,writeFile,mkdir,access} from 'node:fs/promises';
+import {mirrorContainerLog} from './service-process.mjs';
 import {spawn} from 'node:child_process';
 import {pathToFileURL} from 'node:url';
 import {createServer} from './dev-server.mjs';
@@ -51,7 +52,7 @@ export function containerSpec(id,binding,config,{runtime='/runtime',payload='/ap
   const env={...process.env,PYTHONDONTWRITEBYTECODE:'1',PYTHONIOENCODING:'utf-8',PYTHONUNBUFFERED:'1'};
   for(const key of Object.keys(env))if(/^(SOP_.*|ORDER_DASHBOARD_.*|DATA_QUICKLOOK_.*|SALES_FORECAST_.*|SHARED_DATA_ROOT|PLANHUB_DATA_ROOT|VEHICLE_CONFIG_.*|PYTHONPATH|PYTHONHOME|PLANHUB_PYTHON_APP_ROOT)$/.test(key))delete env[key];
   for(const [key,value] of Object.entries(binding.environment??{}))env[key]=expand(value,tokens);
-  if(id==='sop'){env.SOP_LOCAL_RELEASE_SECRET=config.sopSecret;env.SOP_PYTHON_PATH=python;}
+  if(id==='sop'){env.SOP_LOCAL_RELEASE_SECRET=config.sopSecret;env.SOP_PYTHON_PATH=python;env.SOP_LOG_DIR=pathApi.join(runtime,'logs','sop');}
   if(id==='vehicle-config'){env.VEHICLE_CONFIG_PROXY_SECRET=config.vehicleSecret;if(config.sopSharedConfig)env.VEHICLE_CONFIG_SHARED_CONFIG=localPath(config.sopSharedConfig);}
   if(id==='quicklook')env.DATA_QUICKLOOK_SOURCE_BASE=localPath(config.quicklookSourceBase);
   return {args,env,data,shared,healthExpected:Object.fromEntries(Object.entries(binding.healthExpected??{}).map(([k,v])=>[k,typeof v==='string'?expand(v,tokens):v]))};
@@ -109,7 +110,15 @@ export async function runContainer(id,{appRoot='/app',runtime='/runtime'}={}){
     await mkdir(path.join(runtime,'config'),{recursive:true});
     await writeFile(path.join(runtime,'config/sop-local.json'),JSON.stringify({base_path:'/sop',public_origin:config.publicOrigin,proxy_secret_env:'SOP_LOCAL_RELEASE_SECRET',allow_writes:true,data_dir:spec.data,source_dir:path.join(spec.shared,'订单汇总'),shared_config:rules,plan_file:path.join(spec.shared,'SOP计划/SOP计划维护.xlsx')}));
   }
-  const child=spawn('/usr/local/bin/python',spec.args,{cwd:release.payload,env:spec.env,stdio:'inherit'});
+  const capture=!['orderiq','forecast'].includes(id);
+  const child=spawn('/usr/local/bin/python',spec.args,{cwd:release.payload,env:spec.env,stdio:capture?['ignore','pipe','pipe']:'inherit'});
+  if(capture){
+    const directory=path.join(runtime,'logs',id);
+    try{
+      mirrorContainerLog(child.stdout,process.stdout,path.join(directory,'stdout.log'));
+      mirrorContainerLog(child.stderr,process.stderr,path.join(directory,'stderr.log'));
+    }catch(error){child.kill();throw error;}
+  }
   child.once('error',error=>{console.error(error.message);process.exitCode=1;});
   child.once('exit',(code,signal)=>{process.exitCode=signal?1:(code??1);});
   for(const signal of ['SIGTERM','SIGINT'])process.once(signal,()=>child.kill(signal));

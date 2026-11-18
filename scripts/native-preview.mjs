@@ -2,9 +2,8 @@
 import path from 'node:path';
 import net from 'node:net';
 import crypto from 'node:crypto';
-import {spawn,spawnSync} from 'node:child_process';
-import {openSync,closeSync} from 'node:fs';
-import {access,lstat,readdir,writeFile,mkdir,unlink,mkdtemp} from 'node:fs/promises';
+import {spawnSync} from 'node:child_process';
+import {access,lstat,readdir,writeFile,mkdir,unlink} from 'node:fs/promises';
 import {fileURLToPath,pathToFileURL} from 'node:url';
 import {parseArgs} from 'node:util';
 import {setTimeout as delay} from 'node:timers/promises';
@@ -226,10 +225,12 @@ export async function startNativePreview(packageRoot,runtimeRoot,{settleMs=3000,
   const plan=await loadNativePlan(packageRoot,runtimeRoot);
   if(await existing(plan)){console.log('Local preview is already running: '+LOCAL_PREVIEW_ORIGIN+'/');return {reused:true,port:plan.port};}
   await freePreviewPort(plan.port);
-  const logs=path.join(plan.runtimeRoot,'logs');await noPreviewLinks(logs);await mkdir(logs,{recursive:true});
-  const logDirectory=await mkdtemp(path.join(logs,'launcher-'));
-  const out=openSync(path.join(logDirectory,'stdout.log'),'a'),err=openSync(path.join(logDirectory,'stderr.log'),'a');let child;
-  try{child=spawn(plan.manifest.runtimeMode==='reuse'?plan.node:process.execPath,[SELF,'worker','--package',plan.packageRoot,'--runtime',plan.runtimeRoot],{cwd:plan.packageRoot,detached:true,windowsHide:true,stdio:['ignore',out,err,'ipc']});}finally{closeSync(out);closeSync(err);}
+  const logDirectory=path.join(plan.runtimeRoot,'logs','launcher');
+  await noPreviewLinks(logDirectory);
+  for(const name of ['stdout.log','stderr.log'])await noPreviewLinks(path.join(logDirectory,name));
+  const child=spawnService(plan.manifest.runtimeMode==='reuse'?plan.node:process.execPath,
+    [SELF,'worker','--package',plan.packageRoot,'--runtime',plan.runtimeRoot],
+    {cwd:plan.packageRoot,detached:true,ipc:true,logDirectory});
   let exited=false;child.once('exit',()=>{exited=true;});
   try{
     const message=await new Promise((resolve,reject)=>{

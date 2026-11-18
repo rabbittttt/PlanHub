@@ -37,6 +37,23 @@ test('fresh-clone gaps are reported independently without stopping at the first 
  assert.doesNotMatch(JSON.stringify(report),/DO_NOT_COPY_THIS_TOKEN|PRIVATE BUSINESS CONTENT/);
 });
 
+test('diagnostics locate current service logs and retain the legacy fallback',async t=>{
+ const {root}=await fixture(t);
+ const oldLog=path.join('artifacts','service-quicklook-old','stderr.log');
+ const currentLog=id=>path.join('artifacts','logs',id,'stderr.log');
+ async function createLog(relative){
+  const filename=path.join(root,relative);
+  await mkdir(path.dirname(filename),{recursive:true});await writeFile(filename,'fixture');
+ }
+ const fetcher=await transport(root);
+ await createLog(oldLog);
+ const old=await collectDiagnostics({root,fetcher});
+ assert.equal(old.applications.find(app=>app.id==='quicklook').latestLog.path,oldLog);
+ for(const id of ['quicklook','sop'])await createLog(currentLog(id));
+ const report=await collectDiagnostics({root,fetcher});
+ for(const id of ['quicklook','sop'])assert.equal(report.applications.find(app=>app.id===id).latestLog.path,currentLog(id));
+});
+
 test('local path overrides and declared Python dependency gaps are diagnosed without importing app code',async t=>{
  const {base,root}=await fixture(t),source=path.join(base,'renamed-query');
  await mkdir(source);await mkdir(path.join(base,'.venv'));await writeFile(path.join(base,'.venv/python.exe'),'fixture');

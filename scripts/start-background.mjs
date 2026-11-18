@@ -1,7 +1,4 @@
 // The double-click launcher owns a hidden, detached portal process, never its console.
-import {spawn} from 'node:child_process';
-import {openSync,closeSync} from 'node:fs';
-import {mkdir,mkdtemp,readFile} from 'node:fs/promises';
 import path from 'node:path';
 import {fileURLToPath,pathToFileURL} from 'node:url';
 import {setTimeout as delay} from 'node:timers/promises';
@@ -9,7 +6,7 @@ import {startLocal} from './start-local.mjs';
 import {previewOptions} from './dev-sop.mjs';
 import {loadAppIntegrations} from './app-integrations.mjs';
 import {probePortal,workspaceId} from './portal-instance.mjs';
-import {stopService} from './service-process.mjs';
+import {spawnService,stopService} from './service-process.mjs';
 
 const SELF=fileURLToPath(import.meta.url),ROOT=path.resolve(path.dirname(SELF),'..');
 
@@ -45,18 +42,12 @@ export async function startBackground(args=[],{
       .reduce((sum,app)=>sum+60*((app.healthTimeoutMs??5000)+250),0);
   }
   if(!Number.isFinite(timeoutMs)||timeoutMs<=0||!Number.isFinite(settleMs)||settleMs<0)throw new Error('后台启动等待时间无效。');
-  const artifacts=path.join(root,'artifacts');await mkdir(artifacts,{recursive:true});
-  const logDirectory=await mkdtemp(path.join(artifacts,'portal-launch-'));
-  const descriptors=[];
+  const logDirectory=path.join(root,'artifacts','logs','launcher');
   let child,exited=false,spawnError;
   try {
-    try {
-      descriptors.push(openSync(path.join(logDirectory,'stdout.log'),'a'));
-      descriptors.push(openSync(path.join(logDirectory,'stderr.log'),'a'));
-      child=spawn(process.execPath,[workerPath,'--background-worker',...args],{
-        cwd:root,env,detached:true,windowsHide:true,stdio:['ignore',...descriptors,'ipc']
-      });
-    } finally {for(const fd of descriptors)closeSync(fd);}
+    child=spawnService(process.execPath,[workerPath,'--background-worker',...args],{
+      cwd:root,env,detached:true,ipc:true,logDirectory
+    });
     child.on('error',error=>{spawnError=error;});
     child.once('exit',()=>{exited=true;});
     const ready=await new Promise((resolve,reject)=>{
@@ -115,8 +106,7 @@ if(process.argv[1]&&import.meta.url===pathToFileURL(path.resolve(process.argv[1]
     console.error('后台启动未完成：'+error.message);
     if(error.logDirectory){
       console.error('启动日志：'+error.logDirectory);
-      const stderr=await readFile(path.join(error.logDirectory,'stderr.log'),'utf8').catch(()=>'');
-      if(stderr.trim())console.error(stderr.slice(-12000).trim());
+      console.error('详细错误：'+path.join(error.logDirectory,'stderr.log'));
     }
     process.exitCode=1;
   }
