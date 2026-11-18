@@ -57,11 +57,11 @@ test('Windows shutdown also stops a launcher-owned grandchild listener',{skip:pr
 test('service launcher passes per-application environment without changing its parent environment',async t=>{
  const root=await fixture(t),listenPort=await port();
  const code="require('http').createServer((q,r)=>{r.setHeader('Content-Type','application/json');r.end(JSON.stringify({app:'fixture',prefix:process.env.APP_PUBLIC_PREFIX,data:process.env.APP_DATA_DIR}));}).listen("+listenPort+",'127.0.0.1');";
- const inherited={...process.env,APP_PUBLIC_PREFIX:'/previous/'};
+ const inherited={...process.env,PLANHUB_DATA_ROOT:'state',APP_PUBLIC_PREFIX:'/previous/'};
  const stop=await startAppServices({fixture:{type:'proxy',target:'http://127.0.0.1:'+listenPort,healthPath:'/healthz',healthKeys:['app'],start:{cwd:root,command:process.execPath,args:['-e',code],env:{APP_PUBLIC_PREFIX:'/fixture/',APP_DATA_DIR:'../persistent'}}}},{root,env:inherited});
  try{
   const response=await healthy('http://127.0.0.1:'+listenPort+'/healthz');
-  assert.ok((await stat(path.join(root,'artifacts','logs','fixture','stderr.log'))).isFile());
+  assert.ok((await stat(path.join(root,'state','logs','fixture','stderr.log'))).isFile());
   assert.equal(response.prefix,'/fixture/');assert.equal(response.data,'../persistent');
   assert.equal(inherited.APP_PUBLIC_PREFIX,'/previous/');
  }finally{stop();await new Promise(r=>setTimeout(r,200));}

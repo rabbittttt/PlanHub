@@ -136,13 +136,13 @@ async function fixture(t){
     track(port,directory=root){listeners.push({root:directory,port});},
     async otherRoot(){const other=path.join(temporary,'其他 工作区');await mkdir(other);roots.push(other);return other;},
     options(mode='normal',extra={}){
-      return {root,workerPath,env:{...process.env,PORTAL_BG_TEST_ROOT:root,PORTAL_BG_TEST_MODE:mode},timeoutMs:6000,settleMs:180,...extra};
+      return {root,workerPath,env:{...process.env,PLANHUB_DATA_ROOT:'../工作台数据',PORTAL_BG_TEST_ROOT:root,PORTAL_BG_TEST_MODE:mode},timeoutMs:6000,settleMs:180,...extra};
     }
   };
 }
 
 async function launchedLogs(root){
-  const logDirectory=path.join(root,'artifacts','logs','launcher');
+  const logDirectory=path.resolve(root,'../工作台数据/logs/launcher');
   return {logDirectory,stdout:await readFile(path.join(logDirectory,'stdout.log'),'utf8'),stderr:await readFile(path.join(logDirectory,'stderr.log'),'utf8')};
 }
 
@@ -173,7 +173,7 @@ await writeFile(${JSON.stringify(output)},JSON.stringify(result));
   assert.notEqual(health.pid,launcher.pid);
   assert.equal(health.workspaceId,await workspaceId(f.root));
   assert.equal((await fixtureResponse(port)).logFiles,true,'Worker stdout and stderr must be real files, not inherited terminal handles');
-  assert.equal(result.logDirectory,path.join(f.root,'artifacts','logs','launcher'));
+  assert.equal(result.logDirectory,path.join(f.temporary,'工作台数据','logs','launcher'));
   assert.match(await readFile(path.join(result.logDirectory,'stdout.log'),'utf8'),/fixture-worker-start/);
   assert.match(await readFile(path.join(result.logDirectory,'stderr.log'),'utf8'),/fixture-stderr warning/);
   await stopPortal(f.root,port);

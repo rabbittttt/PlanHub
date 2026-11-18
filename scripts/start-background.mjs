@@ -4,7 +4,7 @@ import {fileURLToPath,pathToFileURL} from 'node:url';
 import {setTimeout as delay} from 'node:timers/promises';
 import {startLocal} from './start-local.mjs';
 import {previewOptions} from './dev-sop.mjs';
-import {loadAppIntegrations} from './app-integrations.mjs';
+import {loadAppIntegrations,loadPersistentDataRoot,developmentLogRoot} from './app-integrations.mjs';
 import {probePortal,workspaceId} from './portal-instance.mjs';
 import {spawnService,stopService} from './service-process.mjs';
 
@@ -37,12 +37,13 @@ export async function startBackground(args=[],{
   if(options.help){await startLocal(args,{root,env});return {help:true};}
   if(timeoutMs===undefined){
     // Cover existing sequential health checks rather than timing out slow imports early.
-    const applications=await loadAppIntegrations(root);
+    const applications=await loadAppIntegrations(root,{env});
     timeoutMs=180000+Object.values(applications).filter(app=>app.type==='proxy')
       .reduce((sum,app)=>sum+60*((app.healthTimeoutMs??5000)+250),0);
   }
   if(!Number.isFinite(timeoutMs)||timeoutMs<=0||!Number.isFinite(settleMs)||settleMs<0)throw new Error('后台启动等待时间无效。');
-  const logDirectory=path.join(root,'artifacts','logs','launcher');
+  const persistentRoot=await loadPersistentDataRoot(root,{env});
+  const logDirectory=path.join(developmentLogRoot(root,persistentRoot),'launcher');
   let child,exited=false,spawnError;
   try {
     child=spawnService(process.execPath,[workerPath,'--background-worker',...args],{

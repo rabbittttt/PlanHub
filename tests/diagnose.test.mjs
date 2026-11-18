@@ -40,15 +40,24 @@ test('fresh-clone gaps are reported independently without stopping at the first 
 test('diagnostics locate current service logs and retain the legacy fallback',async t=>{
  const {root}=await fixture(t);
  const oldLog=path.join('artifacts','service-quicklook-old','stderr.log');
- const currentLog=id=>path.join('artifacts','logs',id,'stderr.log');
+ const previousLog=path.join('artifacts','logs','quicklook','stderr.log');
+ const currentLog=id=>path.join('..','本机数据','logs',id,'stderr.log');
+ await mkdir(path.join(root,'config.local'));
+ await writeFile(path.join(root,'config.local/apps.json'),JSON.stringify({dataRoot:'../本机数据'}));
  async function createLog(relative){
   const filename=path.join(root,relative);
   await mkdir(path.dirname(filename),{recursive:true});await writeFile(filename,'fixture');
  }
  const fetcher=await transport(root);
  await createLog(oldLog);
+ const oldSopLog=path.join('artifacts','sop-runtime-old','logs','stderr.log');
+ await createLog(oldSopLog);
  const old=await collectDiagnostics({root,fetcher});
  assert.equal(old.applications.find(app=>app.id==='quicklook').latestLog.path,oldLog);
+ assert.equal(old.applications.find(app=>app.id==='sop').latestLog.path,oldSopLog);
+ await createLog(previousLog);
+ const previous=await collectDiagnostics({root,fetcher});
+ assert.equal(previous.applications.find(app=>app.id==='quicklook').latestLog.path,previousLog);
  for(const id of ['quicklook','sop'])await createLog(currentLog(id));
  const report=await collectDiagnostics({root,fetcher});
  for(const id of ['quicklook','sop'])assert.equal(report.applications.find(app=>app.id===id).latestLog.path,currentLog(id));

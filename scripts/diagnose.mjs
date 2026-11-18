@@ -5,7 +5,7 @@ import {promisify} from 'node:util';
 import {parseArgs} from 'node:util';
 import path from 'node:path';
 import {fileURLToPath,pathToFileURL} from 'node:url';
-import {loadAppIntegrations} from './app-integrations.mjs';
+import {loadAppIntegrations,loadPersistentDataRoot,developmentLogRoot} from './app-integrations.mjs';
 import {readServicePorts} from './service-ports.mjs';
 import {validateConfig,orderedApps} from '../portal/js/config.js';
 import {workspaceId} from './portal-instance.mjs';
@@ -52,16 +52,22 @@ async function pythonCheck(command,packages,run){
     const data=JSON.parse(stdout.trim());return {...data,ok:true,missing:packages.filter(name=>!data.packages[name])};
   }catch{return {ok:false,reason:'PYTHON_UNAVAILABLE'};}
 }
-async function latestLog(root,id){
-  const current=path.join(root,'artifacts','logs',id,'stderr.log');
-  try{
-    const info=await stat(current);
-    if(info.isFile())return {path:path.relative(root,current),modifiedAt:info.mtime.toISOString()};
-  }catch{}
+async function latestLog(root,id,logRoot){
+  for(const directory of [logRoot,path.join(root,'artifacts','logs')]){
+    const filename=path.join(directory,id,'stderr.log');
+    try{
+      const info=await stat(filename);
+      if(info.isFile())return {path:path.relative(root,filename),modifiedAt:info.mtime.toISOString()};
+    }catch{}
+  }
   try{
     const entries=await readdir(path.join(root,'artifacts'),{withFileTypes:true});const logs=[];
-    for(const entry of entries)if(entry.isDirectory()&&entry.name.startsWith('service-'+id+'-')){
-      const filename=path.join(root,'artifacts',entry.name,'stderr.log');try{const info=await stat(filename);logs.push({path:path.relative(root,filename),modifiedAt:info.mtime.toISOString()});}catch{}
+    for(const entry of entries){
+      if(!entry.isDirectory())continue;
+      const sopRuntime=id==='sop'&&/^sop-(runtime|preview)-/.test(entry.name);
+      if(!sopRuntime&&!entry.name.startsWith('service-'+id+'-'))continue;
+      const filename=path.join(root,'artifacts',entry.name,sopRuntime?'logs':'','stderr.log');
+      try{const info=await stat(filename);logs.push({path:path.relative(root,filename),modifiedAt:info.mtime.toISOString()});}catch{}
     }
     return logs.sort((a,b)=>b.modifiedAt.localeCompare(a.modifiedAt))[0]||null;
   }catch{return null;}
@@ -75,8 +81,9 @@ export async function collectDiagnostics({root=ROOT,port,fetcher=fetch,run=execu
   report.portal=await httpCheck(origin+'/api/portal/health',{keys:['appId','workspaceId'],fetcher});
   // Separately compare identity, without printing the response or its control metadata.
   if(report.portal.ok){try{const r=await fetcher(origin+'/api/portal/health',{signal:AbortSignal.timeout(2500),redirect:'error'});const identity=await r.json();report.portal.sameWorkspace=identity.appId==='planhub-local-portal'&&identity.workspaceId===await workspaceId(root);}catch{report.portal.sameWorkspace=false;}}
-  let registry,integrations;
-  try{registry=validateConfig(JSON.parse((await readFile(path.join(root,'portal/config/apps.json'),'utf8')).replace(/^\uFEFF/,'')));integrations=await loadAppIntegrations(root);}
+  let registry,integrations,logRoot;
+  try{registry=validateConfig(JSON.parse((await readFile(path.join(root,'portal/config/apps.json'),'utf8')).replace(/^\uFEFF/,'')));integrations=await loadAppIntegrations(root);
+      logRoot=developmentLogRoot(root,await loadPersistentDataRoot(root));}
   catch{report.configurationError='接入配置无效：请核对 portal/config/apps.json、integration/apps.json 和 config.local/apps.json';return report;}
   for(const app of orderedApps(registry.apps)){
     const result={id:app.id,name:app.name,configuredStatus:app.status,checks:[],issues:[]};report.applications.push(result);
@@ -117,8 +124,8 @@ export async function collectDiagnostics({root=ROOT,port,fetcher=fetch,run=execu
             else if(result.python.missing.length)result.issues.push('缺少原项目声明的依赖：'+result.python.missing.join(', '));
           }
         }
-        result.latestLog=await latestLog(root,app.id);result.hint='检查原项目、配置的解释器及其 requirements；SOP 使用的解释器不一定与本服务相同。日志路径仅供定位，不据旧日志断定当前故障。';
-      }else if(app.id==='sop'){result.type='sop';result.latestLog=await latestLog(root,'sop');}
+        result.latestLog=await latestLog(root,app.id,logRoot);result.hint='检查原项目、配置的解释器及其 requirements；SOP 使用的解释器不一定与本服务相同。日志路径仅供定位，不据旧日志断定当前故障。';
+      }else if(app.id==='sop'){result.type='sop';result.latestLog=await latestLog(root,'sop',logRoot);}
       else result.issues.push('没有配置实际挂载或代理');
     }catch(error){result.issues.push('此应用检查未完成：'+(error.code||'CHECK_FAILED'));}
   }

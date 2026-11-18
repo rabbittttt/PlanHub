@@ -36,7 +36,7 @@ test('default portal saves through the original SOP service and survives a full 
  try{await stat(path.join(sourceRoot,'sop/store.py'));python=resolveSopPython({root:project});}
  catch(error){t.skip('Independent SOP and Python dependencies required: '+error.message);return;}
  const {root,dataRoot,rules}=await fixture(t);
- const env={SOP_PYTHON_PATH:python,SOP_DATA_DIR:'',SOP_SOURCE_DIR:'',SOP_PLAN_DIR:'',SHARED_DATA_ROOT:''};
+ const env={PLANHUB_DATA_ROOT:'../集成数据',SOP_PYTHON_PATH:python,SOP_DATA_DIR:'',SOP_SOURCE_DIR:'',SOP_PLAN_DIR:'',SHARED_DATA_ROOT:''};
  const workbook=path.join(dataRoot,'input_file','SOP计划维护.xlsx');
  const initialized=spawnSync(python,['-B','-c',"import sys,pathlib; sys.path.insert(0,sys.argv[1]); from sop.store import SOPStore; from sop.workbook import WorkbookSync; p=pathlib.Path(sys.argv[2]); store=SOPStore(p/'data/sop.sqlite3',p/'data/sales.json'); result=WorkbookSync(store,sys.argv[3]).sync(force_export=True); store.close(); assert result['status']=='synced',result",sourceRoot,dataRoot,workbook],{env:{...process.env,PYTHONDONTWRITEBYTECODE:'1',SOP_EXCEL_ENGINE:'python'},encoding:'utf8',windowsHide:true});
  assert.equal(initialized.status,0,initialized.stderr);
@@ -78,11 +78,11 @@ test('default portal saves through the original SOP service and survives a full 
   const state=await fetch(instance.origin+'/sop/api/state').then(r=>r.json());
   assert.equal(state.plans.find(p=>p.product_id==='persistent-fixture'&&p.month===month)?.sop,246);
   assert.deepEqual(await readFile(workbook),archivedWorkbook,'Restart must not rewrite the archived workbook');
-  const logs=path.join(root,'artifacts','logs','sop');
+  const logs=path.resolve(root,'../集成数据/logs/sop');
   assert.deepEqual((await readdir(logs)).sort(),['service.log','stderr.log','stdout.log']);
   assert.equal((await readFile(path.join(logs,'stdout.log'),'utf8')).match(/Starting process/g).length,2);
   assert.ok(!(await readdir(path.join(dataRoot,'data'))).includes('service.err.log'));
-  for(const folder of (await readdir(path.join(root,'artifacts'))).filter(name=>!['logs','portal-instances'].includes(name))){
+  for(const folder of (await readdir(path.join(root,'artifacts'))).filter(name=>name!=='portal-instances')){
    assert.ok(folder.startsWith('sop-runtime-'),'Default mode must not create data snapshots');
    const gateway=JSON.parse(await readFile(path.join(root,'artifacts',folder,'config/gateway.json'),'utf8'));
    assert.equal(gateway.data_dir,path.join(dataRoot,'data'));assert.equal(gateway.plan_file,workbook);

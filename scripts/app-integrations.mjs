@@ -46,6 +46,9 @@ export async function loadPersistentDataRoot(root,{env=process.env}={}) {
   if(typeof value!=='string'||!value.trim()||value.includes('\0'))throw new Error('dataRoot 须为非空目录路径');
   return path.resolve(root,value);
 }
+export function developmentLogRoot(root,persistentRoot) {
+  return path.join(persistentRoot??path.resolve(root,'..','工作台数据'),'logs');
+}
 export async function loadSharedDataRoot(root,{env=process.env}={}) {
   const defaults=await json(path.join(root,'integration/apps.json'),{});
   const local=await json(path.join(root,'config.local/apps.json'),{});

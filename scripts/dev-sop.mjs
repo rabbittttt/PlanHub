@@ -11,7 +11,7 @@ import {parseArgs} from 'node:util';
 import {fileURLToPath,pathToFileURL} from 'node:url';
 import {createServer} from './dev-server.mjs';
 import {resolveSopPython} from './sop-python.mjs';
-import {loadAppIntegrations,loadSharedDataRoot,loadPersistentDataRoot} from './app-integrations.mjs';
+import {loadAppIntegrations,loadSharedDataRoot,loadPersistentDataRoot,developmentLogRoot} from './app-integrations.mjs';
 import {startAppServices,serviceHealthy} from './app-services.mjs';
 import {probePortal,workspaceId,configurationId,createPortalInstance,registerPortal,unregisterPortal} from './portal-instance.mjs';
 import {readServicePorts} from './service-ports.mjs';
@@ -131,7 +131,7 @@ export async function resolvePreviewSettings(args=process.argv.slice(2),{root=RO
       throw new Error(error.message + '\nSOP 需要原项目的真实规则文件。订单仓库的本机 config 目录不随 Git 下载，请核对原规则文件是否存在。\n也可用 --shared-config 或 SOP_SHARED_CONFIG 指定现有文件，相对路径以门户根目录为准。');
     }
   }
-  return {root,sharedDataRoot,sourceRoot:resolvedSource,dataRoot,dataDirectory,dataRootExplicit,snapshot:Boolean(values.snapshot),demo:Boolean(values.demo),salesSourceDir,planSourceFile,sharedConfig,port:values.port,backendPort:values.backendPort};
+  return {root,logRoot:developmentLogRoot(root,persistentRoot),sharedDataRoot,sourceRoot:resolvedSource,dataRoot,dataDirectory,dataRootExplicit,snapshot:Boolean(values.snapshot),demo:Boolean(values.demo),salesSourceDir,planSourceFile,sharedConfig,port:values.port,backendPort:values.backendPort};
 }
 
 export async function assertPreviewPortsAvailable(port,backendPort) {
@@ -223,7 +223,7 @@ export async function runPreview(args=process.argv.slice(2),options={}) {
   const gateway={base_path:'/sop',public_origin:`http://127.0.0.1:${port}`,proxy_secret_env:'SOP_DEV_PROXY_SECRET',allow_writes:true,data_dir:data,source_dir:source,shared_config:rules,plan_file:plan};
   const gatewayFile=path.join(config,'gateway.json');
   await writeFile(gatewayFile,JSON.stringify(gateway,null,2));
-  const logDirectory=path.join(root,'artifacts','logs','sop');
+  const logDirectory=path.join(settings.logRoot,'sop');
   const env={...pythonEnv,SOP_LOG_DIR:logDirectory,SOP_DEV_PROXY_SECRET:secret,SOP_EXCEL_ENGINE:'python',PYTHONUNBUFFERED:'1'};
   const child=spawnService(python,[path.join(sourceRoot,'server.py'),'--port',String(backendPort),'--gateway-config',gatewayFile],{cwd:sourceRoot,env,logDirectory});
   let stopApplications=()=>{};
@@ -244,7 +244,7 @@ export async function runPreview(args=process.argv.slice(2),options={}) {
   let server;
   try {
     if(!ready)throw new Error(`独立 SOP 服务未启动；请查看日志：${child.serviceLogs.stderr}`);
-    stopApplications=await startAppServices(applications,{root,env:runtimeEnv});
+    stopApplications=await startAppServices(applications,{root,env:runtimeEnv,logRoot:settings.logRoot});
     if(failed)throw new Error('SOP 在其他应用启动期间已退出，请检查原项目日志。');
     server=createServer({root,applications,runtime,sopProxy:{port:backendPort,secret,user:userHeader}});
   } catch(error) {cleanupOwned();process.removeListener('exit',cleanupOwned);throw error;}
