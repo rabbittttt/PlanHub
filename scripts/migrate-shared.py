@@ -20,8 +20,8 @@ def run(source, destination, quicklook, hook, source_base, apply=False):
     for path in paths:
         storage.no_links(path)
     source, destination, quicklook, hook, source_base = [p.resolve() for p in paths]
-    if not source.is_dir():
-        raise ValueError(f'Missing source: {source}')
+    if not storage.has_source_directory(source):
+        return
     if source == destination or source.is_relative_to(destination) or destination.is_relative_to(source):
         raise ValueError('Source and destination overlap')
     if destination.exists() and (not destination.is_dir() or storage.files(destination)):

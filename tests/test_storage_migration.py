@@ -25,3 +25,23 @@ class MigrationTests(unittest.TestCase):
   (self.root/'new').mkdir()
   with self.assertRaises(ValueError):migration.run(self.manifest,True)
   self.assertTrue(self.source.exists())
+ def test_missing_store_and_its_hook_are_skipped(self):
+  config=json.loads(self.manifest.read_text())
+  config['stores'].insert(0,{'source':'absent','destination':'database/quicklook'})
+  config['hooks']=[{'script':'absent-hook.py','source':'absent','store':'database/quicklook'}]
+  self.manifest.write_text(json.dumps(config))
+  migration.run(self.manifest)
+  with patch.object(migration.subprocess,'run',return_value=SimpleNamespace(stdout='[]')) as calls:
+   migration.run(self.manifest,True)
+  calls.assert_called_once()
+  self.assertEqual((self.root/'new/database/app/value.txt').read_text(),'saved')
+  self.assertFalse((self.root/'new/database/quicklook').exists())
+ def test_all_missing_creates_nothing(self):
+  self.source.rename(self.root/'elsewhere')
+  with patch.object(migration.subprocess,'run') as calls:migration.run(self.manifest,True)
+  calls.assert_not_called()
+  self.assertFalse((self.root/'new').exists())
+ def test_file_in_place_of_directory_fails(self):
+  self.source.rename(self.root/'elsewhere')
+  self.source.write_text('saved')
+  with self.assertRaises(NotADirectoryError):migration.run(self.manifest,True)

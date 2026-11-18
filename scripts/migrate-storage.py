@@ -1,5 +1,6 @@
 """Move stopped application stores to a single root; default is a read-only plan."""
 import argparse, hashlib, json, os, shutil, sqlite3, subprocess, sys, tempfile, uuid
+import stat
 from pathlib import Path
 
 def no_links(path):
@@ -16,6 +17,16 @@ def files(root):
             result[str(p.relative_to(root))]=hashlib.sha256(p.read_bytes()).hexdigest()
     return result
 
+def has_source_directory(source):
+    try:
+        mode = source.stat().st_mode
+    except FileNotFoundError:
+        print(f'跳过缺失的旧数据目录：{source}', file=sys.stderr)
+        return False
+    if not stat.S_ISDIR(mode):
+        raise NotADirectoryError(str(source))
+    return True
+
 def run(manifest, apply=False):
     manifest=Path(manifest).resolve()
     config=json.loads(manifest.read_text(encoding='utf-8-sig'))
@@ -23,16 +34,21 @@ def run(manifest, apply=False):
     no_links(base/config['destination'])
     target=(base/config['destination']).resolve()
     entries=[]
+    skipped_stores = set()
     for entry in config['stores']:
         no_links(base/entry['source'])
         source=(base/entry['source']).resolve()
         relative=Path(entry['destination'])
         if relative.is_absolute() or '..' in relative.parts:raise ValueError('Invalid destination')
-        dest=target/relative
-        if not source.is_dir():raise ValueError(f'Missing source: {source}')
+        if not has_source_directory(source):
+            skipped_stores.add((source, relative))
+            continue
         if target==source or target.is_relative_to(source) or source.is_relative_to(target):
             raise ValueError('Source and destination overlap')
         entries.append((source,relative))
+    if not entries:
+        print('没有需要迁移的旧数据目录。')
+        return
     if target.exists():raise ValueError(f'Destination exists; never merge or overwrite: {target}')
     for i,(source,relative) in enumerate(entries):
         for other,other_relative in entries[:i]:
@@ -69,6 +85,8 @@ def run(manifest, apply=False):
                 finally:connection.close()
         # Optional application-owned hook only changes the staged copy.
         for hook in config.get('hooks',[]):
+            if ((base / hook['source']).resolve(), Path(hook['store'])) in skipped_stores:
+                continue
             script=(base/hook['script']).resolve()
             subprocess.run([sys.executable,'-B',str(script),'--staged',str(stage/ hook['store']),'--old',str((base/hook['source']).resolve()),'--new',str(target/hook['store'])],check=True)
         for source,relative in entries:

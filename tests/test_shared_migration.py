@@ -24,6 +24,16 @@ class SharedMigrationTests(unittest.TestCase):
             self.assertTrue((args[0]/'orders.xlsx').exists());self.assertFalse((args[1]/'orders.xlsx').exists())
             self.assertFalse((args[1].parent/'backups').exists())
 
+    def test_missing_old_shared_folder_leaves_current_data_alone(self):
+        with tempfile.TemporaryDirectory() as folder:
+            args=self.fixture(folder)
+            args[0].rename(args[4]/'elsewhere')
+            with patch.object(module.subprocess,'run') as calls:
+                module.run(*args,apply=True)
+            calls.assert_not_called()
+            self.assertTrue((args[1]/'原始销量').is_dir())
+            self.assertFalse((args[1].parent/'backups').exists())
+
     def test_apply_preserves_files_and_places_originals_in_recovery_folder(self):
         with tempfile.TemporaryDirectory() as folder:
             args=self.fixture(folder)
