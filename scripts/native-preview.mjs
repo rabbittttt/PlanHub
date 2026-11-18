@@ -211,7 +211,7 @@ export async function runNativePreview(plan,{startService=spawnService,serviceTi
       if(!ready||failed)throw new Error(id+' did not start. See '+logDirectory);
       console.log(id+' ready (loopback port '+binding.port+').');
     }
-    if(children.some(child=>child.exitCode!==null||child.signalCode!==null))throw new Error('A preview service exited during startup. See snapshot logs.');
+    if(children.some(child=>child.exitCode!==null||child.signalCode!==null))throw new Error('A preview service exited during startup. See '+path.join(plan.runtimeRoot,'logs'));
     await writeFile(portFile,JSON.stringify(portRecord));
     const portal=createContainerPortal(plan.releases.planhub.payload,allocation.bindings,plan.config,{root:plan.runtimeRoot,runtime});
     server=await startLocalPreviewPortal(portal,plan.config,{port:plan.port,host:'127.0.0.1',allowControl:true});

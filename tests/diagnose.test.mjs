@@ -49,17 +49,20 @@ test('diagnostics locate current service logs and retain the legacy fallback',as
   await mkdir(path.dirname(filename),{recursive:true});await writeFile(filename,'fixture');
  }
  const fetcher=await transport(root);
- await createLog(oldLog);
+ const oldLauncher=path.join('artifacts','portal-launch-old','stderr.log');
+ await createLog(oldLauncher);await createLog(oldLog);
  const oldSopLog=path.join('artifacts','sop-runtime-old','logs','stderr.log');
  await createLog(oldSopLog);
  const old=await collectDiagnostics({root,fetcher});
+ assert.equal(old.launcherLog.path,oldLauncher);
  assert.equal(old.applications.find(app=>app.id==='quicklook').latestLog.path,oldLog);
  assert.equal(old.applications.find(app=>app.id==='sop').latestLog.path,oldSopLog);
  await createLog(previousLog);
  const previous=await collectDiagnostics({root,fetcher});
  assert.equal(previous.applications.find(app=>app.id==='quicklook').latestLog.path,previousLog);
- for(const id of ['quicklook','sop'])await createLog(currentLog(id));
+ for(const id of ['launcher','quicklook','sop'])await createLog(currentLog(id));
  const report=await collectDiagnostics({root,fetcher});
+ assert.ok(formatDiagnostics(report).includes('门户启动日志：'+currentLog('launcher')));
  for(const id of ['quicklook','sop'])assert.equal(report.applications.find(app=>app.id===id).latestLog.path,currentLog(id));
 });
 

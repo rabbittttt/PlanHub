@@ -65,7 +65,8 @@ async function latestLog(root,id,logRoot){
     for(const entry of entries){
       if(!entry.isDirectory())continue;
       const sopRuntime=id==='sop'&&/^sop-(runtime|preview)-/.test(entry.name);
-      if(!sopRuntime&&!entry.name.startsWith('service-'+id+'-'))continue;
+      const prefix=id==='launcher'?'portal-launch-':'service-'+id+'-';
+      if(!sopRuntime&&!entry.name.startsWith(prefix))continue;
       const filename=path.join(root,'artifacts',entry.name,sopRuntime?'logs':'','stderr.log');
       try{const info=await stat(filename);logs.push({path:path.relative(root,filename),modifiedAt:info.mtime.toISOString()});}catch{}
     }
@@ -82,8 +83,9 @@ export async function collectDiagnostics({root=ROOT,port,fetcher=fetch,run=execu
   // Separately compare identity, without printing the response or its control metadata.
   if(report.portal.ok){try{const r=await fetcher(origin+'/api/portal/health',{signal:AbortSignal.timeout(2500),redirect:'error'});const identity=await r.json();report.portal.sameWorkspace=identity.appId==='planhub-local-portal'&&identity.workspaceId===await workspaceId(root);}catch{report.portal.sameWorkspace=false;}}
   let registry,integrations,logRoot;
-  try{registry=validateConfig(JSON.parse((await readFile(path.join(root,'portal/config/apps.json'),'utf8')).replace(/^\uFEFF/,'')));integrations=await loadAppIntegrations(root);
-      logRoot=developmentLogRoot(root,await loadPersistentDataRoot(root));}
+  try{logRoot=developmentLogRoot(root,await loadPersistentDataRoot(root));
+      report.launcherLog=await latestLog(root,'launcher',logRoot);
+      registry=validateConfig(JSON.parse((await readFile(path.join(root,'portal/config/apps.json'),'utf8')).replace(/^\uFEFF/,'')));integrations=await loadAppIntegrations(root);}
   catch{report.configurationError='接入配置无效：请核对 portal/config/apps.json、integration/apps.json 和 config.local/apps.json';return report;}
   for(const app of orderedApps(registry.apps)){
     const result={id:app.id,name:app.name,configuredStatus:app.status,checks:[],issues:[]};report.applications.push(result);
@@ -133,6 +135,7 @@ export async function collectDiagnostics({root=ROOT,port,fetcher=fetch,run=execu
 }
 export function formatDiagnostics(report){
   const lines=['门户只读诊断（不启动服务、不修改配置或业务数据）','门户目录：'+report.root,'同级项目：'+report.workspaceFolders.join('、'),'本机配置：apps.json '+(report.localConfiguration.apps?'存在':'未设置')+'；sop.json '+(report.localConfiguration.sop?'存在':'未设置'),'运行门户：'+(report.portal.ok?(report.portal.sameWorkspace?'同一工作区':'工作区不匹配'):(report.portal.reason||'HTTP '+report.portal.status))];
+  if(report.launcherLog)lines.push('门户启动日志：'+report.launcherLog.path);
   if(report.configurationError)lines.push(report.configurationError);
   for(const app of report.applications){
     lines.push('\n['+app.name+'] '+(app.note|| (app.issues.length?'未通过':'已检查')));

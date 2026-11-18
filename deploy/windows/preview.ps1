@@ -52,7 +52,7 @@ function Native([string]$Mode,[string]$Runtime){
     Remove-Item Env:NODE_OPTIONS -ErrorAction SilentlyContinue
     Remove-Item Env:NODE_PATH -ErrorAction SilentlyContinue
     & $node (Join-Path $package 'launcher/native-preview.mjs') $Mode --package $package --runtime $Runtime
-    if($LASTEXITCODE -ne 0){throw 'Native preview failed. Check the output and snapshot logs above.'}
+    if($LASTEXITCODE -ne 0){throw ('Native preview failed. Logs: '+(Join-Path $Runtime 'logs'))}
 }
 function Snapshot-Contract($State,$Manifest,[string]$Runtime){
     $current=$Manifest.PSObject.Properties['snapshotContractHash']
