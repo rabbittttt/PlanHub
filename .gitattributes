@@ -1,3 +1,4 @@
 deploy/docker/*.cmd text eol=crlf
 deploy/windows/*.cmd text eol=crlf
+迁移持久数据.cmd text eol=crlf
 deploy/licenses/node/*.LICENSE.txt -text whitespace=-space-before-tab
