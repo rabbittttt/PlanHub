@@ -10,7 +10,9 @@ ROOT = Path(__file__).resolve().parents[1]
 
 def select(prompt, choices):
     while True:
-        value = input(prompt).strip().upper()
+        # stderr is the log; show the prompt on the console before waiting for input.
+        print(prompt, flush=True)
+        value = input().strip().upper()
         if value in choices:
             return value
         print("请输入 " + " 或 ".join(choices) + "，然后按回车。")
@@ -40,7 +42,7 @@ def main():
     status = preview_plan(arguments)
     if status:
         return 1
-    if select("已停止服务并确认执行迁移？输入 Y 或 N，然后按回车：", ("Y", "N")) == "Y":
+    if select("计划已列出。确认相关服务已停止后，输入 Y 并按回车开始迁移；输入 N 并按回车退出。", ("Y", "N")) == "Y":
         # Exit before the batch starts the stopped-process check.
         return 10 if option == "1" else 11
     return 0
