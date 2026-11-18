@@ -16,8 +16,8 @@ def select(prompt, choices):
         print("请输入 " + " 或 ".join(choices) + "，然后按回车。")
 
 
-def run_step(arguments):
-    phase = "执行迁移" if "--apply" in arguments else "核对迁移计划"
+def preview_plan(arguments):
+    phase = "核对迁移计划"
     print(phase, flush=True)
     # The batch launcher redirects stderr to the run log, including errors at startup.
     print(phase, *arguments, file=sys.stderr, flush=True)
@@ -37,11 +37,12 @@ def main():
     option = select("输入 1 或 2，然后按回车：", ("1", "2"))
     arguments = (["scripts/migrate-storage.py", "integration/storage-migration.example.json"]
                  if option == "1" else ["scripts/migrate-shared.py"])
-    status = run_step(arguments)
+    status = preview_plan(arguments)
     if status:
-        return status
+        return 1
     if select("已停止服务并确认执行迁移？输入 Y 或 N，然后按回车：", ("Y", "N")) == "Y":
-        return run_step([*arguments, "--apply"])
+        # Exit before the batch starts the stopped-process check.
+        return 10 if option == "1" else 11
     return 0
 
 

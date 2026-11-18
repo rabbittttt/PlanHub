@@ -21,10 +21,50 @@ class MigrationTests(unittest.TestCase):
   self.assertEqual(migration.files(destination),before);self.assertFalse(self.source.exists())
   journal=json.loads((self.root/'new/migration.json').read_text())
   self.assertTrue(journal['activated']);self.assertEqual(migration.files(Path(journal['backups'][0]['backup'])),before)
- def test_existing_target_is_never_overwritten(self):
-  (self.root/'new').mkdir()
-  with self.assertRaises(ValueError):migration.run(self.manifest,True)
-  self.assertTrue(self.source.exists())
+ def test_existing_root_migrates_only_available_destinations(self):
+  target=self.root/'new'
+  (target/'database/app').mkdir(parents=True)
+  (target/'database/occupied').mkdir()
+  (target/'database/occupied/current').write_text('live')
+  (target/'shared').mkdir()
+  (target/'shared/orders.xlsx').write_bytes(b'original')
+  (target/'migration.json').write_text('previous journal')
+  occupied=self.root/'other';occupied.mkdir();(occupied/'old').write_text('legacy')
+  config=json.loads(self.manifest.read_text())
+  config['stores'].append({'source':'other','destination':'database/occupied'})
+  config['hooks']=[{'source':'other','store':'database/occupied','script':'unused.py'}]
+  self.manifest.write_text(json.dumps(config))
+  before=migration.files(target)
+  migration.run(self.manifest)
+  self.assertEqual(migration.files(target),before)
+  with patch.object(migration.subprocess,'run',return_value=SimpleNamespace(stdout='[]')) as calls:
+   migration.run(self.manifest,True)
+   migration.run(self.manifest,True)
+  calls.assert_called_once()
+  for name,digest in before.items():self.assertEqual(migration.files(target)[name],digest)
+  self.assertEqual((target/'database/app/value.txt').read_text(),'saved')
+  self.assertEqual((occupied/'old').read_text(),'legacy')
+  self.assertEqual(len(list(target.glob('migration-*.json'))),1)
+
+ def test_activation_failure_restores_only_this_runs_stores(self):
+  first=self.root/'new/database/app';first.mkdir(parents=True)
+  other=self.root/'other';other.mkdir()
+  config=json.loads(self.manifest.read_text())
+  config['stores'].append({'source':'other','destination':'database/second'})
+  self.manifest.write_text(json.dumps(config))
+  second=first.parent.resolve()/'second'
+  rename=Path.rename
+  def inject(path,destination):
+   if destination==second:
+    second.mkdir();(second/'appeared').write_text('keep')
+    raise FileExistsError(str(second))
+   return rename(path,destination)
+  with patch.object(Path,'rename',inject),patch.object(migration.subprocess,'run',return_value=SimpleNamespace(stdout='[]')):
+   with self.assertRaises(FileExistsError):migration.run(self.manifest,True)
+  self.assertEqual(list(first.iterdir()),[])
+  self.assertEqual((self.source/'value.txt').read_text(),'saved')
+  self.assertTrue(other.is_dir())
+  self.assertEqual((second/'appeared').read_text(),'keep')
  def test_missing_store_and_its_hook_are_skipped(self):
   config=json.loads(self.manifest.read_text())
   config['stores'].insert(0,{'source':'absent','destination':'database/quicklook'})

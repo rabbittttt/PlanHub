@@ -39,7 +39,7 @@ def run(manifest, apply=False):
         no_links(base/entry['source'])
         source=(base/entry['source']).resolve()
         relative=Path(entry['destination'])
-        if relative.is_absolute() or '..' in relative.parts:raise ValueError('Invalid destination')
+        if relative.anchor or not relative.parts or '..' in relative.parts:raise ValueError('Invalid destination')
         if not has_source_directory(source):
             skipped_stores.add((source, relative))
             continue
@@ -49,13 +49,25 @@ def run(manifest, apply=False):
     if not entries:
         print('没有需要迁移的旧数据目录。')
         return
-    if target.exists():raise ValueError(f'Destination exists; never merge or overwrite: {target}')
     for i,(source,relative) in enumerate(entries):
         for other,other_relative in entries[:i]:
             if source==other or source.is_relative_to(other) or other.is_relative_to(source):
                 raise ValueError('Overlapping source stores')
             if relative==other_relative or relative.is_relative_to(other_relative) or other_relative.is_relative_to(relative):
                 raise ValueError('Overlapping destination stores')
+    pending = []
+    for source, relative in entries:
+        destination = target / relative
+        no_links(destination)
+        if destination.exists() and (not destination.is_dir() or any(destination.iterdir())):
+            print(f'跳过已有内容的目标：{destination}；旧目录保留：{source}', file=sys.stderr)
+            skipped_stores.add((source, relative))
+        else:
+            pending.append((source, relative))
+    entries = pending
+    if not entries:
+        print('没有待迁移的目录。')
+        return
     snapshots={str(src):files(src) for src,_ in entries}
     print(json.dumps({'destination':str(target),'stores':[{'source':str(s),'destination':str(target/r),'files':len(snapshots[str(s)])} for s,r in entries]},ensure_ascii=False,indent=2))
     if not apply:return
@@ -72,6 +84,8 @@ def run(manifest, apply=False):
     stage=Path(tempfile.mkdtemp(prefix='.storage-migration-',dir=target.parent))
     journal={'target':str(target),'backups':[],'activated':False}
     journal_path=stage/'migration.json'
+    installed = []
+    empty_targets = []
     try:
         for source,relative in entries:
             dest=stage/relative
@@ -91,20 +105,37 @@ def run(manifest, apply=False):
             subprocess.run([sys.executable,'-B',str(script),'--staged',str(stage/ hook['store']),'--old',str((base/hook['source']).resolve()),'--new',str(target/hook['store'])],check=True)
         for source,relative in entries:
             if files(source)!=snapshots[str(source)]:raise ValueError('Source changed during preparation')
-        for source,_ in entries:
+        for source,relative in entries:
+            destination = target / relative
+            no_links(destination)
+            destination.parent.mkdir(parents=True, exist_ok=True)
+            if destination.exists():
+                destination.rmdir()  # Fails if files appeared after the plan.
+                empty_targets.append(destination)
+            (stage / relative).rename(destination)  # Windows refuses an existing destination.
+            installed.append(relative)
             backup=source.with_name(source.name+'.pre-central-'+uuid.uuid4().hex[:12])
             source.rename(backup)
-            journal['backups'].append({'source':str(source),'backup':str(backup)})
+            journal['backups'].append({'source':str(source),'backup':str(backup),'destination':str(destination)})
             journal_path.write_text(json.dumps(journal,ensure_ascii=False,indent=2),encoding='utf-8')
-        stage.rename(target)
         journal['activated']=True
-        (target/'migration.json').write_text(json.dumps(journal,ensure_ascii=False,indent=2),encoding='utf-8')
+        journal_path.write_text(json.dumps(journal,ensure_ascii=False,indent=2),encoding='utf-8')
+        report = target / 'migration.json'
+        if report.exists():
+            report = target / f'migration-{uuid.uuid4().hex}.json'
+        journal_path.rename(report)
     except BaseException:
-        if not stage.exists() and target.exists():target.rename(stage)
         for item in reversed(journal['backups']):
             if not Path(item['source']).exists():Path(item['backup']).rename(item['source'])
+        for relative in reversed(installed):
+            (target / relative).rename(stage / relative)
+        for destination in empty_targets:
+            destination.mkdir(exist_ok=True)
         # Keep staged evidence for recovery; never delete business data here.
         raise
+    for directory, _, _ in os.walk(stage, topdown=False):
+        Path(directory).rmdir()
+    print(f'迁移完成，记录已保存到 {report}')
 
 if __name__=='__main__':
     p=argparse.ArgumentParser(description=__doc__);p.add_argument('manifest');p.add_argument('--apply',action='store_true');a=p.parse_args()
