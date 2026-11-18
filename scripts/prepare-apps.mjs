@@ -9,7 +9,7 @@ function inside(base,target){const rel=path.relative(base,target);return !path.i
 export async function prepareStaticApp(root,id,app) {
   if(!/^[a-z][a-z0-9-]*$/.test(id)||app.type!=='static')throw new Error('Invalid static application');
   root=await realpath(root);
-  const source=await realpath(app.root), apps=path.join(root,'apps'), backupRoot=path.join(root,'artifacts');
+  const source=await realpath(app.root), apps=path.join(root,'apps'), backupRoot=path.join(root,'config.local','backups');
   await mkdir(apps,{recursive:true});await mkdir(backupRoot,{recursive:true});
   for(const folder of [apps,backupRoot])if(!inside(root,await realpath(folder)))throw new Error('Release destination escapes portal');
   const destination=path.join(apps,id);

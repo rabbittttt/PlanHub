@@ -31,12 +31,12 @@ test('stale records and another workspace cannot stop or clean up the current in
  const root=await fixture(t),other=await fixture(t),port=await free(),runtime=await createPortalInstance(root,port,'config-a');
  await serve(t,root,runtime);await registerPortal(root,runtime);
  await assert.rejects(stopPortal(other,port),/其他工作区/);
- const filename=path.join(root,'artifacts/portal-instances',port+'-'+runtime.identity.instanceId+'.json'),record=JSON.parse(await readFile(filename,'utf8'));
+ const filename=path.join(root,'runtime/portal-instances',port+'-'+runtime.identity.instanceId+'.json'),record=JSON.parse(await readFile(filename,'utf8'));
  await writeFile(filename,JSON.stringify({...record,instanceId:'stale'}));await assert.rejects(stopPortal(root,port),/不匹配/);assert.ok(await probePortal(port));
  await writeFile(filename,JSON.stringify(record));await unregisterPortal(root,{identity:{port,instanceId:'old'}});assert.equal(JSON.parse(await readFile(filename,'utf8')).instanceId,record.instanceId);
  const successor=await createPortalInstance(root,port,'config-b');await registerPortal(root,successor);
  await unregisterPortal(root,runtime);
- assert.equal(JSON.parse(await readFile(path.join(root,'artifacts/portal-instances',port+'-'+successor.identity.instanceId+'.json'),'utf8')).instanceId,successor.identity.instanceId);
+ assert.equal(JSON.parse(await readFile(path.join(root,'runtime/portal-instances',port+'-'+successor.identity.instanceId+'.json'),'utf8')).instanceId,successor.identity.instanceId);
  await registerPortal(root,runtime);await stopPortal(root,port);await unregisterPortal(root,runtime);await unregisterPortal(root,successor);
 });
 

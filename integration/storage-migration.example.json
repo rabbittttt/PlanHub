@@ -14,8 +14,8 @@
       "destination": "database/orderiq/runtime"
     },
     {
-      "source": "../../销量预测/output_file",
-      "destination": "database/forecast"
+      "source": "../../销量预测/output_file/dynamic",
+      "destination": "database/forecast/dynamic"
     },
     {
       "source": "../../数据速查/output_file",

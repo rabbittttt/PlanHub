@@ -162,9 +162,9 @@ A 打包时选择是否携带 Windows 运行环境：
 
 ## 常用操作与排错
 
-开发版日志位于工作台数据根目录的 `logs/`，默认是与门户项目同级的 `工作台数据/logs/`。更改 `dataRoot` 或 `PLANHUB_DATA_ROOT` 后，下一次启动自动使用新位置。后台门户启动信息在 `launcher/`，SOP 维护、数据速查和配置管理分别在 `sop/`、`quicklook/`、`vehicle-config/`。各目录内的 `stdout.log` 和 `stderr.log` 按启动时间追加，启动时达到 10 MiB 的文件轮转为 `.1`。SOP 另写 `service.log`，运行中按 10 MiB 轮转，保留三份历史文件。运行 `npm run diagnose` 可查看门户启动日志及各服务日志的位置。诊断优先显示新位置，找不到时查找旧日志。
+开发版日志位于工作台数据根目录的 `logs/`，默认是与门户项目同级的 `工作台数据/logs/`。更改 `dataRoot` 或 `PLANHUB_DATA_ROOT` 后，下一次启动自动使用新位置。后台门户启动信息在 `launcher/`，SOP 维护、数据速查、配置管理、订单分析和销量预测分别在 `sop/`、`quicklook/`、`vehicle-config/`、`orderiq/`、`forecast/`。各目录内的 `stdout.log` 和 `stderr.log` 按启动时间追加，启动时达到 10 MiB 的文件轮转为 `.1`。SOP 另写 `service.log`，运行中按 10 MiB 轮转，保留三份历史文件。运行 `npm run diagnose` 可查看门户启动日志及各服务日志的位置。诊断优先显示新位置，找不到时查找旧日志。
 
-部署包的 Windows 本机运行使用包外 `planhub-runtime/logs/` 下的相同目录。显式快照模式写入快照自己的 `logs/`。Docker 的上述三个业务服务同时输出到 Compose 和包外应用日志目录，容器启动或镜像错误可用下表的 Logs 命令查看。订单分析和销量预测沿用原有应用日志位置。
+部署包的 Windows 本机运行使用包外 `planhub-runtime/logs/` 下的相同目录。显式快照模式写入快照自己的 `logs/`。Docker 的上述业务服务同时输出到 Compose 和包外应用日志目录，容器启动或镜像错误可用下表的 Logs 命令查看。独立生成静态报表时，生成日志放在各项目 HTML 旁边的 `log/`。开发版 SOP 临时配置、预览快照及门户实例记录在 `runtime/`，接入和静态发布备份在 `config.local/backups/`。
 
 | 要做什么 | 操作 |
 |---|---|
@@ -182,23 +182,6 @@ A 打包时选择是否携带 Windows 运行环境：
 - 正式容器使用 `restart: unless-stopped`；宿主需先启动 Docker。手动停止后需再次启动。
 - 后台默认端口只在 A 源码的 `integration/ports.json` 维护；打包时生成包内 `bindings.json` 的具体端口，B 不手改派生产物。`preview.cmd` 优先使用该默认端口，占用或无法绑定时自动选择空闲回环端口；实际映射记在运行目录的 `native-ports.json`，启动、代理和健康检查共用。脚本不复用或关闭未知占用者。公共入口固定为 `127.0.0.1:4173`，若被占用则报错，先停止已有门户或正式服务后重试。
 - 正式 Docker 使用容器内固定后台端口，只向宿主发布门户端口；同事无需开放子服务端口。本机测试和正式服务共用默认门户端口 `4173`，切换前先停止当前服务。测试操作人来自 B 的实际 Windows 登录身份，正式认证仍由公司入口负责。
-
-</details>
-
-
-<details>
-<summary>历史恢复备份位置</summary>
-
-以下为开发工作区曾记录的恢复备份，路径相对于门户根目录；不随 Git 或发布包交付。本次文档清理不删除这些备份，旧实施记录可从 Git 历史查阅。
-
-| 内容 | 原记录位置 |
-|---|---|
-| 单一 SOP 源码调整前的源码、Git 与补丁 | `artifacts/single-source-backup-20261102-180733/` |
-| 部门功能调整前 | `artifacts/uniform-access-before-20261103/` |
-| 目录迁移前数据库与迁移时版本 | `artifacts/relocation-live-preview-backup-20261103/`、`artifacts/relocation-copied-versions-20261103/` |
-| 持久化切换前的数据库及相关数据 | `artifacts/sop-before-persistence-usA4Bq/` |
-
-恢复前核对实际文件、来源和数据一致性，不直接覆盖运行中的数据。
 
 </details>
 

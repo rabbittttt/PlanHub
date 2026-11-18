@@ -7,7 +7,7 @@ $project = Split-Path -Parent $deploy
 . (Join-Path $deploy 'Deployment.Common.ps1')
 . (Join-Path $deploy 'App.Release.ps1')
 . (Join-Path $deploy 'Sop.Release.ps1')
-$scratch = Join-Path $project ('artifacts\sop-release-validation-' + [Guid]::NewGuid().ToString('N'))
+$scratch = Join-Path ([IO.Path]::GetTempPath()) ('sop-release-validation-' + [Guid]::NewGuid().ToString('N'))
 $release = Join-Path $scratch 'release'
 New-Item -ItemType Directory -Force -Path $release | Out-Null
 $utf8 = New-Object Text.UTF8Encoding($false)
@@ -78,7 +78,7 @@ try {
 }
 finally {
     $resolved = [IO.Path]::GetFullPath($scratch)
-    $expected = [IO.Path]::GetFullPath((Join-Path $project 'artifacts')).TrimEnd('\') + '\sop-release-validation-'
+    $expected = [IO.Path]::GetFullPath([IO.Path]::GetTempPath()).TrimEnd('\') + '\sop-release-validation-'
     if (-not $resolved.StartsWith($expected, [StringComparison]::OrdinalIgnoreCase)) { throw 'Refusing unexpected test cleanup path.' }
     Remove-Item -LiteralPath $resolved -Recurse -Force
 }

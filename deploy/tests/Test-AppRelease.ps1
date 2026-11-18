@@ -5,7 +5,7 @@ $ErrorActionPreference='Stop'
 $deploy=Split-Path -Parent $PSScriptRoot
 $project=Split-Path -Parent $deploy
 . (Join-Path $deploy 'App.Release.ps1')
-$scratch=Join-Path $project ('artifacts\app-release-test-'+[Guid]::NewGuid().ToString('N'))
+$scratch=Join-Path ([IO.Path]::GetTempPath()) ('app-release-test-'+[Guid]::NewGuid().ToString('N'))
 New-Item -ItemType Directory -Path $scratch | Out-Null
 $script:checks=0
 function Assert-True { param([bool]$Value,[string]$Message);$script:checks++;if(-not $Value){throw $Message} }
@@ -44,7 +44,7 @@ try {
     Write-Output ('App release integrity checks passed: '+$script:checks)
 } finally {
     $resolved=[IO.Path]::GetFullPath($scratch)
-    $expected=[IO.Path]::GetFullPath((Join-Path $project 'artifacts')).TrimEnd('\')+'\app-release-test-'
+    $expected=[IO.Path]::GetFullPath([IO.Path]::GetTempPath()).TrimEnd('\')+'\app-release-test-'
     if(-not $resolved.StartsWith($expected,[StringComparison]::OrdinalIgnoreCase)){throw 'Unexpected cleanup path.'}
     Remove-Item -LiteralPath $resolved -Recurse -Force
 }

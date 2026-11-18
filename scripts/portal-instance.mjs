@@ -41,7 +41,7 @@ export async function probePortal(port){
     return data?.appId===APP_ID&&data.protocol===1&&Number.isInteger(data.pid)&&data.pid>0&&data.port===port&&typeof data.instanceId==='string'&&/^[a-f0-9]{8}(?:-[a-f0-9]{4}){3}-[a-f0-9]{12}$/i.test(data.instanceId)&&typeof data.workspaceId==='string'&&typeof data.configId==='string'?data:null;
   }catch{return null;}
 }
-function recordPath(root,port,instanceId){return path.join(root,'artifacts','portal-instances',port+'-'+instanceId+'.json');}
+function recordPath(root,port,instanceId){return path.join(root,'runtime','portal-instances',port+'-'+instanceId+'.json');}
 export async function createPortalInstance(root,port,configId){
   const identity={appId:APP_ID,protocol:1,pid:process.pid,port,workspaceId:await workspaceId(root),configId,instanceId:crypto.randomUUID()};
   const token=crypto.randomBytes(32).toString('hex');
@@ -86,7 +86,15 @@ export async function stopPortal(root,port){
   if(!running)throw new Error('未找到可识别的门户；不会结束占用端口的其他程序。');
   if(running.workspaceId!==await workspaceId(root))throw new Error('端口属于其他工作区，不会停止。');
   let record;
-  try{record=JSON.parse(await readFile(recordPath(root,port,running.instanceId),'utf8'));}catch{throw new Error('缺少当前门户的本机实例记录；不会按端口强制结束程序。');}
+  const filename=recordPath(root,port,running.instanceId);
+  try{
+    let raw;
+    try{raw=await readFile(filename,'utf8');}catch(error){
+      if(error.code!=='ENOENT')throw error;
+      raw=await readFile(path.join(root,'artifacts','portal-instances',path.basename(filename)),'utf8');
+    }
+    record=JSON.parse(raw);
+  }catch{throw new Error('缺少当前门户的本机实例记录；不会按端口强制结束程序。');}
   if(record.instanceId!==running.instanceId||record.pid!==running.pid||typeof record.token!=='string')throw new Error('门户实例记录不匹配；不会停止。');
   const response=await fetch('http://127.0.0.1:'+port+STOP_PATH,{method:'POST',redirect:'error',headers:{'X-PlanHub-Control':record.token},signal:AbortSignal.timeout(3000)});
   await response.arrayBuffer();if(response.status!==202)throw new Error('门户未接受停止请求。');

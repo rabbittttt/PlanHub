@@ -4,7 +4,7 @@ import {spawnService,stopService} from './service-process.mjs';
 import {loadPersistentDataRoot,developmentLogRoot} from './app-integrations.mjs';
 import {probeServiceHealth} from './health-check.mjs';
 import net from 'node:net';
-import {access,mkdir,mkdtemp} from 'node:fs/promises';
+import {access} from 'node:fs/promises';
 const ROOT=path.resolve(path.dirname(fileURLToPath(import.meta.url)),'..');
 
 // The application owns the meaning of its environment paths (usually relative to cwd).
@@ -47,16 +47,11 @@ export async function startAppServices(applications,{root=ROOT,env=process.env,l
       }
       if(!await portFree(app))throw new Error('端口已被独立进程占用；本应用由门户管理，不自动复用。请按原启动方式停止旧服务后重启门户；不会终止未知进程');
       await access(app.start.command);await access(app.start.cwd);
-      let logDirectory;
-      if(['orderiq','forecast'].includes(id)){
-        const artifacts=path.join(root,'artifacts');
-        await mkdir(artifacts,{recursive:true});
-        logDirectory=await mkdtemp(path.join(artifacts,'service-'+id+'-'));
-      }else{
-        logRoot??=developmentLogRoot(root,await loadPersistentDataRoot(root,{env}));
-        logDirectory=path.join(logRoot,id);
-      }
-      const child=spawnService(app.start.command,app.start.args,{cwd:app.start.cwd,env:serviceEnvironment(app.start,env),logDirectory});
+      logRoot??=developmentLogRoot(root,await loadPersistentDataRoot(root,{env}));
+      const logDirectory=path.join(logRoot,id);
+      const childEnv=serviceEnvironment(app.start,env);
+      childEnv.PLANHUB_APP_LOG_DIR=logDirectory;
+      const child=spawnService(app.start.command,app.start.args,{cwd:app.start.cwd,env:childEnv,logDirectory});
       children.push(child);
       let failed=false;child.on('error',()=>{failed=true;unavailable();});child.on('exit',()=>{failed=true;unavailable();});
       let ready=false;

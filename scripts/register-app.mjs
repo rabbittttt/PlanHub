@@ -109,9 +109,9 @@ export async function applyRegistration(plan){
   let backup,applied=[];
   try{
     for(const item of plan.files)if(await readOptional(path.join(plan.root,item.file))!==item.original)throw new Error('配置已被其他操作更改，请重新登记：'+item.file);
-    const artifacts=path.join(plan.root,'artifacts');await mkdir(artifacts,{recursive:true});
-    if(!inside(await realpath(plan.root),await realpath(artifacts)))throw new Error('备份目录越界');
-    backup=await mkdtemp(path.join(artifacts,'registration-'));
+    const backups=path.join(configDir,'backups');await mkdir(backups,{recursive:true});
+    if(!inside(await realpath(plan.root),await realpath(backups)))throw new Error('备份目录越界');
+    backup=await mkdtemp(path.join(backups,'registration-'));
     await writeFile(path.join(backup,'transaction.json'),json({appId:plan.id,files:plan.files.map(item=>({path:item.file,existed:item.original!==null}))}));
     for(const [index,item] of plan.files.entries()){
       if(item.original!==null)await writeFile(path.join(backup,index+'.before.json'),item.original);

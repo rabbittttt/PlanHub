@@ -235,8 +235,8 @@ HTTPServer(('127.0.0.1',a.port),Handler).serve_forever()
     const snapshot=spawnSync(python,['-B','-c',"import json,pathlib,sqlite3,sys; db=sqlite3.connect(pathlib.Path(sys.argv[1]).as_uri()+'?mode=ro',uri=True); print(json.dumps(db.execute('SELECT value FROM marker').fetchall())); db.close()",path.join(result.dataPath,'sop.sqlite3')],{encoding:'utf8'});
     assert.equal(snapshot.status,0,snapshot.stderr||snapshot.error?.message);
     assert.deepEqual(JSON.parse(snapshot.stdout),[['original-db']]);
-    assert.ok(result.dataPath.startsWith(path.join(root,'artifacts')));
-    assert.ok(result.inputPath.startsWith(path.join(root,'artifacts')));
+    assert.ok(result.dataPath.startsWith(path.join(root,'runtime')));
+    assert.ok(result.inputPath.startsWith(path.join(root,'runtime')));
     assert.equal(await readFile(path.join(result.inputPath,'current-sales.xlsx'),'utf8'),'shared sales');
     await assert.rejects(readFile(path.join(result.inputPath,'old-sales.xlsx')),error=>error.code==='ENOENT');
     assert.equal(await readFile(result.planPath,'utf8'),'selected project plan');
@@ -251,7 +251,7 @@ HTTPServer(('127.0.0.1',a.port),Handler).serve_forever()
   const defaultServer=await runPreview(['--snapshot','--sop-source',original,'--shared-config',rules,'--port',String(defaultPort),'--backend-port',String(defaultBackend)],{root,env:{SOP_PYTHON_PATH:python},requireData:true});
   try {
     const result=await fetch(`http://127.0.0.1:${defaultPort}/sop/api/provenance`).then(r=>r.json());
-    assert.ok(result.planPath.startsWith(path.join(root,'artifacts')));
+    assert.ok(result.planPath.startsWith(path.join(root,'runtime')));
     assert.equal(await readFile(result.planPath,'utf8'),'formal shared plan');
     await writeFile(result.planPath,'edit only the default preview snapshot');
   } finally {await new Promise(resolve=>defaultServer.close(resolve));}

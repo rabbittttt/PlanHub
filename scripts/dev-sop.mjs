@@ -103,8 +103,10 @@ export async function resolvePreviewSettings(args=process.argv.slice(2),{root=RO
   const persistentRoot=await loadPersistentDataRoot(root,{env});
   const dataDirectory=dataRoot?(configured(env.SOP_DATA_DIR)||(!dataRootExplicit&&persistentRoot?path.join(persistentRoot,'database','sop'):path.join(dataRoot,'data'))):null;
   if(!values.snapshot&&dataDirectory) {
-    const rel=path.relative(path.join(root,'artifacts'),dataDirectory);
-    if(rel===''||(!path.isAbsolute(rel)&&rel!=='..'&&!rel.startsWith('..'+path.sep)))throw new Error('日常持久数据不能指向门户 artifacts 临时快照；请配置原 SOP 数据目录。');
+    for(const temporary of ['runtime','artifacts']){
+      const rel=path.relative(path.join(root,temporary),dataDirectory);
+      if(rel===''||(!path.isAbsolute(rel)&&rel!=='..'&&!rel.startsWith('..'+path.sep)))throw new Error('日常持久数据不能指向门户临时快照；请配置原 SOP 数据目录。');
+    }
   }
   const sharedConfig=configured(values['shared-config']||env.SOP_SHARED_CONFIG||local.sharedConfig)||path.resolve(sourceRoot,'..','订单分析','scripts','config','shared_config.py');
   let salesSourceDir=dataRoot?path.join(dataRoot,'input_file'):null;
@@ -185,8 +187,8 @@ export async function runPreview(args=process.argv.slice(2),options={}) {
   const pythonEnvironment=path.dirname(path.dirname(python));
   if(existsSync(path.join(pythonEnvironment,'pyvenv.cfg')))pythonEnv.VIRTUAL_ENV=pythonEnvironment;
   else delete pythonEnv.VIRTUAL_ENV;
-  await mkdir(path.join(root,'artifacts'),{recursive:true});
-  const preview=await mkdtemp(path.join(root,'artifacts',snapshot?'sop-preview-':'sop-runtime-'));
+  await mkdir(path.join(root,'runtime'),{recursive:true});
+  const preview=await mkdtemp(path.join(root,'runtime',snapshot?'sop-preview-':'sop-runtime-'));
   const config=path.join(preview,'config');
   await mkdir(config);
   const data=snapshot?path.join(preview,'data'):dataDirectory;

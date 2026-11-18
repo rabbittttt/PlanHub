@@ -66,7 +66,7 @@ test('default portal saves through the original SOP service and survives a full 
   await assert.rejects(runPreview([...configured,'--snapshot','--port',String(instance.port),'--backend-port',String(instance.backend)],{root,env}),/不同代码版本或配置/);
   const differentBackend=await freePort();
   await assert.rejects(runPreview([...configured,'--port',String(instance.port),'--backend-port',String(differentBackend)],{root,env}),/不同代码版本或配置/);
-  assert.equal((await readdir(path.join(root,'artifacts'))).filter(name=>name.startsWith('sop-runtime-')).length,1);
+  assert.equal((await readdir(path.join(root,'runtime'))).filter(name=>name.startsWith('sop-runtime-')).length,1);
  }finally{await close(instance.server);}
  const db=path.join(dataRoot,'data/sop.sqlite3');
  assert.ok((await stat(db)).size>0);assert.ok((await stat(workbook)).size>0);
@@ -82,11 +82,11 @@ test('default portal saves through the original SOP service and survives a full 
   assert.deepEqual((await readdir(logs)).sort(),['service.log','stderr.log','stdout.log']);
   assert.equal((await readFile(path.join(logs,'stdout.log'),'utf8')).match(/Starting process/g).length,2);
   assert.ok(!(await readdir(path.join(dataRoot,'data'))).includes('service.err.log'));
-  for(const folder of (await readdir(path.join(root,'artifacts'))).filter(name=>name!=='portal-instances')){
+  for(const folder of (await readdir(path.join(root,'runtime'))).filter(name=>name!=='portal-instances')){
    assert.ok(folder.startsWith('sop-runtime-'),'Default mode must not create data snapshots');
-   const gateway=JSON.parse(await readFile(path.join(root,'artifacts',folder,'config/gateway.json'),'utf8'));
+   const gateway=JSON.parse(await readFile(path.join(root,'runtime',folder,'config/gateway.json'),'utf8'));
    assert.equal(gateway.data_dir,path.join(dataRoot,'data'));assert.equal(gateway.plan_file,workbook);
-   assert.deepEqual((await readdir(path.join(root,'artifacts',folder))).sort(),['config']);
+   assert.deepEqual((await readdir(path.join(root,'runtime',folder))).sort(),['config']);
   }
  }finally{await close(instance.server);}
 });
