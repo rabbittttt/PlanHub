@@ -28,10 +28,10 @@ def run(source, destination, quicklook, hook, source_base, apply=False):
         raise ValueError('Destination must be absent or contain only empty directories; never merge business files')
     if quicklook.is_relative_to(source) or quicklook.is_relative_to(destination):
         raise ValueError('QuickLook store must be separate from shared inputs')
-    before = storage.files(source)
+    before = storage.files(source, require_idle=apply)
     recovery_names = {p.name for p in source.iterdir() if p.is_dir() and ".pre-central-" in p.name}
     active_files = {name: digest for name, digest in before.items() if Path(name).parts[0] not in recovery_names}
-    state_before = storage.files(quicklook) if quicklook.is_dir() else None
+    state_before = storage.files(quicklook, require_idle=apply) if quicklook.is_dir() else None
     if state_before is not None and not hook.is_file():
         raise ValueError('QuickLook migration hook missing; update the child project first')
     print(json.dumps({'source': str(source), 'destination': str(destination), 'files': len(before),
@@ -39,15 +39,7 @@ def run(source, destination, quicklook, hook, source_base, apply=False):
     if not apply:
         return
     if os.name != 'nt':
-        raise ValueError('Apply requires Windows stopped-process verification')
-    command = r"Get-CimInstance Win32_Process | Where-Object {$_.Name -match '^python(w)?\.exe$'} | Select-Object ProcessId,CommandLine | ConvertTo-Json -Compress"
-    result = subprocess.run(['powershell.exe', '-NoProfile', '-NonInteractive', '-Command', command],
-                            capture_output=True, text=True, check=True)
-    processes = json.loads(result.stdout or '[]')
-    if isinstance(processes, dict):
-        processes = [processes]
-    if any(p['ProcessId'] != os.getpid() and 'migrate-shared.py' not in (p.get('CommandLine') or '') for p in processes):
-        raise ValueError('Stop Python business services before migration')
+        raise ValueError('执行迁移需要 Windows 文件占用检查。')
     destination.parent.mkdir(parents=True, exist_ok=True)
     stage = Path(tempfile.mkdtemp(prefix='.shared-migration-', dir=destination.parent))
     backup = destination.parent / 'backups' / ('shared-migration-' + uuid.uuid4().hex[:12])
@@ -67,7 +59,7 @@ def run(source, destination, quicklook, hook, source_base, apply=False):
                 raise ValueError('QuickLook copy verification failed')
             subprocess.run([sys.executable, '-B', str(hook), '--staged', str(stage / 'quicklook'),
                             '--old', str(source), '--new', str(destination), '--source-base', str(source_base)], check=True)
-        if storage.files(source) != before or (state_before is not None and storage.files(quicklook) != state_before):
+        if storage.files(source, require_idle=True) != before or (state_before is not None and storage.files(quicklook, require_idle=True) != state_before):
             raise ValueError('Data changed during migration; nothing activated')
         backup.mkdir(parents=True)
         if destination.exists():

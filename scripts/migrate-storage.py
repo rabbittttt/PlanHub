@@ -8,13 +8,41 @@ def no_links(path):
         if node.is_symlink() or (hasattr(node,'is_junction') and node.is_junction()):
             raise ValueError(f'Linked migration path: {node}')
 
-def files(root):
+def file_digest(path, *, require_idle):
+    if require_idle:
+        if os.name != 'nt':
+            raise ValueError('执行迁移需要 Windows 文件占用检查。')
+        import _winapi
+        import msvcrt
+        try:
+            # Share mode zero tests the actual file against open readers and writers.
+            handle = _winapi.CreateFile(str(path), _winapi.GENERIC_READ, 0, 0, _winapi.OPEN_EXISTING, 0, 0)
+        except OSError as error:
+            if error.winerror in (32, 33):
+                raise ValueError(f'无法迁移正在使用的文件：{path}。请关闭使用它的服务或程序后重试。') from error
+            raise
+        try:
+            fd = msvcrt.open_osfhandle(handle, os.O_RDONLY | os.O_BINARY)
+        except BaseException:
+            _winapi.CloseHandle(handle)
+            raise
+        stream = os.fdopen(fd, 'rb')
+    else:
+        stream = path.open('rb')
+    with stream:
+        digest = hashlib.sha256()
+        for chunk in iter(lambda: stream.read(1024 * 1024), b''):
+            digest.update(chunk)
+        return digest.hexdigest()
+
+
+def files(root, *, require_idle=False):
     result={}
     for p in [root, *root.rglob('*')]:
         if p.is_symlink() or (hasattr(p,'is_junction') and p.is_junction()):
             raise ValueError(f'Linked migration source: {p}')
         if p.is_file():
-            result[str(p.relative_to(root))]=hashlib.sha256(p.read_bytes()).hexdigest()
+            result[str(p.relative_to(root))]=file_digest(p, require_idle=require_idle)
     return result
 
 def has_source_directory(source):
@@ -68,18 +96,10 @@ def run(manifest, apply=False):
     if not entries:
         print('没有待迁移的目录。')
         return
-    snapshots={str(src):files(src) for src,_ in entries}
+    snapshots={str(src):files(src, require_idle=apply) for src,_ in entries}
     print(json.dumps({'destination':str(target),'stores':[{'source':str(s),'destination':str(target/r),'files':len(snapshots[str(s)])} for s,r in entries]},ensure_ascii=False,indent=2))
     if not apply:return
-    if os.name!='nt':raise ValueError('Apply currently requires Windows stopped-process verification')
-    # Refuse any Python application process except this migration. No process is terminated.
-    command=r"Get-CimInstance Win32_Process | Where-Object {$_.Name -match '^python(w)?\.exe$'} | Select-Object ProcessId,CommandLine | ConvertTo-Json -Compress"
-    result=subprocess.run(['powershell.exe','-NoProfile','-NonInteractive','-Command',command],capture_output=True,text=True,check=True)
-    processes=json.loads(result.stdout or '[]')
-    if isinstance(processes,dict):processes=[processes]
-    for process in processes:
-        if process['ProcessId']!=os.getpid() and 'migrate-storage.py' not in (process.get('CommandLine') or ''):
-            raise ValueError('Stop Python business services before migration; no process was stopped.')
+    if os.name!='nt':raise ValueError('执行迁移需要 Windows 文件占用检查。')
     target.parent.mkdir(parents=True,exist_ok=True)
     stage=Path(tempfile.mkdtemp(prefix='.storage-migration-',dir=target.parent))
     journal={'target':str(target),'backups':[],'activated':False}
@@ -104,7 +124,7 @@ def run(manifest, apply=False):
             script=(base/hook['script']).resolve()
             subprocess.run([sys.executable,'-B',str(script),'--staged',str(stage/ hook['store']),'--old',str((base/hook['source']).resolve()),'--new',str(target/hook['store'])],check=True)
         for source,relative in entries:
-            if files(source)!=snapshots[str(source)]:raise ValueError('Source changed during preparation')
+            if files(source, require_idle=True)!=snapshots[str(source)]:raise ValueError('Source changed during preparation')
         for source,relative in entries:
             destination = target / relative
             no_links(destination)

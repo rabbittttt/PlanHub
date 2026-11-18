@@ -1,7 +1,6 @@
 import importlib.util
 import json
 from pathlib import Path
-import subprocess
 import tempfile
 import unittest
 from unittest.mock import patch
@@ -38,8 +37,7 @@ class SharedMigrationTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as folder:
             args=self.fixture(folder)
             legacy=args[0]/'catalog.pre-central-old';legacy.mkdir();(legacy/'keep.db').write_bytes(b'recovery')
-            with patch.object(module.subprocess,'run',return_value=subprocess.CompletedProcess([],0,stdout='[]')):
-                module.run(*args,apply=True)
+            module.run(*args,apply=True)
             self.assertFalse(args[0].exists());self.assertEqual((args[1]/'orders.xlsx').read_bytes(),b'original workbook')
             self.assertTrue((args[1]/'原始销量').is_dir());self.assertTrue((args[2]/'workspace.json').exists())
             backups=list((args[1].parent/'backups').glob('shared-migration-*'))
@@ -51,10 +49,19 @@ class SharedMigrationTests(unittest.TestCase):
     def test_hook_failure_keeps_original_sources_and_state(self):
         with tempfile.TemporaryDirectory() as folder:
             args=self.fixture(folder)
-            with patch.object(module.subprocess,'run',side_effect=[subprocess.CompletedProcess([],0,stdout='[]'),RuntimeError('hook failed')]):
+            with patch.object(module.subprocess,'run',side_effect=RuntimeError('hook failed')):
                 with self.assertRaisesRegex(RuntimeError,'hook failed'):module.run(*args,apply=True)
             self.assertTrue((args[0]/'orders.xlsx').exists());self.assertEqual((args[2]/'workspace.json').read_text(),'{}')
             self.assertFalse((args[1]/'orders.xlsx').exists())
+
+    def test_open_shared_input_or_quicklook_state_identifies_file_before_moving(self):
+        with tempfile.TemporaryDirectory() as folder:
+            args=self.fixture(folder)
+            for file in (args[0]/'orders.xlsx',args[2]/'workspace.json'):
+                with file.open('rb'),self.assertRaisesRegex(ValueError,file.name):
+                    module.run(*args,apply=True)
+                self.assertTrue(args[0].is_dir())
+                self.assertFalse((args[1].parent/'backups').exists())
 
     def test_existing_destination_is_never_overwritten(self):
         with tempfile.TemporaryDirectory() as folder:

@@ -1,8 +1,7 @@
 from contextlib import closing
-import importlib.util,json,sqlite3,tempfile,unittest
+import importlib.util,json,sqlite3,subprocess,sys,tempfile,unittest
 from pathlib import Path
 from unittest.mock import patch
-from types import SimpleNamespace
 spec=importlib.util.spec_from_file_location('migration',Path(__file__).resolve().parents[1]/'scripts/migrate-storage.py')
 migration=importlib.util.module_from_spec(spec);spec.loader.exec_module(migration)
 class MigrationTests(unittest.TestCase):
@@ -16,7 +15,7 @@ class MigrationTests(unittest.TestCase):
   self.assertEqual(migration.files(self.source),before);self.assertFalse((self.root/'new').exists())
  def test_apply_preserves_database_and_recovery_copy(self):
   before=migration.files(self.source)
-  with patch.object(migration.subprocess,'run',return_value=SimpleNamespace(stdout='[]')):migration.run(self.manifest,True)
+  migration.run(self.manifest,True)
   destination=self.root/'new/database/app'
   self.assertEqual(migration.files(destination),before);self.assertFalse(self.source.exists())
   journal=json.loads((self.root/'new/migration.json').read_text())
@@ -37,10 +36,10 @@ class MigrationTests(unittest.TestCase):
   before=migration.files(target)
   migration.run(self.manifest)
   self.assertEqual(migration.files(target),before)
-  with patch.object(migration.subprocess,'run',return_value=SimpleNamespace(stdout='[]')) as calls:
+  with patch.object(migration.subprocess,'run') as calls:
    migration.run(self.manifest,True)
    migration.run(self.manifest,True)
-  calls.assert_called_once()
+  calls.assert_not_called()
   for name,digest in before.items():self.assertEqual(migration.files(target)[name],digest)
   self.assertEqual((target/'database/app/value.txt').read_text(),'saved')
   self.assertEqual((occupied/'old').read_text(),'legacy')
@@ -59,7 +58,7 @@ class MigrationTests(unittest.TestCase):
     second.mkdir();(second/'appeared').write_text('keep')
     raise FileExistsError(str(second))
    return rename(path,destination)
-  with patch.object(Path,'rename',inject),patch.object(migration.subprocess,'run',return_value=SimpleNamespace(stdout='[]')):
+  with patch.object(Path,'rename',inject):
    with self.assertRaises(FileExistsError):migration.run(self.manifest,True)
   self.assertEqual(list(first.iterdir()),[])
   self.assertEqual((self.source/'value.txt').read_text(),'saved')
@@ -71,9 +70,9 @@ class MigrationTests(unittest.TestCase):
   config['hooks']=[{'script':'absent-hook.py','source':'absent','store':'database/quicklook'}]
   self.manifest.write_text(json.dumps(config))
   migration.run(self.manifest)
-  with patch.object(migration.subprocess,'run',return_value=SimpleNamespace(stdout='[]')) as calls:
+  with patch.object(migration.subprocess,'run') as calls:
    migration.run(self.manifest,True)
-  calls.assert_called_once()
+  calls.assert_not_called()
   self.assertEqual((self.root/'new/database/app/value.txt').read_text(),'saved')
   self.assertFalse((self.root/'new/database/quicklook').exists())
  def test_all_missing_creates_nothing(self):
@@ -85,3 +84,14 @@ class MigrationTests(unittest.TestCase):
   self.source.rename(self.root/'elsewhere')
   self.source.write_text('saved')
   with self.assertRaises(NotADirectoryError):migration.run(self.manifest,True)
+
+ def test_open_database_blocks_only_while_the_file_is_in_use(self):
+  database=self.source/'test.sqlite3'
+  with database.open('rb'):
+   with self.assertRaisesRegex(ValueError,'test.sqlite3'):migration.run(self.manifest,True)
+   self.assertFalse((self.root/'new').exists())
+  # This test process remains alive while the real command migrates the fixtures.
+  result=subprocess.run([sys.executable,'-B',migration.__file__,str(self.manifest),'--apply'],
+                        capture_output=True)
+  self.assertEqual(result.returncode,0,result.stderr)
+  self.assertTrue((self.root/'new/database/app/test.sqlite3').exists())
