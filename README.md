@@ -4,19 +4,9 @@
 
 ## 从 A 打包，到 B 试运行和部署
 
-1. **A 准备源码**：更新门户和各应用，核对已有 Python 构建环境与本机发布配置。
-2. **A 打包**：双击 `发布应用.bat`，输入 `0`，生成自带 Windows 运行环境的完整文件夹。
-3. **B 本机测试**：复制整个 `release/planhub-时间戳/`，双击 `prepare.cmd`，按手册放好数据，再双击 `preview.cmd`。
-4. **同事正式部署**：本机测试通过后，同事安装 Docker，在包内运行 `build-docker.cmd`，填写公司访问地址，再运行 `start-docker.cmd`。
-5. **部门验收**：同事接入公司入口后，从部门电脑检查各应用和重启后的数据。
+首次交付在 A 运行 `发布应用.bat` 选 `0`。B 用完整包的 `preview.cmd` 试运行，通过后由部署同事安装 Docker 并启动正式服务。文件放置位置、各步命令和验收方法见[部署说明](docs/deployment.md)。
 
-**具体命令：[从打包到部署的五步说明](docs/deployment.md)。**
-
-**A 打包和 B 本机测试均不需要安装 Docker。** 首次选 `0`，包内已带 Node.js、Python 和依赖，B 无需另装。`preview.cmd` 会在 B 后台运行收到的程序，就绪后自动打开 `http://127.0.0.1:4173/`；所有网页共用这个入口，后台优先使用已登记的子项目默认端口，冲突时自动选择空闲端口。结束时双击 `stop-preview.cmd`。
-
-本机运行直接读写 `planhub-runtime/` 的实际数据；更新其中的 `shared/` 文件后，由各应用按自身周期处理。公司地址和认证留给部署同事处理。交付工具和目录使用英文名，业务数据放在包外。
-
-**以后只更新代码**：A 可选 `8`，打包全部七个应用但不重复附带 Windows 运行环境。B 保留旧 `0` 包供工具复用环境，停止旧版本后，把新包并排放好，双击新包 `preview.cmd`，继续使用同一份 `planhub-runtime/`，不用再选副本或运行 `prepare.cmd`。正式 Docker 更新也可用 `8`，或只打改动应用。具体见[后续更新步骤](docs/deployment.md#updates)。
+后续只更新代码时，B 继续使用同一份 `planhub-runtime/`。选包和换包方法见[以后更新](docs/deployment.md#以后更新)。
 
 ## 开发联调
 
@@ -44,4 +34,4 @@
 
 ## 集中持久目录
 
-开发版的应用记录在 `../工作台数据/database/`，共享 Excel 在 `../工作台数据/shared/`。B 上的配置和数据保存在包外的 `planhub-runtime/`。首次放置数据见[部署说明第三步](docs/deployment.md#first-data)。
+开发版的应用记录在 `../工作台数据/database/`，共享 Excel 在 `../工作台数据/shared/`。B 上的配置和数据保存在包外的 `planhub-runtime/`。首次放置数据见[部署说明第三步](docs/deployment.md#第三步-在-b-放好数据并试运行)。
