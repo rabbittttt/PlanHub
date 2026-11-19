@@ -23,7 +23,7 @@ h1,h2,h3,h4,p{margin:0}
 .brand,.nav-toggle{display:flex;align-items:center;justify-content:center;width:44px;min-height:44px;border-radius:10px}
 .brand-mark{display:block;width:36px;height:36px;object-fit:contain;flex-shrink:0;border-radius:8px}
 .brand-copy,.nav-label{display:none;min-width:0}
-.brand-organization{display:block;color:var(--muted);font-size:11px;line-height:1.3}
+.brand-organization{display:block;color:var(--muted);font-size:var(--type-note);line-height:1.3}
 .brand strong{display:block;font-size:15px;line-height:1.4;overflow-wrap:anywhere}
 .nav-toggle{border:0;background:transparent;color:var(--icon);padding:0;flex-shrink:0}
 .brand:hover,.nav-toggle:hover{background:var(--surface-soft)}
@@ -160,3 +160,30 @@ main{min-width:0}
 @media(prefers-reduced-motion:reduce){*,*::before,*::after{animation:none!important;transition:none!important;scroll-behavior:auto!important}}
 
 .frame-overlay .secondary-button{margin-top:20px}
+
+/* Workbench typography */
+:root {
+  --type-title: 24px;
+  --type-section: 16px;
+  --type-body: 14px;
+  --type-note: 12px;
+}
+@media (max-width: 640px) {
+  :root { --type-title: 20px; }
+}
+.home-heading h1,
+.empty-state h1 { font-size: var(--type-title); }
+.cycle-panel-heading h2,
+.cycle-apps h2,
+.frame-overlay h2 { font-size: var(--type-section); }
+body,
+.nav-item,
+.cycle-action,
+.secondary-button,
+.cycle-app-link,
+.cycle-app-unavailable,
+.cycle-task-check strong { font-size: var(--type-body); }
+.brand-organization,
+.home-context, #today,
+.cycle-task-check small,
+.cycle-window small { font-size: var(--type-note); }
