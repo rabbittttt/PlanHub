@@ -57,6 +57,9 @@ try{
     Check ((Read (Join-Path $source 'native-direct.json')).mayBeRunning -eq $false) 'Direct stop must release Docker exclusion'
     Remove-Item -LiteralPath (Join-Path $source 'native-preview.json')
     Remove-Item -LiteralPath (Join-Path $source 'deployment.lock')
+    $message=''
+    try{& $entry -Action Start}catch{$message=$_.Exception.Message}
+    Check ($message -like '*prepare.cmd*') 'Direct preview must identify the preparation command when the runtime is missing'
     Reject {& $entry -Action Start -Snapshot}
     Check (-not(Test-Path -LiteralPath (Join-Path $source 'deployment.lock'))) 'Preview created a missing source lock'
     Put (Join-Path $source 'deployment.lock') ''

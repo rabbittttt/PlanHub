@@ -104,6 +104,9 @@ if(-not $Snapshot){
     $directLock=$null
     try{
         $lockFile=Join-Path $source 'deployment.lock';No-Link $lockFile
+        if($Action -eq 'Start' -and (-not(Test-Path -LiteralPath $lockFile -PathType Leaf) -or -not(Test-Path -LiteralPath (Join-Path $source 'config.json') -PathType Leaf))){
+            throw '请先在完整包内运行 prepare.cmd，按部署说明第三步放好规则和数据，再运行 preview.cmd。'
+        }
         $directLock=[IO.File]::Open($lockFile,[IO.FileMode]::Open,[IO.FileAccess]::ReadWrite,[IO.FileShare]::None)
         $derived=Join-Path $source 'native-preview.json';No-Link $derived
         $marker=Join-Path $source 'native-direct.json';No-Link $marker
@@ -116,7 +119,7 @@ if(-not $Snapshot){
         }
         foreach($item in @(@('deployment-active.json','mayBeRunning'),@('deployment-state.json','running'))){
             $file=Join-Path $source $item[0];No-Link $file
-            if(Test-Path -LiteralPath $file){$record=Read-Json $file;if($record.($item[1]) -cne $false){throw 'Stop formal Docker services with the Docker delivery stop script before direct local startup.'}}
+            if(Test-Path -LiteralPath $file){$record=Read-Json $file;if($record.($item[1]) -cne $false){throw '请先用当前正式部署的完整包运行 stop-docker.cmd，再启动本机试运行。'}}
         }
         $sourceFile=Join-Path $source 'config.json';No-Link $sourceFile
         $settings=Read-Json $sourceFile

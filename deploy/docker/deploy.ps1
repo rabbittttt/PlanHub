@@ -1,4 +1,4 @@
-#requires -Version 5.1
+﻿#requires -Version 5.1
 [CmdletBinding()]
 param(
     [ValidateSet('Validate','Prepare','Start','Stop','Status','Logs')][string]$Action='Start',
@@ -44,7 +44,11 @@ try {
     $databaseDirectory=if($null -ne $config.PSObject.Properties['databaseDirectory']){[string]$config.databaseDirectory}else{'data'}
     $null=Private-Path $databaseDirectory
     if($Action -eq 'Prepare'){
-        foreach($dir in @('config',$databaseDirectory,$config.sharedDirectory)){[void][IO.Directory]::CreateDirectory((Join-Path $runtime $dir))}
+        $rulesPath=Private-Path $config.sopSharedConfig
+        foreach($dir in @('config','logs',$databaseDirectory,($config.sharedDirectory+'/原始销量'))){
+            [void][IO.Directory]::CreateDirectory((Private-Path $dir))
+        }
+        [void][IO.Directory]::CreateDirectory((Split-Path -Parent $rulesPath))
         $bindings=Get-Content -LiteralPath (Join-Path $package 'bindings.json') -Raw -Encoding UTF8|ConvertFrom-Json
         foreach($id in $manifest.applications){
             $binding=$bindings.PSObject.Properties[$id].Value
@@ -56,8 +60,11 @@ try {
             }
             [void][IO.Directory]::CreateDirectory((Private-Path $relative))
         }
-        Write-Host ('Data directory prepared: '+$runtime)
-        if($manifest.complete){Write-Host 'Supply rules and data, then use preview.cmd for local testing. Docker is not required.'}
+        Write-Host ('数据目录已准备好：'+$runtime)
+        Write-Host ('业务规则文件：'+$rulesPath)
+        Write-Host ('共享文件目录：'+(Join-Path $runtime $config.sharedDirectory))
+        Write-Host ('应用数据根目录：'+(Join-Path $runtime $databaseDirectory))
+        if($manifest.complete){Write-Host '放好规则和业务数据后，双击 preview.cmd 在本机试运行。'}
         return
     }
     if($AppId -and $AppId -notin $manifest.applications){throw 'AppId is not included in this delivery.'}

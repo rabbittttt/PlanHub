@@ -168,6 +168,32 @@ test('authenticated gateway forwards verified per-request identity; forged heade
   await checkService('planhub',{port,healthPath:'/',type:'static'},config);
 });
 
+test('prepare.cmd initializes the current layout and preserves application data on rerun',{skip:process.platform!=='win32'},async t=>{
+  const base=await temporary(t),id='vehicle-config';
+  const portal=await release(base,'planhub',{'index.html':'portal','config/apps.json':JSON.stringify({groups:[{apps:[{id,enabled:true}]}]})});
+  const app=await release(base,id,{'server.py':'# fixture','requirements.txt':''},{type:'service',healthPath:'/healthz'});
+  const destination=path.join(base,'delivery'),runtime=path.join(base,'planhub-runtime');
+  await buildDelivery([portal,app],destination,{complete:true,collectRuntime:fakeRuntime});
+  function prepare(){
+    const result=spawnSync('cmd.exe',['/d','/c','prepare.cmd'],{cwd:destination,encoding:'utf8',windowsHide:true,
+      env:Object.fromEntries(Object.entries(process.env).filter(([key])=>key.toUpperCase()!=='PSMODULEPATH'))});
+    assert.equal(result.status,0,result.stderr||result.stdout);
+  }
+  prepare();
+  for(const dir of ['config','database/vehicle-config','shared/原始销量','logs'])assert.deepEqual(await readdir(path.join(runtime,dir)),[]);
+  const configFile=path.join(runtime,'config.json'),original=await readFile(configFile,'utf8');
+  const settings=JSON.parse(original);
+  for(const pathApi of [path.posix,path.win32]){
+    const binding=(await loadRuntimeBindings(root))[id];
+    const spec=containerSpec(id,binding,settings,{pathApi,runtime:'runtime'});
+    assert.equal(spec.data,pathApi.join('runtime','database',id));
+  }
+  const marker=path.join(runtime,'database',id,'current.json');await writeFile(marker,'saved');
+  prepare();
+  assert.equal(await readFile(configFile,'utf8'),original);
+  assert.equal(await readFile(marker,'utf8'),'saved');
+});
+
 test('prepare creates the vehicle catalog inside the configured shared root without a duplicate private directory',{skip:process.platform!=='win32'},async t=>{
   const base=await temporary(t),app=await release(base,'vehicle-config',{'server.py':'# fixture only','requirements.txt':''},{type:'service',healthPath:'/healthz'});
   const destination=path.join(base,'delivery'),runtime=path.join(base,'planhub-runtime');
@@ -176,6 +202,7 @@ test('prepare creates the vehicle catalog inside the configured shared root with
   const result=spawnSync('powershell.exe',['-NoProfile','-ExecutionPolicy','Bypass','-File',path.join(destination,'deploy.ps1'),'-Action','Prepare','-RuntimeDirectory',runtime],{encoding:'utf8',windowsHide:true,env:Object.fromEntries(Object.entries(process.env).filter(([key])=>key.toUpperCase()!=='PSMODULEPATH'))});
   assert.equal(result.status,0,result.stderr||result.stdout);
   assert.deepEqual(await readdir(path.join(runtime,'business/shared/车型配置')),[]);
+  assert.deepEqual(await readdir(path.join(runtime,'business/shared/原始销量')),[]);
   await assert.rejects(readdir(path.join(runtime,'data/vehicle-config')),/ENOENT/);
   const marker=path.join(runtime,'business/shared/车型配置/current.json');await writeFile(marker,'preserve existing catalog');
   const again=spawnSync('powershell.exe',['-NoProfile','-ExecutionPolicy','Bypass','-File',path.join(destination,'deploy.ps1'),'-Action','Prepare','-RuntimeDirectory',runtime],{encoding:'utf8',windowsHide:true,env:Object.fromEntries(Object.entries(process.env).filter(([key])=>key.toUpperCase()!=='PSMODULEPATH'))});
