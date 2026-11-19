@@ -42,7 +42,7 @@ A 打包、B 本机测试都不需要 Docker，也不需要在 B 安装 Python �
 
 - 将真实 `shared_config.py` 放入 `planhub-runtime/config/`。默认来源是 A 的 `../订单分析/scripts/config/shared_config.py`，这里的相对路径以门户源码目录为基准。
 - 将 `../工作台数据/shared/` **里面的内容**复制到 `planhub-runtime/shared/`，保留 `订单汇总`、`对账资料` 等业务子目录名；`原始销量/` 供其他项目使用，即使为空也保留，首次准备环境时若不存在则创建。
-- 如果以前用过网页并保存过记录，按下表复制需要保留的数据；完全没有旧记录的应用，对应目录留空即可。
+- 如果以前用过网页并保存过记录，按下表复制需要保留的数据；完全没有旧记录的应用，对应目录留空即可。B 启动后会自行创建 `planhub-runtime/logs/`，A 上的日志以及旧的 `database/orderiq/log/` 均可跳过。
 
 复制旧数据前先停止使用原数据的服务，并保留原件作备份。取旧目录里面的内容，例如 `sop.sqlite3` 直接放在 `database/sop/` 下。
 
@@ -52,7 +52,7 @@ A 打包、B 本机测试都不需要 Docker，也不需要在 B 安装 Python �
 | 订单分析批注 | `../工作台数据/database/orderiq/annotations/` 的内容，关键文件为 `annotations.sqlite3` | `database/orderiq/annotations/` |
 | 车型配置 | `../工作台数据/database/vehicle-config/` 的全部内容，包括 `catalog.sqlite3`、`current.json`、`drafts/`、`history/` | `database/vehicle-config/` |
 | 订单旧报表批次（可选） | `../工作台数据/database/orderiq/runtime/` 的全部内容，包括 `current.json` 和 `datasets/`；不保留可从共享 Excel 重新生成 | `database/orderiq/runtime/` |
-| 数据速查 | `../工作台数据/database/quicklook/` 的数据库、上传及设置；迁移电脑须核对来源与原件路径 | `database/quicklook/` |
+| 数据速查 | `../工作台数据/database/quicklook/` 的数据库、上传及设置；换电脑沿用历史记录时，按[数据速查迁移说明](#quicklook-move)先处理临时副本 | `database/quicklook/` |
 | 销量预测 | 页面和缓存可从共享 Excel 重新生成，通常不用复制旧文件 | `database/forecast/` 留空 |
 
 车型配置同其他应用一样使用 `database/vehicle-config/`。旧环境如在共享目录或旧 `data/vehicle-config/` 留有记录，先停服核对唯一有效来源，再执行迁移；禁止自动合并两份记录。旧发布包保持原样，重新打包交付。
@@ -164,7 +164,7 @@ A 打包时选择是否携带 Windows 运行环境：
 
 开发版日志位于工作台数据根目录的 `logs/`，默认是与门户项目同级的 `工作台数据/logs/`。更改 `dataRoot` 或 `PLANHUB_DATA_ROOT` 后，下一次启动自动使用新位置。后台门户启动信息在 `launcher/`，SOP 维护、数据速查、配置管理、订单分析和销量预测分别在 `sop/`、`quicklook/`、`vehicle-config/`、`orderiq/`、`forecast/`。各目录内的 `stdout.log` 和 `stderr.log` 按启动时间追加，启动时达到 10 MiB 的文件轮转为 `.1`。SOP 另写 `service.log`，运行中按 10 MiB 轮转，保留三份历史文件。运行 `npm run diagnose` 可查看门户启动日志及各服务日志的位置。诊断优先显示新位置，找不到时查找旧日志。
 
-部署包的 Windows 本机运行使用包外 `planhub-runtime/logs/` 下的相同目录。显式快照模式写入快照自己的 `logs/`。Docker 的上述业务服务同时输出到 Compose 和包外应用日志目录，容器启动或镜像错误可用下表的 Logs 命令查看。独立生成静态报表时，生成日志放在各项目 HTML 旁边的 `log/`。开发版 SOP 临时配置、预览快照及门户实例记录在 `runtime/`，接入和静态发布备份在 `config.local/backups/`。
+B 上用 `preview.cmd` 或 Docker 运行新版订单分析时，自动同步日志在 `planhub-runtime/logs/orderiq/auto_sync.log`，查批注或报表批次则去 `database/orderiq/`。Windows 本机运行的其他服务也使用包外 `planhub-runtime/logs/` 下的对应目录。显式快照模式写入快照自己的 `logs/`。Docker 的上述业务服务同时输出到 Compose 和包外应用日志目录，容器启动或镜像错误可用下表的 Logs 命令查看。独立生成静态报表时，生成日志放在各项目 HTML 旁边的 `log/`。开发版 SOP 临时配置、预览快照及门户实例记录在 `runtime/`，接入和静态发布备份在 `config.local/backups/`。
 
 | 要做什么 | 操作 |
 |---|---|
@@ -192,8 +192,11 @@ A 打包时选择是否携带 Windows 运行环境：
 
 数据库及配套文件按 `database/sop`、`database/orderiq/annotations`、`database/orderiq/runtime`、`database/forecast`、`database/quicklook`、`database/vehicle-config` 分开保存，不建立第二份运行副本。上传、草稿、历史及运行批次随所属应用目录保留，不只复制单个数据库文件。
 
-开发首次迁移：双击根目录 `迁移持久数据.cmd`，选 1 迁移旧数据库，再选 2 迁移旧共享目录，分别核对计划后执行；数据库已经集中时只选 2。执行前停止使用这批数据的服务，关闭正在打开这些文件的程序。工具按文件检查占用，有冲突时会列出文件路径。使用命令行时，运行 `../.venv/Scripts/python.exe -B scripts/migrate-storage.py integration/storage-migration.example.json` 核对计划，再加 `--apply` 执行。目录不同先复制模板到本机位置并修改其中相对路径；所有相对路径基于清单文件位置。选 1 时可以使用已有的“工作台数据”根目录。工具逐项迁入缺失或空的目标目录。来源缺失或目标已有内容时，会显示跳过的路径，已有记录保留，供人工核对。逐文件校验、数据库检查通过后，原目录改名为 `.pre-central-*` 恢复备份，目标根目录的 `migration.json` 记录映射，已有记录时另存为 `migration-编号.json`。数据速查的原件路径由其自己的迁移脚本调整。
+**A 的旧应用数据（仅首次整理时使用）。** 数据已经在 `工作台数据/database/` 时跳过。手动整理前先停服并保留旧目录，按 `integration/storage-migration.example.json` 核对来源与目标，遇到已有记录先核对。数据速查保存了原件路径，需按下段的临时副本步骤调整并核对历史文件。若使用迁移工具，在门户源码目录运行 `../.venv/Scripts/python.exe -B scripts/migrate-storage.py integration/storage-migration.example.json` 查看计划，确认后在同一命令末尾加 `--apply`。清单中的相对路径以清单所在目录为准。
 
-新发布环境在 `planhub-runtime/config.json` 设置 `databaseDirectory: "database"`，Windows 与 Docker 共用该目录。旧配置未设置此字段时保持旧 `data/` 与车型配置共享子目录映射，不能只改字段后直接启动。旧 B 环境先停服，按原实际目录编写同格式迁移清单，使用包内 `launcher/migrate-storage.py` 迁移到尚不存在的 `planhub-runtime/central/`（清单中的目标子目录仍为 `database/...`），验证后将 `databaseDirectory` 设置为 `central/database`。迁移完成后不要再移动目标目录，以免数据速查保存的原件路径失效。数据速查迁移钩子在其发布物 `scripts/migrate_storage.py` 中；路径按实际发布物填写。首次从 A 到 B 时复制集中目录中的持久数据；数据速查先复制到 B 的临时目录，在 B 停服期间运行其 `scripts/migrate_storage.py --staged <B临时复制目录> --old <A数据速查目录> --new <B正式数据速查目录>`，检查后将临时目录移到该正式位置（正式目录必须尚不存在），并在页面重新选择实际的共享来源。后续只换程序包。
+新发布环境在 `planhub-runtime/config.json` 设置 `databaseDirectory: "database"`，Windows 与 Docker 共用该目录。旧配置未设置此字段时保持旧 `data/` 与车型配置共享子目录映射，不能只改字段后直接启动。旧 B 环境先停服，按原实际目录编写同格式迁移清单，使用包内 `launcher/migrate-storage.py` 迁移到尚不存在的 `planhub-runtime/central/`（清单中的目标子目录仍为 `database/...`），验证后将 `databaseDirectory` 设置为 `central/database`。迁移完成后不要再移动目标目录，以免数据速查保存的原件路径失效。数据速查迁移钩子在其发布物 `scripts/migrate_storage.py` 中；路径按实际发布物填写。
 
-共享目录迁移：选项 2 会逐文件校验复制内容、保留 `原始销量/`，调用数据速查自己的迁移工具更新已保存的来源路径。原共享目录与迁移前的数据速查状态移入数据根的 `backups/shared-migration-*`，旧共享目录退出使用。目标已有业务文件时拒绝覆盖，需先核对冲突。非默认布局使用 `scripts/migrate-shared.py --source ... --destination ... --quicklook ... --hook ... --source-base ...`，先检查计划，再加 `--apply`；相对参数从当前命令目录解析。不得仅移动 Excel 而遗漏数据库中的来源路径。
+<a id="quicklook-move"></a>
+**首次从 A 到 B 保留数据速查历史记录。** 将 A 的数据速查持久目录复制到 B 的临时目录。在 B 停服期间，用完整包中的 `runtime/python/python.exe` 运行该包的 `releases/quicklook/payload/scripts/migrate_storage.py`，参数为 `--staged <B临时复制目录> --old <A原持久目录的绝对路径> --new <B正式持久目录的绝对路径>`。检查后将临时副本的内容复制到 `prepare.cmd` 创建的空 `database/quicklook/`。目标已有记录时先核对两份数据。启动后在页面选择 B 上的共享来源，并打开一条历史记录验证原件可读。
+
+**A 的旧共享目录（仅首次整理时使用）。** 已使用 `工作台数据/shared/` 时跳过。旧目录仍在使用时，先停服，在门户源码目录运行 `../.venv/Scripts/python.exe -B scripts/migrate-shared.py` 查看计划，确认后在同一命令末尾加 `--apply`。工具逐文件校验复制内容，保留 `原始销量/`，并更新数据速查已保存的来源路径。原共享目录与迁移前的数据速查状态移入数据根的 `backups/shared-migration-*`，旧共享目录退出使用。目标已有业务文件时拒绝覆盖，需先核对冲突。非默认布局使用 `scripts/migrate-shared.py --source ... --destination ... --quicklook ... --hook ... --source-base ...`，先检查计划，再加 `--apply`；相对参数从当前命令目录解析。不得仅移动 Excel 而遗漏数据库中的来源路径。
