@@ -8,10 +8,11 @@ function Put($File,$Value){[void][IO.Directory]::CreateDirectory((Split-Path -Pa
 function Check($Value,$Message){if(-not $Value){throw $Message};$dockerTestState.checks++}
 function Reject([scriptblock]$Action){$failed=$false;try{& $Action|Out-Null}catch{$failed=$true};Check $failed 'Expected safe failure'}
 $dockerTestState=[pscustomobject]@{checks=0;calls=(New-Object Collections.Generic.List[string]);failHealth=$false;hasNetwork=$false;foreignRuntime=$false;images=@{}}
-foreach($name in @('deploy.ps1','delivery-common.ps1','start.cmd','stop.cmd','runtime.example.json','prepare.cmd','build-docker.ps1','build-docker.cmd')){Copy-Item -LiteralPath (Join-Path $root ('deploy/docker/'+$name)) -Destination $package}
+foreach($name in @('deploy.ps1','delivery-common.ps1','start-docker.cmd','stop-docker.cmd','runtime.example.json','prepare.cmd','build-docker.ps1','build-docker.cmd')){Copy-Item -LiteralPath (Join-Path $root ('deploy/docker/'+$name)) -Destination $package}
 Put (Join-Path $package 'runtime/node/node.exe') 'fixture - never executed'
 Put (Join-Path $package 'README.md') 'fixture guide'
-Put (Join-Path $package 'bindings.json') '{}'
+$fixtureBindings=@{planhub=@{type='static'}}
+Save (Join-Path $package 'bindings.json') $fixtureBindings
 Save (Join-Path $package 'compose.json') @{name='planhub';services=@{}}
 $images=@{}
 foreach($id in @('network','planhub')){
@@ -93,6 +94,8 @@ try{
     $manifest.complete=$false;Save (Join-Path $package 'delivery.json') $manifest;$dockerTestState.calls.Clear()
     Reject {& $entry -Action Prepare};Reject {& $builder}
     Check ($dockerTestState.calls.Count -eq 0) 'Invalid partial runtime reuse touched Docker'
+    $manifest.runtimeMode='none';Save (Join-Path $package 'delivery.json') $manifest
+    & $entry -Action Prepare
     $manifest.complete=$true;$manifest.runtimeMode='unknown';Save (Join-Path $package 'delivery.json') $manifest
     Reject {& $entry -Action Prepare}
     $manifest.runtimeMode='reuse'
@@ -111,7 +114,7 @@ try{
     [IO.File]::AppendAllText((Join-Path $package 'bindings.json'),'corruption')
     Reject {& $entry -Action Start}
     Check ($dockerTestState.calls.Count -eq 0) 'Corrupt package touched running services'
-    Put (Join-Path $package 'bindings.json') '{}'
+    Save (Join-Path $package 'bindings.json') $fixtureBindings
     Put (Join-Path $package 'extra.txt') 'undeclared';Reject {& $entry -Action Prepare};Remove-Item -LiteralPath (Join-Path $package 'extra.txt')
     $manifest.complete=$false;Save (Join-Path $package 'delivery.json') $manifest
     & $builder;$dockerTestState.calls.Clear();& $entry -Action Start

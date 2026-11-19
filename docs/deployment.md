@@ -24,7 +24,7 @@ A 打包、B 本机测试都不需要 Docker，也不需要在 B 安装 Python �
 
 工具会调用各原项目的构建入口，校验程序文件，并装入 Windows 的 Node.js、Python 和依赖。不会启动业务服务，也不会连接 B。
 
-**完成标准：** 窗口显示“打包完成”，选中的文件夹中能看到 `prepare.cmd`、`preview.cmd`、`stop-preview.cmd`、`build-docker.cmd`、`start.cmd` 和 `README.md`。里面的子目录全部保留，不单独挑文件。
+**完成标准：** 窗口显示“打包完成”，选中的文件夹中能看到 `prepare.cmd`、`preview.cmd`、`stop-preview.cmd`、`build-docker.cmd`、`start-docker.cmd` 和 `README.md`。里面的子目录全部保留，不单独挑文件。
 
 ## 第三步：在 B 放好数据，并本机测试
 
@@ -42,22 +42,8 @@ A 打包、B 本机测试都不需要 Docker，也不需要在 B 安装 Python �
 
 - 将真实 `shared_config.py` 放入 `planhub-runtime/config/`。默认来源是 A 的 `../订单分析/scripts/config/shared_config.py`，这里的相对路径以门户源码目录为基准。
 - 将 `../工作台数据/shared/` **里面的内容**复制到 `planhub-runtime/shared/`，保留 `订单汇总`、`对账资料` 等业务子目录名；`原始销量/` 供其他项目使用，即使为空也保留，首次准备环境时若不存在则创建。
-- 如果以前用过网页并保存过记录，按下表复制需要保留的数据；完全没有旧记录的应用，对应目录留空即可。B 启动后会自行创建 `planhub-runtime/logs/`，A 上的日志以及旧的 `database/orderiq/log/` 均可跳过。
-
-复制旧数据前先停止使用原数据的服务，并保留原件作备份。取旧目录里面的内容，例如 `sop.sqlite3` 直接放在 `database/sop/` 下。
-
-| 应用 | 从 A 取哪些内容（默认位置，相对门户源码目录） | 放到 B 的哪里（相对 `planhub-runtime/`） |
-|---|---|---|
-| SOP 计划 | `../工作台数据/database/sop/` 的内容，包括 `sop.sqlite3`、`sales.json`、`source_settings.json`、历史备份；不用旧 `service.json`、`service.pid` | `database/sop/` |
-| 订单分析批注 | `../工作台数据/database/orderiq/annotations/` 的内容，关键文件为 `annotations.sqlite3` | `database/orderiq/annotations/` |
-| 车型配置 | `../工作台数据/database/vehicle-config/` 的全部内容，包括 `catalog.sqlite3`、`current.json`、`drafts/`、`history/` | `database/vehicle-config/` |
-| 订单旧报表批次（可选） | `../工作台数据/database/orderiq/runtime/` 的全部内容，包括 `current.json` 和 `datasets/`；不保留可从共享 Excel 重新生成 | `database/orderiq/runtime/` |
-| 数据速查 | `../工作台数据/database/quicklook/` 的数据库、上传及设置；换电脑沿用历史记录时，按[数据速查迁移说明](#quicklook-move)先处理临时副本 | `database/quicklook/` |
-| 销量预测 | 页面和缓存可从共享 Excel 重新生成，通常不用复制旧文件 | `database/forecast/` 留空 |
-
-车型配置同其他应用一样使用 `database/vehicle-config/`。旧环境如在共享目录或旧 `data/vehicle-config/` 留有记录，先停服核对唯一有效来源，再执行迁移；禁止自动合并两份记录。旧发布包保持原样，重新打包交付。
-
-如果原服务用过其他数据目录，取它实际使用的目录。SOP 已保存的计划在数据库中，不能只复制旧维护 Excel 代替。销量预测的人工参数保存在原浏览器中，不随服务器文件迁移。门户和线索声量已在程序包里，不用放进 `database/`。
+- 首次沿用 A 的应用记录时，先停用写入这些数据的服务并备份，再把 `../工作台数据/database/` **里面的内容**复制到 B 的 `planhub-runtime/database/`，保留子目录结构。跳过 SOP 的旧进程文件 `service.json`、`service.pid` 和订单分析的旧日志目录 `orderiq/log/`。B 会自行创建 `planhub-runtime/logs/`。
+- 如果要保留数据速查的历史记录，复制时跳过 `quicklook/`，单独按[数据速查换机步骤](#quicklook-move)处理。首次使用且没有旧记录，可以让 `database/` 留空；B 已有业务记录时，请保留 B 上的数据。
 
 此时目录应是：
 
@@ -68,13 +54,13 @@ planhub/
 │  ├─ preview.cmd
 │  ├─ stop-preview.cmd
 │  ├─ build-docker.cmd
-│  ├─ start.cmd
+│  ├─ start-docker.cmd
 │  └─ 其他随包文件和子目录     ← 全部保留
 └─ planhub-runtime/            ← 配置和数据，长期保留
    ├─ config.json
    ├─ config/shared_config.py
    ├─ shared/                 ← 工作台数据/shared 里面的内容
-   └─ database/               ← 上表中需要保留的记录
+   └─ database/               ← 工作台数据/database 里面的内容
 ```
 
 ### 3. 启动本机测试
@@ -108,7 +94,7 @@ planhub/
    需能看到 Docker Server，Compose 为 v2.20 或更新，平台为 `linux/x86_64` 或 `linux/amd64`。
 3. 在 B 的版本文件夹双击 **`build-docker.cmd`**。它使用随包的应用产物制作容器镜像，不需要 A 的源码目录；首次构建需能访问公司允许的镜像和 Python 依赖源。等待成功再继续。
 4. 用记事本打开 `planhub-runtime/config.json`，将 `publicOrigin` 改为同事提供的访问地址，例如 `https://planhub.company.internal`，结尾不带 `/`，保存。
-5. 回到版本文件夹，双击 **`start.cmd`**。这一步正式启动收到的容器版本；脚本会检查配置、创建并启动容器、等待健康检查通过。
+5. 回到版本文件夹，双击 **`start-docker.cmd`**。这一步正式启动收到的容器版本；脚本会检查配置、创建并启动容器、等待健康检查通过。
 
 **完成标准：** 显示 `Containers are healthy`，约 3 秒后窗口关闭，容器继续在后台运行。出现错误时保留输出排查，不继续接入公司入口。
 
@@ -153,9 +139,9 @@ A 打包时选择是否携带 Windows 运行环境：
 
 ### 已正式部署 Docker，更新上线
 
-1. **A 打包：** 只改一个应用，就在 `发布应用.bat` 选择该应用；整套更新选 `8`，需要重新附带 Windows 环境时选 `0`。新增导航入口还需更新门户；新增应用、修改运行配置或运行契约时选 `0` 或 `8`，交付全部应用。单应用包只适用于已有完整部署且环境配置未变的情况。
+1. **A 打包：** 只改一个应用，就在 `发布应用.bat` 选择该应用；整套更新选 `8`，需要重新附带 Windows 环境时选 `0`。新增导航入口还需更新门户；新增应用、修改运行配置或运行契约时选 `0` 或 `8`，交付全部应用。单应用更新包用于已有完整部署且配置未变的 B，只带 Docker 所需的程序和工具。
 2. **B 放包：** 将新程序文件夹与旧包并排放在原 `planhub/` 下，继续使用旁边的同一份 `planhub-runtime/`。**只更新代码时，不再复制 `database/`、`shared/` 或配置，不重做首次迁移。**
-3. **同事切换：** 在新包运行 `build-docker.cmd`，构建成功后，等当前业务操作结束，再运行新包的 `start.cmd`。单应用包只切换对应应用；全部应用包切换整套。
+3. **同事切换：** 在新包运行 `build-docker.cmd`，构建成功后，等当前业务操作结束，再运行新包的 `start-docker.cmd`。单应用包只切换对应应用；全部应用包切换整套。
 4. **部门验收：** 从公司入口检查改动功能和原有记录。旧包保留供同事核对，工具不回滚数据库。
 
 如果本次还要更新正式数据或配置，由同事先停止使用这些文件的服务并备份，再按本次明确需要修改 `planhub-runtime/` 中的内容，核对后启动。程序包不会自动覆盖这些业务文件，也不要同时运行两套服务写同一数据。
@@ -169,7 +155,7 @@ B 上用 `preview.cmd` 或 Docker 运行新版订单分析时，自动同步日�
 | 要做什么 | 操作 |
 |---|---|
 | 本机运行 | 全部应用包（`0` 或 `8`）的 `preview.cmd` / `stop-preview.cmd`；直接读写 `planhub-runtime/` |
-| 停止正式服务 | `stop.cmd`；全部应用包停止整套，单应用包只停止对应应用，数据保留 |
+| 停止正式服务 | `stop-docker.cmd`；全部应用包停止整套，单应用包只停止对应应用，数据保留 |
 | 状态 / 日志 | 在版本文件夹的 PowerShell 执行 `.\deploy.ps1 -Action Status` 或 `.\deploy.ps1 -Action Logs -AppId orderiq`，应用 ID 按需替换 |
 
 <details>

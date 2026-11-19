@@ -45,7 +45,7 @@ if (-not $AppId -and -not $All) {
     if($number -eq 8){$All=$true;$WithoutRuntime=$true}elseif($number -eq 0){$All=$true}else{$AppId=$applicationChoices[[string]$number]}
 }
 if($WithoutRuntime -and (-not $All -or $BuildOnly)){throw 'WithoutRuntime requires All and cannot be used with BuildOnly.'}
-if(-not $BuildOnly -and -not $WithoutRuntime){
+if($All -and -not $BuildOnly -and -not $WithoutRuntime){
     & node (Join-Path $root 'scripts/build-delivery.mjs') --check-node-runtime | Out-Host
     if($LASTEXITCODE -ne 0){throw 'Node.js runtime preflight failed. See the exact version and license error above; no applications have been rebuilt.'}
 }

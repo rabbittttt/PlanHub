@@ -57,7 +57,7 @@ try {
             [void][IO.Directory]::CreateDirectory((Private-Path $relative))
         }
         Write-Host ('Data directory prepared: '+$runtime)
-        Write-Host 'Supply rules and data, then use preview.cmd for local testing. Docker is not required.'
+        if($manifest.complete){Write-Host 'Supply rules and data, then use preview.cmd for local testing. Docker is not required.'}
         return
     }
     if($AppId -and $AppId -notin $manifest.applications){throw 'AppId is not included in this delivery.'}
@@ -100,7 +100,7 @@ try {
     }
     $deliveryHash=(Get-FileHash -LiteralPath (Join-Path $package 'delivery.json')).Hash.ToLowerInvariant()
     $buildFile=Join-Path $runtime ('docker-images/'+$deliveryHash+'.json');Assert-DeliveryNoLink $buildFile
-    if(-not(Test-Path -LiteralPath $buildFile -PathType Leaf)){throw 'The deployment colleague must run build-docker.cmd successfully before start.cmd.'}
+    if(-not(Test-Path -LiteralPath $buildFile -PathType Leaf)){throw 'The deployment colleague must run build-docker.cmd successfully before start-docker.cmd.'}
     $build=Get-Content -LiteralPath $buildFile -Raw -Encoding UTF8|ConvertFrom-Json
     if($build.schemaVersion -ne 1 -or $build.deliveryHash -cne $deliveryHash -or @($build.images.PSObject.Properties).Count -ne @($manifest.images.PSObject.Properties).Count){throw 'Docker build record does not match this delivery.'}
     foreach($entry in $manifest.images.PSObject.Properties){

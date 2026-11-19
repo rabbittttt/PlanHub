@@ -32,5 +32,5 @@ try{
     $deliveryHash=(Get-FileHash -LiteralPath (Join-Path $package 'delivery.json')).Hash.ToLowerInvariant()
     $record=Join-Path $recordRoot ($deliveryHash+'.json');Assert-DeliveryNoLink $record
     Write-DeliveryJson $record ([ordered]@{schemaVersion=1;deliveryHash=$deliveryHash;images=$images;createdAt=[DateTime]::UtcNow.ToString('o')})
-    Write-Host 'Docker images are ready. Configure the company address, then run start.cmd. No services were started.'
+    Write-Host 'Docker images are ready. Configure the company address, then run start-docker.cmd. No services were started.'
 }finally{if($null -ne $lock){$lock.Dispose()}}

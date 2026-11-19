@@ -68,7 +68,7 @@ try {
     Check ($publishTestState.deliveryArgs.Count -eq 7) 'Program-only update lost its built release'
     Reject {& $publish -AppId planhub -WithoutRuntime -Version invalid-code -ConfigPath $config -NonInteractive}
     function node { $global:LASTEXITCODE=1 }
-    Reject {& $publish -AppId planhub -Version docker-fail -ConfigPath $config -NonInteractive}
+    Reject {& $publish -All -Version docker-fail -ConfigPath $config -NonInteractive}
     Check (-not(Test-Path -LiteralPath (Join-Path $fixture 'staging/releases/planhub-docker-fail'))) 'Runtime preflight failure rebuilt the application before failing'
     Write-Output ("Publishing checks passed: "+$publishTestState.checks)
 } finally {

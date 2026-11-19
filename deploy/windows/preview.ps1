@@ -116,7 +116,7 @@ if(-not $Snapshot){
         }
         foreach($item in @(@('deployment-active.json','mayBeRunning'),@('deployment-state.json','running'))){
             $file=Join-Path $source $item[0];No-Link $file
-            if(Test-Path -LiteralPath $file){$record=Read-Json $file;if($record.($item[1]) -cne $false){throw 'Stop formal Docker services with stop.cmd before direct local startup.'}}
+            if(Test-Path -LiteralPath $file){$record=Read-Json $file;if($record.($item[1]) -cne $false){throw 'Stop formal Docker services with the Docker delivery stop script before direct local startup.'}}
         }
         $sourceFile=Join-Path $source 'config.json';No-Link $sourceFile
         $settings=Read-Json $sourceFile
@@ -198,12 +198,12 @@ try{
         $activeMarker=Join-Path $source 'deployment-active.json';No-Link $activeMarker
         if(Test-Path -LiteralPath $activeMarker){
             $active=Read-Json $activeMarker
-            if($active.schemaVersion -ne 1 -or $active.mayBeRunning -cne $false){throw 'Formal services may still be running. Complete a full stop.cmd before copying their data.'}
+            if($active.schemaVersion -ne 1 -or $active.mayBeRunning -cne $false){throw 'Formal services may still be running. Complete a full Docker stop before copying their data.'}
         }
         $deploymentState=Join-Path $source 'deployment-state.json';No-Link $deploymentState
         if(Test-Path -LiteralPath $deploymentState){
             $deployment=Read-Json $deploymentState
-            if($null -eq $deployment.PSObject.Properties['running'] -or $deployment.running -cne $false){throw 'Stop formal Docker services with their stop.cmd before copying data. Native preview does not require Docker.'}
+            if($null -eq $deployment.PSObject.Properties['running'] -or $deployment.running -cne $false){throw 'Stop formal Docker services with the Docker delivery stop script before copying data. Native preview does not require Docker.'}
         }
         $shared=Source-Path $settings.sharedDirectory;$rules=Source-Path $settings.sopSharedConfig
         $null=Source-Path $settings.quicklookSourceBase

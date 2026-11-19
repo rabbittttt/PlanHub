@@ -64,7 +64,7 @@ export async function validateDelivery(packageRoot,{requireComplete=false}={}){
   const manifest=await readJson(path.join(root,'delivery.json'));
   if(manifest.schemaVersion!==DELIVERY_SCHEMA||manifest.platform!==DELIVERY_PLATFORM||typeof manifest.complete!=='boolean'||(requireComplete&&!manifest.complete))throw new Error('Use a complete current delivery folder (selection 0 or 8) for local preview.');
   const runtimeMode=manifest.runtimeMode??'included';
-  if(!['included','reuse'].includes(runtimeMode)||(runtimeMode==='reuse'&&!manifest.complete))throw new Error('Invalid Windows runtime mode.');
+  if(!['included',manifest.complete?'reuse':'none'].includes(runtimeMode))throw new Error('Invalid Windows runtime mode.');
   if(!Array.isArray(manifest.applications)||!manifest.applications.length||new Set(manifest.applications).size!==manifest.applications.length||manifest.applications.some(id=>!/^[a-z][a-z0-9-]{0,39}$/.test(id)||id==='network'))throw new Error('Invalid delivery application set');
   if(!manifest.files||typeof manifest.files!=='object'||Array.isArray(manifest.files))throw new Error('Invalid delivery checksums');
   const names=new Set();
@@ -81,8 +81,8 @@ export async function validateDelivery(packageRoot,{requireComplete=false}={}){
   const bindings=await readJson(path.join(root,'bindings.json'));validateBindings(bindings,releases);
   if(crypto.createHash('sha256').update(JSON.stringify(runtimeContract(bindings))).digest('hex')!==manifest.contractHash)throw new Error('Runtime bindings differ from delivery');
   if(manifest.snapshotContractHash!==undefined&&manifest.snapshotContractHash!==snapshotContractHash(bindings))throw new Error('Snapshot bindings differ from delivery');
-  for(const file of ['launcher/native-preview.mjs','deploy.ps1','compose.json','build-docker.ps1',...(runtimeMode==='included'?['runtime/node/node.exe']:[])])if(!Object.hasOwn(manifest.files,file))throw new Error('Required launcher file is missing: '+file);
+  for(const file of [...(runtimeMode==='none'?[]:['launcher/native-preview.mjs']),'deploy.ps1','compose.json','build-docker.ps1',...(runtimeMode==='included'?['runtime/node/node.exe']:[])])if(!Object.hasOwn(manifest.files,file))throw new Error('Required launcher file is missing: '+file);
   if(runtimeMode==='included'&&Object.values(releases).some(release=>release.manifest.type==='service')&&!Object.hasOwn(manifest.files,'runtime/python/python.exe'))throw new Error('Bundled Python is missing');
-  if(runtimeMode==='reuse'&&Object.keys(manifest.files).some(name=>name.startsWith('runtime/')))throw new Error('Program-only delivery must not include a Windows runtime.');
+  if(runtimeMode!=='included'&&Object.keys(manifest.files).some(name=>name.startsWith('runtime/')))throw new Error('Program-only delivery must not include a Windows runtime.');
   return {root,manifest,bindings,releases};
 }

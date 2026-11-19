@@ -40,7 +40,8 @@ test('delivery packages unchanged releases, Windows runtime and Linux materials 
   await buildDelivery([portal,leads],destination,{complete:true,collectRuntime:fakeRuntime});
   assert.equal(await hashFile(path.join(leads,'app-release.json')),before);
   const names=await readdir(destination);assert.ok(names.every(name=>/^[\x20-\x7e]+$/.test(name)));assert.ok(!names.includes('images.tar'));
-  for(const name of ['prepare.cmd','preview.cmd','stop-preview.cmd','build-docker.cmd','start.cmd','runtime','releases','launcher','docker'])assert.ok(names.includes(name));
+  for(const name of ['prepare.cmd','preview.cmd','stop-preview.cmd','build-docker.cmd','start-docker.cmd','stop-docker.cmd','runtime','releases','launcher','docker'])assert.ok(names.includes(name));
+  assert.ok(!names.includes('start.cmd')&&!names.includes('stop.cmd'));
   const {manifest}=await validateDelivery(destination,{requireComplete:true}),compose=JSON.parse(await readFile(path.join(destination,'compose.json')));
   for(const [name,hash] of Object.entries(manifest.files))assert.equal(await hashFile(path.join(destination,name)),hash);
   assert.deepEqual(manifest.applications,['planhub','leads']);assert.equal(manifest.complete,true);
@@ -59,8 +60,8 @@ test('delivery packages unchanged releases, Windows runtime and Linux materials 
   await assert.rejects(buildDelivery([leads],path.join(base,'tampered'),{collectRuntime:fakeRuntime}),/校验失败/);
 });
 test('runtime failure publishes no completed folder and undeclared files fail validation',async t=>{
-  const base=await temporary(t),app=await release(base,'leads',{'index.html':'original'}),destination=path.join(base,'failed');
-  await assert.rejects(buildDelivery([app],destination,{collectRuntime:async()=>{throw new Error('missing dependency');}}),/missing dependency/);
+  const base=await temporary(t),app=await release(base,'planhub',{'index.html':'original','config/apps.json':'{"groups":[]}'}),destination=path.join(base,'failed');
+  await assert.rejects(buildDelivery([app],destination,{complete:true,collectRuntime:async()=>{throw new Error('missing dependency');}}),/missing dependency/);
   await assert.rejects(readFile(path.join(destination,'delivery.json')),/ENOENT/);
   assert.ok(!(await readdir(base)).some(name=>name.startsWith('.planhub-partial-')));
   await buildDelivery([app],destination,{collectRuntime:fakeRuntime});
@@ -80,11 +81,12 @@ test('complete program-only update skips Windows environment collection and rema
   manifest.runtimeMode='included';await json(path.join(destination,'delivery.json'),manifest);
   await assert.rejects(validateDelivery(destination),/runtime\/node/);
 });
-test('dynamic delivery includes its Python dependencies and pins Linux build content',async t=>{
+test('single-app Docker update omits Windows-only files and retains Linux build inputs',async t=>{
   const base=await temporary(t),app=await release(base,'quicklook',{'server.py':'# source-owned fixture','requirements.txt':'openpyxl>=3.1,<4\n'},{type:'service',healthPath:'/healthz'});
-  let seen;
-  const destination=path.join(base,'dynamic');await buildDelivery([app],destination,{collectRuntime:async(output,options)=>{seen=options;await fakeRuntime(output,options);}});
-  const {manifest}=await validateDelivery(destination);assert.equal(seen.requirements.length,1);assert.equal(await readFile(seen.requirements[0],'utf8'),'openpyxl>=3.1,<4\n');
+  const destination=path.join(base,'dynamic');await buildDelivery([app],destination,{collectRuntime(){assert.fail('unexpected Windows runtime collection');}});
+  const {manifest}=await validateDelivery(destination);assert.equal(manifest.runtimeMode,'none');
+  assert.equal(await readFile(path.join(destination,'releases/quicklook/payload/requirements.txt'),'utf8'),'openpyxl>=3.1,<4\n');
+  for(const name of Object.keys(manifest.files))assert.doesNotMatch(name,/^runtime\/|^(stop-)?preview\.|native-preview|preview-compatibility|windows-runtime|migrate-(shared|storage)\.py/);
   assert.match(manifest.images.quicklook.fingerprint,/^[a-f0-9]{64}$/);
   assert.match(await readFile(path.join(destination,'docker/quicklook.Dockerfile'),'utf8'),/RUN python -m pip install/);
 });

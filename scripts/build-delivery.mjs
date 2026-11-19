@@ -10,7 +10,7 @@ import {resolveNodeLicense} from './node-runtime-license.mjs';
 import {loadRuntimeBindings} from './service-ports.mjs';
 
 const ROOT=path.resolve(path.dirname(fileURLToPath(import.meta.url)),'..');
-const modules=['migrate-storage.py','migrate-shared.py','native-preview.mjs','preview-compatibility.mjs','windows-runtime.mjs','check-windows-runtime.py','service-ports.mjs','service-process.mjs','delivery-validation.mjs','container-runtime.mjs','local-preview-gateway.mjs','release-validation.mjs','dev-server.mjs','app-integrations.mjs','proxy-request.mjs','portal-instance.mjs'];
+const previewModules=['migrate-storage.py','native-preview.mjs','preview-compatibility.mjs','windows-runtime.mjs','check-windows-runtime.py','delivery-validation.mjs'];
 const containerModules=['service-process.mjs','service-ports.mjs','container-runtime.mjs','local-preview-gateway.mjs','release-validation.mjs','dev-server.mjs','app-integrations.mjs','proxy-request.mjs','portal-instance.mjs'];
 const json=(file,value)=>writeFile(file,JSON.stringify(value,null,2)+'\n');
 function run(command,args,options={}){
@@ -50,16 +50,16 @@ export async function buildDelivery(releasePaths,destination,{complete=false,wit
   try{
     await mkdir(path.join(output,'launcher'));await mkdir(path.join(output,'releases'));
     for(const [id,release] of Object.entries(releases)){await cp(release.root,path.join(output,'releases',id),{recursive:true});await readRelease(path.join(output,'releases',id),id);}
-    for(const name of modules)await cp(path.join(root,'scripts',name),path.join(output,'launcher',name));
+    for(const name of [...containerModules,...(complete?previewModules:[])])await cp(path.join(root,'scripts',name),path.join(output,'launcher',name));
     await json(path.join(output,'bindings.json'),bindings);
-    for(const name of ['deploy.ps1','delivery-common.ps1','start.cmd','stop.cmd','runtime.example.json','build-docker.ps1','build-docker.cmd','prepare.cmd'])await cp(path.join(root,'deploy/docker',name),path.join(output,name));
-    for(const name of ['preview.ps1','preview.cmd','stop-preview.cmd','runtime-common.ps1'])await cp(path.join(root,'deploy/windows',name),path.join(output,name));
+    for(const name of ['deploy.ps1','delivery-common.ps1','start-docker.cmd','stop-docker.cmd','runtime.example.json','build-docker.ps1','build-docker.cmd','prepare.cmd'])await cp(path.join(root,'deploy/docker',name),path.join(output,name));
+    if(complete)for(const name of ['preview.ps1','preview.cmd','stop-preview.cmd','runtime-common.ps1'])await cp(path.join(root,'deploy/windows',name),path.join(output,name));
     await cp(path.join(root,'docs/deployment.md'),path.join(output,'README.md'));
     const requirements=Object.values(releases).filter(release=>release.manifest.type==='service').map(release=>path.join(release.payload,'requirements.txt'));
-    if(!withoutRuntime)await collectRuntime(path.join(output,'runtime'),{python,requirements,root});
+    if(complete&&!withoutRuntime)await collectRuntime(path.join(output,'runtime'),{python,requirements,root});
     const images=await createDockerMaterials(releases,output,{bindings,moduleNames:containerModules});
     const files={};for(const name of await deliveryFiles(output))files[name]=await hashFile(path.join(output,name));
-    await json(path.join(output,'delivery.json'),{schemaVersion:DELIVERY_SCHEMA,complete,runtimeMode:withoutRuntime?'reuse':'included',platform:DELIVERY_PLATFORM,contractHash:crypto.createHash('sha256').update(JSON.stringify(runtimeContract(bindings))).digest('hex'),snapshotContractHash:snapshotContractHash(bindings),applications:Object.keys(releases),images,files,versions:Object.fromEntries(Object.entries(releases).map(([id,release])=>[id,release.manifest.version]))});
+    await json(path.join(output,'delivery.json'),{schemaVersion:DELIVERY_SCHEMA,complete,runtimeMode:complete?(withoutRuntime?'reuse':'included'):'none',platform:DELIVERY_PLATFORM,contractHash:crypto.createHash('sha256').update(JSON.stringify(runtimeContract(bindings))).digest('hex'),snapshotContractHash:snapshotContractHash(bindings),applications:Object.keys(releases),images,files,versions:Object.fromEntries(Object.entries(releases).map(([id,release])=>[id,release.manifest.version]))});
     await validateDelivery(output);
     await rename(output,destination);
   }catch(error){await rm(output,{recursive:true,force:true});throw error;}
