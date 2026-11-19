@@ -2,9 +2,21 @@
 
 你在 A 打包，在 B 本机验证。试运行通过后，由部署同事在 B 安装 Docker、启动正式服务并接入部门内网。前三步用不到 Docker，首次完整包自带 B 试运行所需的 Python 和 Node.js。
 
-## 部署文件架构
+## 第一步 在 A 准备源码
 
-下面是 B 上的主要文件。**`planhub-时间戳/` 由 A 打包后整夹复制，`planhub-runtime/` 由 B 首次运行 `prepare.cmd` 创建。两个文件夹放在同一层。**
+1. 在 A 打开能看到 `发布应用.bat` 的门户源码目录。更新门户和六个子应用，确认 A 上的 Windows 64 位 Node.js、Python 构建环境和各应用依赖可用。线索声量使用内网实际业务页面。
+
+2. 双击门户源码目录里的 **`发布应用.bat`**。首次运行会自动创建 `config.local/publish.json`。如果项目按默认目录摆放，且共用 `../.venv/Scripts/python.exe`，留在编号菜单，继续第二步。
+3. 仅当路径有差异时，关闭菜单，用记事本打开 `config.local/publish.json`。核对各应用的 `sourceRoot`（源码目录）、`build.command`（构建程序）和 `runtimePython`（随包交付的 Python）。保存后重新双击 `发布应用.bat`。
+
+## 第二步 在 A 打完整包并复制到 B
+
+1. 在 A 的 `发布应用.bat` 编号菜单输入 **`0`**，按回车。等到窗口显示“打包完成”，资源管理器会选中 `release/planhub-时间戳/`。
+2. 在 B 选一个长期保留的位置，新建或打开 `planhub/` 文件夹。把 A 上**选中的整个版本文件夹**复制进去。在 B 打开 `planhub/planhub-时间戳/`，确认能看到 `prepare.cmd` 和 `preview.cmd`。
+
+### 部署文件架构
+
+下面是第三步准备完成后 B 上的主要文件。**`planhub-时间戳/` 由 A 打包后整夹复制，`planhub-runtime/` 由 B 首次运行 `prepare.cmd` 创建。两个文件夹放在同一层。**
 
 ```text
 planhub/
@@ -33,16 +45,6 @@ planhub/
 
 Windows 试运行直接读取 B 的 `planhub-runtime/`。正式部署时，Docker 为门户和六个子应用分别启动容器，将同一个目录挂载为容器内的 `/runtime`。两种方式共用业务数据，切换前先停止当前服务。
 
-## 第一步 在 A 准备源码
-
-更新门户和六个子应用，确认 A 上的 Windows 64 位 Node.js、Python 构建环境和各应用依赖可用。线索声量使用内网实际业务页面。
-
-首次双击门户源码目录里的 **`发布应用.bat`**，脚本会自动创建 `config.local/publish.json`。如果项目按默认目录摆放，且共用 `../.venv/Scripts/python.exe`，可直接在菜单继续。路径有差异时，先关闭窗口，改好配置再打开。
-
-## 第二步 在 A 打完整包
-
-在 `发布应用.bat` 的编号菜单输入 **`0`**。等到窗口显示“打包完成”，资源管理器会选中 `release/planhub-时间戳/`。**把选中的整个文件夹复制到 B**，例如放在 B 的 `planhub/` 下。
-
 ## 第三步 在 B 放好数据并试运行
 
 1. 打开刚复制的版本文件夹，双击 **`prepare.cmd`**。它会在版本文件夹**旁边**创建 `planhub-runtime/`，准备配置、各动态应用的数据目录、共享目录（含 `原始销量/`）和日志目录。窗口会列出放置规则和数据的实际位置。重复运行会补齐缺少的目录，保留已有配置和文件。
@@ -54,14 +56,15 @@ Windows 试运行直接读取 B 的 `planhub-runtime/`。正式部署时，Docke
    | 部门共享 Excel 及其业务子目录；A 上默认在 `../工作台数据/shared/` | 将目录**里面的内容**放到 `planhub-runtime/shared/`，保留子目录名，包括预留的 `原始销量/` |
    | 需要带到 B 的应用记录；A 上在 `../工作台数据/database/` | 停止写入源数据的服务并备份，再把所需应用子目录放到 `planhub-runtime/database/`。跳过 SOP 的 `service.json`、`service.pid`。从空数据开始的应用保留空目录即可 |
 
-   A 的相对路径均从门户源码目录算起。数据速查按本次从共享文件开始使用，`database/quicklook/` 留空即可。
+   A 的相对路径均从门户源码目录算起。表中列的是首次准备的默认位置；B 已有配置时，以 `prepare.cmd` 窗口显示的实际目录为准。数据速查按本次从共享文件开始使用，`database/quicklook/` 留空即可。
 
 3. 双击版本文件夹中的 **`preview.cmd`**。浏览器会打开 **`http://127.0.0.1:4173/`**。本机试运行优先使用各子应用的默认端口，遇到冲突会自动选空闲端口，门户入口固定为 4173。从门户打开各网页，核对能否看到 B 上的实际数据。试运行中的保存和上传会写入这份 `planhub-runtime/`。
 4. 验证完成后双击 **`stop-preview.cmd`**。确认停止成功后，将 B 上的版本文件夹和旁边的 `planhub-runtime/` 一起留给部署同事。
 
 ## 第四步 由同事在 B 启动 Docker 正式服务
 
-1. 安装并启动支持 Linux 容器的 Docker，设置为随 B 开机启动。在 PowerShell 执行以下命令，确认能看到 Server 信息，Compose 版本至少为 2.20，平台为 `linux/amd64` 或 `linux/x86_64`。
+1. **先确认 B 上的 preview 已停止。** 如果第三步已确认停止，可继续下一项。如果仍在试运行或交接时不确定，在资源管理器打开第三步使用的版本文件夹，在地址栏输入 `powershell` 并按回车，再运行 `.\stop-preview.cmd`。看到 `Local services stopped` 后继续。关闭浏览器后预览服务仍在后台运行。若停止报错，先处理错误再启动 Docker。
+2. 安装并启动支持 Linux 容器的 Docker，设置为随 B 开机启动。在 PowerShell 执行以下命令，确认能看到 Server 信息，Compose 版本至少为 2.20，平台为 `linux/amd64` 或 `linux/x86_64`。
 
    ```powershell
    docker version
@@ -69,17 +72,16 @@ Windows 试运行直接读取 B 的 `planhub-runtime/`。正式部署时，Docke
    docker info --format '{{.OSType}}/{{.Architecture}}'
    ```
 
-2. 在版本文件夹双击 **`build-docker.cmd`**。这一步根据包内程序构建镜像。首次构建需能访问基础镜像、系统软件包及 Python 依赖源。看到 `Docker images are ready` 后继续。
-3. 用记事本打开 **`planhub-runtime/config.json`**，将 `publicOrigin` 改成公司的实际访问地址，例如 `https://planhub.company.internal`，结尾不带 `/`，保存。
-4. 在版本文件夹双击 **`start-docker.cmd`**。看到 **`Containers are healthy`** 表示正式容器已启动并通过健康检查。以后要停止整套服务，使用完整包里的 `stop-docker.cmd`。
+3. 在版本文件夹双击 **`build-docker.cmd`**。这一步根据包内程序构建镜像。首次构建需能访问基础镜像、系统软件包及 Python 依赖源。看到 `Docker images are ready` 后继续。
+4. 用记事本打开 **`planhub-runtime/config.json`**，将 `publicOrigin` 改成公司的实际访问地址，例如 `https://planhub.company.internal`，结尾不带 `/`。公司网关在 B 本机时，保留默认 `listenAddress`。网关在另一台电脑时，由部署同事把 `listenAddress` 设为 B 上供网关连接的内网 IP，并按公司要求限制访问范围。保存配置。
+5. 在版本文件夹双击 **`start-docker.cmd`**。看到 **`Containers are healthy`** 表示正式容器已启动并通过健康检查。以后要停止整套服务，使用完整包里的 `stop-docker.cmd`。
 
 ## 第五步 从部门电脑验收
 
-部署同事将公司入口转发到 B 的门户。默认上游是 B 本机的 `http://127.0.0.1:4173`；若网关在另一台电脑，同事需配置 B 的 `listenAddress` 和相应网络访问范围。只对接门户端口，子应用通过同一入口访问。
-
-公司入口转发所有路径并保留公共 Host、Origin 和请求体。认证完成后，由入口覆盖 `X-PlanHub-User` 为真实域账号或 UPN、`X-PlanHub-Key` 为 `config.json` 中的 `proxySecret`。
-
-在部门电脑打开公司地址，进入门户和六个应用，核对数据、保存及导入导出功能和操作人记录。安排 B 重启一次，确认同一地址仍能访问、已保存的记录仍在，即完成部署。
+1. 部署同事将第四步填写的公司地址转发到 B 的门户。网关在 B 本机时，上游填 `http://127.0.0.1:4173`；网关在另一台电脑时，上游填 `http://<B 的内网 IP>:4173`。子应用共用这个门户入口。
+2. 公司入口转发所有路径并保留公共 Host、Origin 和请求体。认证完成后，由入口覆盖 `X-PlanHub-User` 为真实域账号或 UPN、`X-PlanHub-Key` 为 `config.json` 中的 `proxySecret`。
+3. 在部门电脑打开公司地址，进入门户和六个应用，核对数据、保存及导入导出功能和操作人记录。
+4. 由部署同事安排 B 重启一次，再从部门电脑打开同一地址。确认各应用恢复、已保存的记录仍在，即完成部署。
 
 ## 以后更新
 
