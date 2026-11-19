@@ -63,7 +63,7 @@ Windows 试运行直接读取 B 的 `planhub-runtime/`。正式部署时，Docke
 
 ## 第四步 由同事在 B 启动 Docker 正式服务
 
-1. **先确认 B 上的 preview 已停止。** 如果第三步已确认停止，可继续下一项。如果仍在试运行或交接时不确定，在资源管理器打开第三步使用的版本文件夹，在地址栏输入 `powershell` 并按回车，再运行 `.\stop-preview.cmd`。看到 `Local services stopped` 后继续。关闭浏览器后预览服务仍在后台运行。若停止报错，先处理错误再启动 Docker。
+1. **停止本机试运行。** 在 B 上打开第三步用的版本文件夹，双击 **`stop-preview.cmd`**。成功后窗口会自动关闭，继续下一项；如果窗口停留并报错，先处理错误。如果第三步已经确认停止，直接继续下一项。
 2. 安装并启动支持 Linux 容器的 Docker，设置为随 B 开机启动。在 PowerShell 执行以下命令，确认能看到 Server 信息，Compose 版本至少为 2.20，平台为 `linux/amd64` 或 `linux/x86_64`。
 
    ```powershell
