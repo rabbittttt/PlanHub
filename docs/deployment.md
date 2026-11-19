@@ -2,6 +2,37 @@
 
 你在 A 打包，在 B 本机验证。试运行通过后，由部署同事在 B 安装 Docker、启动正式服务并接入部门内网。前三步用不到 Docker，首次完整包自带 B 试运行所需的 Python 和 Node.js。
 
+## 部署文件架构
+
+下面是 B 上的主要文件。**`planhub-时间戳/` 由 A 打包后整夹复制，`planhub-runtime/` 由 B 首次运行 `prepare.cmd` 创建。两个文件夹放在同一层。**
+
+```text
+planhub/
+├─ planhub-时间戳/               从 A 复制的版本文件夹（首次选 0）
+│  ├─ README.md                 本部署说明
+│  ├─ prepare.cmd               首次创建包外的配置和数据目录
+│  ├─ preview.cmd               B 本机试运行
+│  ├─ stop-preview.cmd          停止本机试运行
+│  ├─ build-docker.cmd          构建正式部署用的镜像
+│  ├─ start-docker.cmd          启动本包对应的正式服务
+│  ├─ stop-docker.cmd           停止本包对应的正式服务
+│  ├─ releases/                 门户和各子应用的程序，每个应用一个子目录
+│  ├─ runtime/                  随 0 包交付的 Windows Node.js 和 Python
+│  ├─ launcher/                 启动、代理和校验程序
+│  ├─ docker/                   构建镜像用的 Dockerfile
+│  ├─ compose.json              正式容器的服务、端口和数据挂载配置
+│  ├─ bindings.json             各应用的启动参数、端口和健康检查
+│  └─ delivery.json             本包的应用版本和文件校验清单
+└─ planhub-runtime/             B 上长期保留，后续版本共用
+   ├─ config.json               B 的运行配置，第四步在这里填公司访问地址
+   ├─ config/shared_config.py   首次放入的业务规则文件
+   ├─ shared/                   部门共享 Excel 及业务子目录
+   ├─ database/                 各应用保存的记录，按应用分目录
+   └─ logs/                     服务运行后生成的日志
+```
+
+Windows 试运行直接读取 B 的 `planhub-runtime/`。正式部署时，Docker 为门户和六个子应用分别启动容器，将同一个目录挂载为容器内的 `/runtime`。两种方式共用业务数据，切换前先停止当前服务。
+
 ## 第一步 在 A 准备源码
 
 更新门户和六个子应用，确认 A 上的 Windows 64 位 Node.js、Python 构建环境和各应用依赖可用。线索声量使用内网实际业务页面。
