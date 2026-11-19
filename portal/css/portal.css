@@ -3,6 +3,7 @@
   --accent:#2859f5;--accent-hover:#2049d4;--accent-soft:#edf2ff;--icon:#474e60;--shadow:0 2px 5px #0b0d1705;
   --green:#14764a;--green-soft:#eaf8ef;--amber:#8b601f;--ring:var(--accent);--radius:20px;
   --sidebar-width:56px;--page-gutter:24px;--gap:16px;
+  --display-font:"Noto Sans SC", "Source Han Sans SC", "PingFang SC", "Microsoft YaHei UI", sans-serif;
   --font:"Segoe UI","Microsoft YaHei","PingFang SC",system-ui,sans-serif;
 }
 *{box-sizing:border-box}
@@ -23,6 +24,7 @@ h1,h2,h3,h4,p{margin:0}
 .brand,.nav-toggle{display:flex;align-items:center;justify-content:center;width:44px;min-height:44px;border-radius:10px}
 .brand-mark{display:block;width:36px;height:36px;object-fit:contain;flex-shrink:0;border-radius:8px}
 .brand-copy,.nav-label{display:none;min-width:0}
+.brand,.nav-item,.nav-toggle,.home-heading h1{font-family:var(--display-font)}
 .brand-organization{font-size:13px;font-weight:600;color:var(--muted)}
 .brand strong{color:var(--ink);font-size:17px;font-weight:650;line-height:1.35;overflow-wrap:anywhere}
 .nav-toggle{border:0;background:transparent;color:var(--icon);padding:0;flex-shrink:0}
@@ -44,8 +46,8 @@ h1,h2,h3,h4,p{margin:0}
 .nav-open .brand-mark{width:30px;height:30px;border-radius:8px;object-fit:contain}
 .nav-open .brand-copy{display:contents}
 .nav-open .brand-organization,.nav-open .brand strong,.nav-open .nav-label{display:block}
-.nav-open .brand-organization{color:var(--muted);font-size:12px;font-weight:600;line-height:1.5}
-.nav-open .brand strong{grid-column:1/-1;color:var(--ink);font-size:25px;font-weight:700;line-height:1.3;letter-spacing:.045em}
+.nav-open .brand-organization{color:var(--muted);font-size:12px;font-weight:450;line-height:1.5}
+.nav-open .brand strong{grid-column:1/-1;color:#192636;font-size:25px;font-weight:550;line-height:1.32;letter-spacing:.025em}
 .sidebar > .nav-toggle{align-self:center;margin:auto 0 8px;flex:none}
 .nav-open .nav-toggle{width:calc(100% - 20px);justify-content:flex-start;gap:10px;padding-inline:10px;color:var(--muted);font-size:13px}
 .nav-open .nav-toggle svg{transform:scaleX(-1)}
