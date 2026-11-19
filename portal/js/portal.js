@@ -224,7 +224,9 @@ async function boot() {
     brand.setAttribute('aria-label', config.platform.name);
     brand.title = config.platform.name;
     $('brand-organization').textContent = config.platform.organization || '智选车';
-    $('brand-name').textContent = config.platform.shortName || config.platform.name || '计划管理平台';
+    const brandName = $('brand-name');
+    const shortName = config.platform.shortName || config.platform.name || '计划管理平台';
+    if (brandName.textContent !== shortName) brandName.textContent = shortName;
     $('today').textContent = new Intl.DateTimeFormat('zh-CN', { year: 'numeric', month: 'long', day: 'numeric', weekday: 'long', timeZone: 'Asia/Shanghai' }).format(new Date());
     renderNavigation(); mountWorkbench($('home-view'), config.apps);
     $('boot-state').hidden = true;
