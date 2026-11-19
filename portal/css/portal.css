@@ -38,18 +38,19 @@ h1,h2,h3,h4,p{margin:0}
 .sidebar .nav-item:focus-visible{outline:2px solid var(--ring);outline-offset:-2px}
 .nav-pending{position:absolute;top:8px;right:7px;width:6px;height:6px;border-radius:50%;background:var(--amber)}
 .shell.nav-open{--sidebar-width:145px}
-.nav-open .sidebar-heading{position:relative;align-items:stretch;padding:8px 10px 12px}
-.nav-open .brand{display:grid;width:100%;grid-template-columns:22px minmax(0,1fr);align-items:center;gap:5px 6px;text-align:start}
-.nav-open .brand-mark{width:22px;height:22px}
-.nav-open .brand-copy{display:contents}
-.nav-open .brand strong{grid-column:1/-1;text-wrap:balance;word-break:auto-phrase}
+.nav-open .sidebar-heading{padding:24px 12px 20px;align-items:stretch}
+.nav-open .brand{display:flex;flex-direction:column;align-items:flex-start;width:100%;gap:12px;text-align:left}
+.nav-open .brand-mark{width:42px;height:42px;border:1px solid var(--line);border-radius:12px;box-shadow:0 2px 4px #0b0d1708}
+.nav-open .brand-copy,.nav-open .nav-label{display:block}
+.nav-open .brand-organization{display:block;margin-bottom:3px}
+.nav-open .brand strong{display:block;font-size:17px;font-weight:700;line-height:1.4}
 .brand-term{display:inline-block}
-.nav-open .nav-label{display:block}
-.nav-open .nav-toggle{position:absolute;top:0;right:0;background:transparent;color:var(--muted)}
-.nav-open .nav-toggle:hover{background:var(--surface-soft);color:var(--ink)}
+.sidebar > .nav-toggle{align-self:center;margin: auto 0 8px;flex:none}
+.nav-open .nav-toggle{width:calc(100% - 16px);justify-content:flex-start;gap:8px;padding-inline:10px;color:var(--muted);font-size:13px}
 .nav-open .nav-toggle svg{transform:scaleX(-1)}
-.nav-open .primary-navigation{padding-inline:6px;scrollbar-width:thin}
-.nav-open .nav-item{width:100%;justify-content:flex-start;gap:8px;padding:7px 8px;overflow-wrap:anywhere}
+.nav-open .primary-navigation{padding:14px 8px;scrollbar-width:thin}
+.nav-open #app-nav{margin-top:4px;padding-top:10px;gap:6px}
+.nav-open .nav-item{width:100%;justify-content:flex-start;gap:10px;padding:8px 10px;overflow-wrap:anywhere}
 .nav-open .nav-item:has(.nav-pending){padding-inline-end:16px}
 .sr-only{position:absolute;width:1px;height:1px;padding:0;margin:-1px;overflow:hidden;clip-path:inset(50%);white-space:nowrap}
 main{min-width:0}
