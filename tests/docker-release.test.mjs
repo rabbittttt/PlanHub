@@ -41,6 +41,7 @@ test('delivery packages unchanged releases, Windows runtime and Linux materials 
   assert.equal(await hashFile(path.join(leads,'app-release.json')),before);
   const names=await readdir(destination);assert.ok(names.every(name=>/^[\x20-\x7e]+$/.test(name)));assert.ok(!names.includes('images.tar'));
   for(const name of ['prepare.cmd','preview.cmd','stop-preview.cmd','build-docker.cmd','start-docker.cmd','stop-docker.cmd','runtime','releases','launcher','docker'])assert.ok(names.includes(name));
+  assert.ok(!(await readdir(path.join(destination,'launcher'))).includes('migrate-storage.py'));
   assert.ok(!names.includes('start.cmd')&&!names.includes('stop.cmd'));
   const {manifest}=await validateDelivery(destination,{requireComplete:true}),compose=JSON.parse(await readFile(path.join(destination,'compose.json')));
   for(const [name,hash] of Object.entries(manifest.files))assert.equal(await hashFile(path.join(destination,name)),hash);

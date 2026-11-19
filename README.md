@@ -44,6 +44,4 @@
 
 ## 集中持久目录
 
-开发版使用同级 `工作台数据/database/应用ID/`，发布版使用包外 `planhub-runtime/database/应用ID/`；旧版迁移、恢复备份与配置规则统一见[部署说明](docs/deployment.md#集中持久目录2026-11-17)。不新增公共数据服务项目。车型配置也使用集中目录，不再以共享 Excel 目录作为新环境的数据库位置。
-
-共享 Excel 统一放在 `../工作台数据/shared/`。旧电脑若仍使用同级 `共享数据/`，按[部署说明的共享目录迁移步骤](docs/deployment.md#集中持久目录2026-11-17)处理。
+开发版的应用记录在 `../工作台数据/database/`，共享 Excel 在 `../工作台数据/shared/`。B 上的配置和数据保存在包外的 `planhub-runtime/`。首次放置数据见[部署说明第三步](docs/deployment.md#first-data)。

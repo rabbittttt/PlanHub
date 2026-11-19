@@ -10,7 +10,7 @@ import {resolveNodeLicense} from './node-runtime-license.mjs';
 import {loadRuntimeBindings} from './service-ports.mjs';
 
 const ROOT=path.resolve(path.dirname(fileURLToPath(import.meta.url)),'..');
-const previewModules=['migrate-storage.py','native-preview.mjs','preview-compatibility.mjs','windows-runtime.mjs','check-windows-runtime.py','delivery-validation.mjs'];
+const previewModules=['native-preview.mjs','preview-compatibility.mjs','windows-runtime.mjs','check-windows-runtime.py','delivery-validation.mjs'];
 const containerModules=['service-process.mjs','service-ports.mjs','container-runtime.mjs','local-preview-gateway.mjs','release-validation.mjs','dev-server.mjs','app-integrations.mjs','proxy-request.mjs','portal-instance.mjs'];
 const json=(file,value)=>writeFile(file,JSON.stringify(value,null,2)+'\n');
 function run(command,args,options={}){

@@ -160,4 +160,6 @@ Node.js 完整许可证从运行程序所在目录读取（支持文本和 RTF�
 
 ## 集中持久目录
 
-开发版使用同级 `工作台数据/database/应用ID/`，发布版使用包外 `planhub-runtime/database/应用ID/`；旧版迁移、恢复备份与配置规则统一见[部署说明](deployment.md#集中持久目录2026-11-17)。不新增公共数据服务项目。车型配置也使用集中目录，不再以共享 Excel 目录作为新环境的数据库位置。
+开发版的应用记录在 `../工作台数据/database/`，发布版在包外 `planhub-runtime/database/`。首次把数据从 A 复制到 B 时按[部署说明第三步](deployment.md#first-data)操作。
+
+旧环境需要迁移时，先停服并备份。源码中的 `scripts/migrate-storage.py` 用清单核对旧应用目录，示例见 `integration/storage-migration.example.json`。`scripts/migrate-shared.py` 用于旧共享目录。两个工具默认只列出计划，核对后加 `--apply` 执行。旧 B 配置缺少 `databaseDirectory` 时会沿用原有路径，调整它之前先完成数据迁移和历史文件核对。
