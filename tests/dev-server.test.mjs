@@ -48,8 +48,12 @@ async function serve(t, root, applications = {
 test('preview serves portal and explicit static mounts, including correct HEAD and MIME', async t => {
   const root = await fixture(t);
   const port = await serve(t, root);
-  assert.equal((await request(port, '/')).body, '<title>portal</title>');
-  assert.equal((await request(port, '/reports/')).body, '<title>reports</title>');
+  for (const [url, title] of [['/', 'portal'], ['/reports/', 'reports']]) {
+    const page = await request(port, url);
+    assert.equal(page.body, '<title>' + title + '</title>');
+    assert.equal(page.headers['x-frame-options'], undefined);
+    assert.doesNotMatch(page.headers['content-security-policy'] ?? '', /frame-ancestors/i);
+  }
   const js = await request(port, '/js/app.js');
   assert.match(js.headers['content-type'], /javascript/);
   const head = await request(port, '/reports/', 'HEAD');

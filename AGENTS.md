@@ -40,6 +40,7 @@
 
 ## 实现与验证
 
+- 工作台首页和接入的业务网页均允许被 iframe 嵌入。页面响应不设置 `X-Frame-Options` 或 CSP 的 `frame-ancestors`，页面脚本不强制跳出 iframe。
 - 门户是本地 HTML/CSS/JavaScript，样式令牌在 `portal/css/portal.css`。复用令牌和组件，不为单页另建一套主题。
 - 应用注册来自 `portal/config/apps.json`。保留 hash 路由、同源 iframe、加载/错误/待接入状态、身份与权限边界。
 - 不展示编造的真实业务指标、假图表或虚假账号状态。用户于 2026-11-05 明确授权首页先做计划周期 Demo：阶段、清单、窗口和记录可用清楚标注的演示样例；交互状态仅存在当前页内存，刷新重置，不写存储或子应用。演示内容集中在 `portal/js/workbench-demo.js` 并与渲染分开，待来源明确后再补真实内容。真实入口仍以应用注册表为准，pending/maintenance/未知应用不得伪装 ready。详见设计基准的 Demo 范围。

@@ -31,7 +31,7 @@ export function parseRequestPath(rawUrl) {
 export function createServer({ root = PROJECT_ROOT, portalRoot = path.join(root, 'portal'), sopProxy = null, applications = null, runtime = null } = {}) {
   if (sopProxy && (!Number.isInteger(sopProxy.port) || sopProxy.port < 1 || sopProxy.port > 65535 || typeof sopProxy.secret !== 'string' || sopProxy.secret.length < 32 || !['string','function'].includes(typeof sopProxy.user) || (typeof sopProxy.user === 'string' && /[\r\n]/.test(sopProxy.user)))) throw new Error('Invalid local SOP preview configuration');
   return http.createServer(async (request, response) => {
-    const headers = { 'Cache-Control': 'no-store', 'X-Content-Type-Options': 'nosniff', 'X-Frame-Options': 'SAMEORIGIN' };
+    const headers = { 'Cache-Control': 'no-store', 'X-Content-Type-Options': 'nosniff' };
     const send = (status, message, extra = {}) => {
       const body = Buffer.from(message);
       response.writeHead(status, { ...headers, 'Content-Type': 'text/plain; charset=utf-8', 'Content-Length': body.length, ...extra });

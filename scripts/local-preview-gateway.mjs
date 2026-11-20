@@ -38,7 +38,7 @@ export function createLocalPreviewGateway({config,targetPort,allowControl=false}
   const server=http.createServer((request,response)=>{
     const send=(status,message)=>{
       if(response.headersSent){response.destroy();return;}
-      response.writeHead(status,{'Content-Type':'text/plain; charset=utf-8','Cache-Control':'no-store','X-Content-Type-Options':'nosniff','X-Frame-Options':'SAMEORIGIN'});
+      response.writeHead(status,{'Content-Type':'text/plain; charset=utf-8','Cache-Control':'no-store','X-Content-Type-Options':'nosniff'});
       response.end(request.method==='HEAD'?undefined:message);
     };
     if(!permitted(request,config)){request.resume();send(403,'Use the local preview address on this computer.');return;}
