@@ -33,7 +33,7 @@ h1,h2,h3,h4,p{margin:0}
 .primary-navigation,#app-nav{display:flex;flex-direction:column;gap:6px;min-width:0}
 .primary-navigation{padding:8px 0;overflow:auto;scrollbar-width:none}
 #app-nav{gap:16px;border-top:1px solid var(--line);padding-top:6px}
-.nav-item{position:relative;display:flex;align-items:center;justify-content:center;align-self:center;width:44px;min-height:44px;border-radius:10px;color:var(--muted);font-weight:600;transition:color 160ms,background-color 160ms}
+.nav-item{position:relative;display:flex;align-items:center;justify-content:center;align-self:center;width:44px;min-height:44px;border-radius:10px;color:var(--muted);font-weight:400;transition:color 160ms,background-color 160ms}
 .nav-item svg{width:22px;height:22px;color:inherit}
 .nav-item:hover{background:var(--bg);color:var(--ink)}
 .nav-item.active{color:var(--accent-hover);background:var(--accent-soft)}
