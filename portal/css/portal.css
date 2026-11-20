@@ -34,26 +34,26 @@ h1,h2,h3,h4,p{margin:0}
 .primary-navigation{padding:8px 0;overflow:auto;scrollbar-width:none}
 #app-nav{border-top:1px solid var(--line);padding-top:6px}
 .nav-item{position:relative;display:flex;align-items:center;justify-content:center;align-self:center;width:44px;min-height:44px;border-radius:10px;color:var(--muted);font-weight:600;transition:color 160ms,background-color 160ms}
-.nav-item svg{width:18px;height:18px;color:inherit}
+.nav-item svg{width:22px;height:22px;color:inherit}
 .nav-item:hover{background:var(--bg);color:var(--ink)}
 .nav-item.active{color:var(--accent-hover);background:var(--accent-soft)}
 .sidebar .nav-item:focus-visible{outline:2px solid var(--ring);outline-offset:-2px}
 .nav-pending{position:absolute;top:8px;right:7px;width:6px;height:6px;border-radius:50%;background:var(--amber)}
 .shell.nav-open{--sidebar-width:145px}
-.nav-open .sidebar-heading{padding:19px 11px 18px;align-items:stretch;border-bottom:0;background:linear-gradient(160deg,#f1f5ff,white 95%)}
+.nav-open .sidebar-heading{padding:19px 4px 18px 8px;align-items:stretch;border-bottom:0;background:linear-gradient(160deg,#f1f5ff,white 95%)}
 .nav-open .brand{display:grid;grid-template-columns:21px minmax(0,1fr);gap:8px 5px;width:100%;align-items:center;text-align:left}
 .nav-open .brand:hover{background:transparent}
 .nav-open .brand-mark{width:24px;height:24px;margin-left:-3px;object-fit:contain}
 .nav-open .brand-copy{display:contents}
 .nav-open .brand-organization,.nav-open .brand strong,.nav-open .nav-label{display:block}
 .nav-open .brand-organization{color:var(--muted);font-size:12px;font-weight:450;line-height:1.5}
-.nav-open .brand strong{grid-column:1/-1;color:#1c2d43;font-family:"STXihei","华文细黑",var(--display-font);font-size:17px;font-weight:400;line-height:1.45;letter-spacing:-.02em}
+.nav-open .brand strong{grid-column:1/-1;color:#1c2d43;font-size:var(--type-title);font-weight:600;line-height:1.45;letter-spacing:-.02em}
 .sidebar > .nav-toggle{align-self:center;margin:auto 0 8px;flex:none}
 .nav-open .nav-toggle{width:calc(100% - 20px);justify-content:flex-start;gap:10px;padding-inline:10px;color:var(--muted);font-size:13px}
 .nav-open .nav-toggle svg{transform:scaleX(-1)}
 .nav-open .primary-navigation{padding:8px;gap:10px;scrollbar-width:thin}
 .nav-open #app-nav{margin-inline:0;padding-top:10px;gap:4px}
-.nav-open .nav-item{width:100%;justify-content:flex-start;gap:7px;padding:7px 9px;overflow-wrap:anywhere}
+.nav-open .nav-item{font-size:16px;width:100%;justify-content:flex-start;gap:6px;padding:7px 6px;overflow-wrap:anywhere}
 .nav-open .nav-item svg{box-sizing:content-box;padding:4px;border-radius:7px}
 .nav-open .nav-item.active svg{color:white;background:var(--accent)}
 .nav-open .nav-item:has(.nav-pending){padding-inline-end:16px}
@@ -172,13 +172,10 @@ main{min-width:0}
 
 /* Workbench typography */
 :root {
-  --type-title: 24px;
+  --type-title: 19px;
   --type-section: 16px;
   --type-body: 14px;
   --type-note: 12px;
-}
-@media (max-width: 640px) {
-  :root { --type-title: 20px; }
 }
 .home-heading h1,
 .empty-state h1 { font-size: var(--type-title); }
