@@ -24,7 +24,7 @@ h1,h2,h3,h4,p{margin:0}
 .brand,.nav-toggle{display:flex;align-items:center;justify-content:center;width:44px;min-height:44px;border-radius:10px}
 .brand-mark{display:block;width:36px;height:36px;object-fit:contain;flex-shrink:0;border-radius:8px}
 .brand-copy,.nav-label{display:none;min-width:0}
-.brand,.nav-item,.nav-toggle,.home-heading h1{font-family:var(--display-font)}
+.brand,.home-heading h1{font-family:var(--display-font)}
 .brand-organization{font-size:13px;font-weight:600;color:var(--muted)}
 .brand strong{color:var(--ink);font-size:17px;font-weight:650;line-height:1.35;overflow-wrap:anywhere}
 .nav-toggle{border:0;background:transparent;color:var(--icon);padding:0;flex-shrink:0}
