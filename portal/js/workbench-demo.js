@@ -3,10 +3,10 @@ export const workbenchDemo = {
   activeStageId: 'planning',
   activeWindowId: 'next',
   stages: [
-    { id: 'data', title: '数据准备', description: '核对来源与统计口径' },
-    { id: 'forecast', title: '需求预测', description: '复核未来销量变化' },
-    { id: 'planning', title: '入库计划', description: '制定各车型月度计划' },
-    { id: 'review', title: '协同复核', description: '核对差异与修订结果' }
+    { id: 'data', title: '数据准备', icon: 'layers', description: '核对来源与统计口径' },
+    { id: 'forecast', title: '需求预测', icon: 'trend', description: '复核未来销量变化' },
+    { id: 'planning', title: '入库计划', icon: 'calendar', description: '制定各车型月度计划' },
+    { id: 'review', title: '协同复核', icon: 'users', description: '核对差异与修订结果' }
   ],
   tasks: [
     { id: 'sources', stageId: 'data', title: '确认订单数据来源', description: '数据准备 · 核对最新原表', appId: 'quicklook', action: '查数据', done: true },

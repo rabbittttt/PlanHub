@@ -79,7 +79,8 @@ main{min-width:0}
 .cycle-stage-number{font-variant-numeric:tabular-nums;font-size:29px;font-weight:700;line-height:1;color:var(--ink);letter-spacing:-.6px}
 .cycle-stage-state{overflow-wrap:anywhere}
 .cycle-stage[aria-pressed=true] .cycle-stage-state{color:var(--accent-hover);background:var(--accent-soft);border-radius:999px;padding:3px 8px;font-weight:650}
-.cycle-stage strong{order:-1;display:block;font-size:15px;font-weight:650;overflow-wrap:anywhere}
+.cycle-stage strong{order:-1;display:flex;align-items:center;justify-content:space-between;gap:8px;font-size:15px;font-weight:650;overflow-wrap:anywhere}
+.cycle-stage strong svg{width:18px;height:18px;color:var(--accent)}
 .cycle-stage-description{display:block;font-size:12px;color:var(--muted);overflow-wrap:anywhere}
 .cycle-layout{display:grid;grid-template-columns:minmax(0,1.65fr) minmax(0,1fr);align-items:start;gap:var(--gap);margin-bottom:16px}
 .cycle-panel{min-width:0;background:var(--surface);border:1px solid var(--line);border-radius:var(--radius);box-shadow:var(--shadow)}

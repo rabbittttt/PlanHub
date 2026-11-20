@@ -1,5 +1,5 @@
 import { orderedApps } from './config.js';
-import { workbenchDemo as demo } from './workbench-demo.js?v=cycle-demo-20261105';
+import { workbenchDemo as demo } from './workbench-demo.js?v=stage-symbols-20261120';
 
 function node(tag, className, text) {
   const element = document.createElement(tag);
@@ -9,7 +9,7 @@ function node(tag, className, text) {
 }
 
 // All demo state lives in this page only. No storage, child DOM access or API writes.
-export function mountWorkbench(root, apps) {
+export function mountWorkbench(root, apps, icon) {
   const find = id => root.querySelector('#' + id);
   const registeredApps = orderedApps(apps.filter(app => app.enabled));
   const stageButtons = new Map(), taskRows = new Map(), checks = new Map(), windowButtons = new Map(), recordButtons = new Map();
@@ -67,7 +67,9 @@ export function mountWorkbench(root, apps) {
     button.setAttribute('aria-controls', 'cycle-tasks');
     const top = node('span', 'cycle-stage-top');
     top.append(node('span', 'cycle-stage-number', String(index + 1).padStart(2, '0')), node('span', 'cycle-stage-state'));
-    button.append(top, node('strong', '', stage.title), node('span', 'cycle-stage-description', stage.description));
+    const heading = node('strong', '', stage.title);
+    heading.append(icon(stage.icon));
+    button.append(top, heading, node('span', 'cycle-stage-description', stage.description));
     button.addEventListener('click', () => { stageId = stage.id; update(); });
     stageButtons.set(stage.id, button);item.append(button);stages.append(item);
   });

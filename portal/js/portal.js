@@ -1,5 +1,5 @@
 import { validateConfig, routeFromHash, orderedApps } from './config.js';
-import { mountWorkbench } from './workbench.js?v=cycle-demo-20261105';
+import { mountWorkbench } from './workbench.js?v=stage-symbols-20261120';
 
 const $ = id => document.getElementById(id);
 const paths = {
@@ -228,7 +228,7 @@ async function boot() {
     const shortName = config.platform.shortName || config.platform.name || '计划管理平台';
     if (brandName.textContent !== shortName) brandName.textContent = shortName;
     $('today').textContent = new Intl.DateTimeFormat('zh-CN', { year: 'numeric', month: 'long', day: 'numeric', weekday: 'long', timeZone: 'Asia/Shanghai' }).format(new Date());
-    renderNavigation(); mountWorkbench($('home-view'), config.apps);
+    renderNavigation(); mountWorkbench($('home-view'), config.apps, icon);
     $('boot-state').hidden = true;
     navigate();
   } catch (error) {
