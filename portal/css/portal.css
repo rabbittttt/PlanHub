@@ -40,14 +40,14 @@ h1,h2,h3,h4,p{margin:0}
 .sidebar .nav-item:focus-visible{outline:2px solid var(--ring);outline-offset:-2px}
 .nav-pending{position:absolute;top:8px;right:7px;width:6px;height:6px;border-radius:50%;background:var(--amber)}
 .shell.nav-open{--sidebar-width:145px}
-.nav-open .sidebar-heading{padding:20px 15px 16px;align-items:stretch;border-bottom:0;background:linear-gradient(160deg,#f1f5ff,white 95%)}
-.nav-open .brand{display:grid;grid-template-columns:30px minmax(0,1fr);gap:10px 7px;width:100%;align-items:center;text-align:left}
+.nav-open .sidebar-heading{padding:19px 11px 18px;align-items:stretch;border-bottom:0;background:linear-gradient(160deg,#f1f5ff,white 95%)}
+.nav-open .brand{display:grid;grid-template-columns:21px minmax(0,1fr);gap:8px 5px;width:100%;align-items:center;text-align:left}
 .nav-open .brand:hover{background:transparent}
-.nav-open .brand-mark{width:30px;height:30px;border-radius:8px;object-fit:contain}
+.nav-open .brand-mark{width:24px;height:24px;margin-left:-3px;object-fit:contain}
 .nav-open .brand-copy{display:contents}
 .nav-open .brand-organization,.nav-open .brand strong,.nav-open .nav-label{display:block}
 .nav-open .brand-organization{color:var(--muted);font-size:12px;font-weight:450;line-height:1.5}
-.nav-open .brand strong{grid-column:1/-1;color:#192636;font-size:25px;font-weight:550;line-height:1.32;letter-spacing:.025em}
+.nav-open .brand strong{grid-column:1/-1;color:#1c2d43;font-family:"STXihei","华文细黑",var(--display-font);font-size:17px;font-weight:400;line-height:1.45;letter-spacing:-.02em}
 .sidebar > .nav-toggle{align-self:center;margin:auto 0 8px;flex:none}
 .nav-open .nav-toggle{width:calc(100% - 20px);justify-content:flex-start;gap:10px;padding-inline:10px;color:var(--muted);font-size:13px}
 .nav-open .nav-toggle svg{transform:scaleX(-1)}
