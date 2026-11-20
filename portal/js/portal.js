@@ -32,6 +32,13 @@ const labels = { ready: '已接入', pending: '待接入', maintenance: '维护�
 let config, current = 'home', sequence = 0, controller, timer, activeFrame;
 const appFrames = new Map();
 
+function deliverSopAccount(entry) {
+  if (entry?.ready && !entry.disposed && entry.app.id === 'sop' && frameIsValid(entry)) {
+    window.planHubFrameAccount.send(entry.node.contentWindow);
+  }
+}
+window.addEventListener('planhub-account-change', () => deliverSopAccount(appFrames.get('sop')));
+
 function element(tag, className, text) {
   const node = document.createElement(tag);
   if (className) node.className = className;
@@ -184,6 +191,7 @@ async function openApp(app, { reload = false } = {}) {
         return;
       }
       entry.ready = true;
+      deliverSopAccount(entry);
       if (activeFrame === entry) {
         clearTimeout(timer);
         $('frame-overlay').hidden = true;
@@ -220,6 +228,7 @@ async function boot() {
     const response = await fetch('./config/apps.json', { cache: 'no-store', signal: AbortSignal.timeout(10000) });
     if (!response.ok) throw new Error(`配置请求失败（HTTP ${response.status}）`);
     config = validateConfig(await response.json());
+    if (response.headers.get('PlanHub-Local-Preview') === '1') window.planHubFrameAccount.useLocalPreview();
     const brand = sidebar.querySelector('.brand');
     brand.setAttribute('aria-label', config.platform.name);
     brand.title = config.platform.name;

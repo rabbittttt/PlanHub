@@ -248,7 +248,7 @@ export async function runPreview(args=process.argv.slice(2),options={}) {
     if(!ready)throw new Error(`独立 SOP 服务未启动；请查看日志：${child.serviceLogs.stderr}`);
     stopApplications=await startAppServices(applications,{root,env:runtimeEnv,logRoot:settings.logRoot});
     if(failed)throw new Error('SOP 在其他应用启动期间已退出，请检查原项目日志。');
-    server=createServer({root,applications,runtime,sopProxy:{port:backendPort,secret,user:userHeader}});
+    server=createServer({root,applications,runtime,localPreview:true,sopProxy:{port:backendPort,secret,user:userHeader}});
   } catch(error) {cleanupOwned();process.removeListener('exit',cleanupOwned);throw error;}
   server.startupWarnings=stopApplications.failures??[];
   runtime.identity.unavailableApps=stopApplications.unavailableApps??[];

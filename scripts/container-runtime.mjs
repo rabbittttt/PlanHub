@@ -83,7 +83,7 @@ export function createContainerPortal(payload,bindings,config,{root='/runtime',r
     if(id==='vehicle-config')applications[id].headersForRequest=req=>({'x-config-proxy-key':config.vehicleSecret,'x-config-user':req.portalActor});
   }
   const sopProxy=bindings.sop?{port:bindings.sop.port,secret:config.sopSecret,user:req=>'b64:'+Buffer.from(req.portalActor,'utf8').toString('base64')}:null;
-  const server=createServer({root,portalRoot:payload,applications,sopProxy,runtime});
+  const server=createServer({root,portalRoot:payload,applications,sopProxy,runtime,localPreview:!!config.preview});
   const handler=server.listeners('request')[0];server.removeAllListeners('request');
   server.on('request',(request,response)=>{
     request.portalActor=trustedActor(request,config);

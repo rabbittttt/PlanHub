@@ -28,7 +28,7 @@ export function parseRequestPath(rawUrl) {
 }
 
 /** Local-only preview; the optional loopback SOP bridge does not provide Windows authentication. */
-export function createServer({ root = PROJECT_ROOT, portalRoot = path.join(root, 'portal'), sopProxy = null, applications = null, runtime = null } = {}) {
+export function createServer({ root = PROJECT_ROOT, portalRoot = path.join(root, 'portal'), sopProxy = null, applications = null, runtime = null, localPreview = false } = {}) {
   if (sopProxy && (!Number.isInteger(sopProxy.port) || sopProxy.port < 1 || sopProxy.port > 65535 || typeof sopProxy.secret !== 'string' || sopProxy.secret.length < 32 || !['string','function'].includes(typeof sopProxy.user) || (typeof sopProxy.user === 'string' && /[\r\n]/.test(sopProxy.user)))) throw new Error('Invalid local SOP preview configuration');
   return http.createServer(async (request, response) => {
     const headers = { 'Cache-Control': 'no-store', 'X-Content-Type-Options': 'nosniff' };
@@ -40,6 +40,7 @@ export function createServer({ root = PROJECT_ROOT, portalRoot = path.join(root,
     let parsed;
     try { parsed = parseRequestPath(request.url); } catch { return send(400, 'Invalid or private request path'); }
     const { pathname, parts } = parsed;
+    if (localPreview && pathname === '/config/apps.json') headers['PlanHub-Local-Preview'] = '1';
     if (handlePortalControl(request, response, runtime, pathname)) return;
     const proxyEntry = Object.entries(applications || {}).find(([id, app]) => app.type === 'proxy' && (parts[0] === id || app.rootRoutes.includes(pathname)));
     if (proxyEntry) {
