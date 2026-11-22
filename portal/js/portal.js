@@ -231,11 +231,12 @@ async function boot() {
     window.planHubFrameAccount.configure(response.headers.get('PlanHub-Account-Parent-Origin'));
     if (response.headers.get('PlanHub-Local-Preview') === '1') window.planHubFrameAccount.useLocalPreview();
     const brand = sidebar.querySelector('.brand');
-    const sidebarName = config.platform.sidebarName || config.platform.name;
-    brand.setAttribute('aria-label', sidebarName);
-    brand.title = sidebarName;
+    brand.setAttribute('aria-label', config.platform.name);
+    brand.title = config.platform.name;
+    $('brand-organization').textContent = config.platform.organization || '智选车';
     const brandName = $('brand-name');
-    if (brandName.textContent !== sidebarName) brandName.textContent = sidebarName;
+    const shortName = config.platform.shortName || config.platform.name || '计划管理平台';
+    if (brandName.textContent !== shortName) brandName.textContent = shortName;
     $('today').textContent = new Intl.DateTimeFormat('zh-CN', { year: 'numeric', month: 'long', day: 'numeric', weekday: 'long', timeZone: 'Asia/Shanghai' }).format(new Date());
     renderNavigation(); mountWorkbench($('home-view'), config.apps, icon);
     $('boot-state').hidden = true;
