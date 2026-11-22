@@ -4,7 +4,7 @@ import path from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 
 import {loadAppIntegrations, publicFile, STATIC_MIME_TYPES} from './app-integrations.mjs';
-import {proxyRequest} from './proxy-request.mjs';
+import {PROXY_IDLE_TIMEOUT_MS,proxyRequest} from './proxy-request.mjs';
 import {handlePortalControl} from './portal-instance.mjs';
 import {readServicePorts} from './service-ports.mjs';
 const PROJECT_ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
@@ -40,19 +40,21 @@ export function createServer({ root = PROJECT_ROOT, portalRoot = path.join(root,
     let parsed;
     try { parsed = parseRequestPath(request.url); } catch { return send(400, 'Invalid or private request path'); }
     const { pathname, parts } = parsed;
+    // Preserve escaped path characters and the original query when adding the slash.
+    const directoryLocation = () => request.url.replace(/^[^?]*/, rawPath => rawPath + '/');
     if (localPreview && pathname === '/config/apps.json') headers['PlanHub-Local-Preview'] = '1';
     if (handlePortalControl(request, response, runtime, pathname)) return;
     const proxyEntry = Object.entries(applications || {}).find(([id, app]) => app.type === 'proxy' && (parts[0] === id || app.rootRoutes.includes(pathname)));
     if (proxyEntry) {
       const [id, app] = proxyEntry;
       if(app.startupUnavailable)return send(503,'Application startup failed; stop the old independent service and restart the portal.');
-      if (pathname === '/' + id) return send(308, 'Redirecting', {Location: '/' + id + '/' + (request.url.includes('?') ? request.url.slice(request.url.indexOf('?')) : '')});
+      if (pathname === '/' + id) return send(308, 'Redirecting', {Location: directoryLocation()});
       const upstreamPath = parts[0] === id && app.stripPrefix ? request.url.slice(id.length + 1) : request.url;
       proxyRequest(request, response, app, upstreamPath, send);
       return;
     }
     if (sopProxy && parts[0] === 'sop') {
-      if (pathname === '/sop') return send(308, 'Redirecting', { Location: '/sop/' });
+      if (pathname === '/sop') return send(308, 'Redirecting', { Location: directoryLocation() });
       const forwarded = { ...request.headers, host: `127.0.0.1:${sopProxy.port}` };
       for (const header of Object.keys(forwarded)) if (header.startsWith('x-sop-') || header.startsWith('x-planhub-') || header.startsWith('x-config-') || header.startsWith('x-forwarded-') || ['forwarded', 'connection', 'transfer-encoding', 'proxy-authorization', 'upgrade', 'te', 'trailer'].includes(header)) delete forwarded[header];
       forwarded['x-sop-proxy-key'] = sopProxy.secret;
@@ -61,11 +63,13 @@ export function createServer({ root = PROJECT_ROOT, portalRoot = path.join(root,
         const incomingHeaders = { ...incoming.headers };
         delete incomingHeaders['transfer-encoding']; delete incomingHeaders.connection;
         response.writeHead(incoming.statusCode, incomingHeaders);
+        incoming.on('error', () => response.destroy());
         incoming.pipe(response);
       });
-      upstream.setTimeout(30000, () => upstream.destroy(new Error('SOP preview timed out')));
+      upstream.setTimeout(PROXY_IDLE_TIMEOUT_MS, () => upstream.destroy(new Error('SOP preview timed out')));
       upstream.on('error', () => { if (!response.headersSent) send(502, 'Local SOP service unavailable'); else response.destroy(); });
       request.on('aborted', () => upstream.destroy());
+      response.on('close', () => { if (!response.writableEnded) upstream.destroy(); });
       request.pipe(upstream);
       return;
     }
@@ -75,7 +79,7 @@ export function createServer({ root = PROJECT_ROOT, portalRoot = path.join(root,
     const base = mount?.root ?? portalRoot;
     let relativeParts = mount ? parts.slice(1) : parts;
     if (mount) {
-      if (relativeParts.length === 0 && !pathname.endsWith('/')) return send(308, 'Redirecting', {Location: pathname + '/' + (request.url.includes('?') ? request.url.slice(request.url.indexOf('?')) : '')});
+      if (relativeParts.length === 0 && !pathname.endsWith('/')) return send(308, 'Redirecting', {Location: directoryLocation()});
       if (relativeParts.length === 0 || relativeParts.join('/') === 'index.html') relativeParts = mount.entry.split('/');
       if (!publicFile(mount, relativeParts.join('/'))) return send(404, 'Not found');
     }
@@ -89,8 +93,7 @@ export function createServer({ root = PROJECT_ROOT, portalRoot = path.join(root,
       let info = await stat(candidate);
       if (info.isDirectory()) {
         if (!pathname.endsWith('/')) {
-          const query = request.url.includes('?') ? request.url.slice(request.url.indexOf('?')) : '';
-          return send(308, 'Redirecting', { Location: `${encodeURI(pathname)}/${query}` });
+          return send(308, 'Redirecting', { Location: directoryLocation() });
         }
         candidate = await realpath(path.join(candidate, 'index.html'));
         if (!inside(resolvedBase, candidate)) return send(403, 'Forbidden');

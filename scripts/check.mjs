@@ -8,6 +8,8 @@ import {loadAppIntegrations} from './app-integrations.mjs';
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 export async function validateWorkspace(root = ROOT) {
   const raw = JSON.parse((await readFile(path.join(root, 'portal/config/apps.json'), 'utf8')).replace(/^\uFEFF/, ''));
+  const pkg = JSON.parse(await readFile(path.join(root, 'package.json'), 'utf8'));
+  if (raw.platform?.version !== pkg.version) throw new Error('门户注册表与 package.json 的平台版本不一致。');
   const config = validateConfig(raw);
   const warnings = [];
   const applications = await loadAppIntegrations(root);

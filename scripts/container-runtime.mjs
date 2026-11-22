@@ -14,6 +14,10 @@ export const readJson=async file=>JSON.parse((await readFile(file,'utf8')).repla
 export function validateRuntime(config,{allowLegacyPreview=false}={}){
   const origin=new URL(config.publicOrigin);
   if(config.schemaVersion!==1||!['http:','https:'].includes(origin.protocol)||origin.origin!==config.publicOrigin||origin.hostname.endsWith('.invalid'))throw new Error('Set publicOrigin to the company gateway origin, without a path or trailing slash.');
+  if(config.accountParentOrigin!=null){
+    const parent=new URL(config.accountParentOrigin);
+    if(!['https:','http:'].includes(parent.protocol)||parent.origin!==config.accountParentOrigin)throw new Error('accountParentOrigin must be an exact HTTP(S) origin.');
+  }
   for(const key of ['proxySecret','sopSecret','vehicleSecret'])if(!/^[a-zA-Z0-9_-]{32,}$/.test(config[key]??''))throw new Error('Missing external secret: '+key);
   for(const key of ['sharedDirectory','sopSharedConfig','quicklookSourceBase'])privatePath('/runtime',config[key]);
   if(config.databaseDirectory!==undefined)privatePath('/runtime',config.databaseDirectory);
@@ -88,6 +92,9 @@ export function createContainerPortal(payload,bindings,config,{root='/runtime',r
   server.on('request',(request,response)=>{
     request.portalActor=trustedActor(request,config);
     if(!request.portalActor){response.writeHead(403,{'Content-Type':'text/plain'});response.end('Use the company authenticated gateway.');return;}
+    if(config.accountParentOrigin && request.url.split('?')[0]==='/config/apps.json'){
+      response.setHeader('PlanHub-Account-Parent-Origin',config.accountParentOrigin);
+    }
     handler(request,response);
   });
   return server;

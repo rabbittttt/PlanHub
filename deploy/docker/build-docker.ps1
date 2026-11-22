@@ -15,15 +15,14 @@ try{
     $images=[ordered]@{}
     foreach($entry in $manifest.images.PSObject.Properties){
         $image=$entry.Value
-        $hasImage=$false;$existing=$null
-        try{$existing=& docker image inspect $image.tag 2>$null;$hasImage=$LASTEXITCODE -eq 0}catch{$hasImage=$false}
-        if($hasImage){
-            $actual=@(($existing -join "`n")|ConvertFrom-Json)[0]
-            if($actual.Config.Labels.'planhub.fingerprint' -cne $image.fingerprint){throw ('Immutable image tag already contains different content: '+$image.tag)}
+        $existingId=Invoke-DeliveryDocker -Arguments @('image','ls','--quiet','--filter',('reference='+$image.tag)) -Capture
+        if($existingId){
+            $actual=@((Invoke-DeliveryDocker -Arguments @('image','inspect',$image.tag) -Capture)|ConvertFrom-Json)[0]
         }else{
             Invoke-DeliveryDocker -Arguments @('build','--platform','linux/amd64','--label',('planhub.fingerprint='+$image.fingerprint),'--tag',$image.tag,'--file',(Join-Path $package $image.dockerfile),$package)
             $actual=@((Invoke-DeliveryDocker -Arguments @('image','inspect',$image.tag) -Capture)|ConvertFrom-Json)[0]
         }
+        if($actual.Config.Labels.'planhub.fingerprint' -cne $image.fingerprint){throw ('Immutable image tag has unexpected fingerprint: '+$image.tag)}
         if($actual.Os -cne 'linux' -or $actual.Architecture -cne 'amd64' -or $actual.Id -cnotmatch '^sha256:[a-f0-9]{64}$'){throw 'Unexpected Docker image platform or ID.'}
         $images[$entry.Name]=[ordered]@{tag=$image.tag;id=$actual.Id;fingerprint=$image.fingerprint}
     }

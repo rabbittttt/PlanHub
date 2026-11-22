@@ -1,5 +1,6 @@
 {
   "schemaVersion": 1,
+  "accountParentOrigin": null,
   "publicOrigin": "https://planhub.example.invalid",
   "listenAddress": "127.0.0.1",
   "port": 4173,

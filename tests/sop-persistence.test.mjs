@@ -54,12 +54,15 @@ test('default portal saves through the original SOP service and survives a full 
   return {server,port,backend,origin:'http://127.0.0.1:'+port};
  }
  async function close(server){server.closeAllConnections();await new Promise(r=>server.close(r));await new Promise(r=>setTimeout(r,300));}
+ // Match the local SOP page's real request contract. The preview gateway also supplies its own Windows identity.
+ const headers={'Sop-Frame-Identity':encodeURIComponent(JSON.stringify({account:'local-debug',roleCode:'debug',roleName:'本地调试'}))};
  let instance=await start(),month;
  try{
-  const state=await fetch(instance.origin+'/sop/api/state').then(r=>r.json());month=state.current_month;
-  const response=await fetch(instance.origin+'/sop/api/plans',{method:'POST',headers:{Origin:instance.origin,'Content-Type':'application/json'},body:JSON.stringify({owner:'fixture',reason:'Persistent restart verification',changes:[{product_id:'persistent-fixture',month,forecast:null,sop:246,revision:0}]})});
+  const readState=await fetch(instance.origin+'/sop/api/state',{headers});assert.equal(readState.status,200);
+  month=(await readState.json()).current_month;
+  const response=await fetch(instance.origin+'/sop/api/plans',{method:'POST',headers:{...headers,Origin:instance.origin,'Content-Type':'application/json'},body:JSON.stringify({owner:'fixture',reason:'Persistent restart verification',changes:[{product_id:'persistent-fixture',month,forecast:null,sop:246,revision:0}]})});
   const saved=await response.json();assert.equal(response.status,200,JSON.stringify(saved));
-  const readback=await fetch(instance.origin+'/sop/api/state').then(r=>r.json());
+  const readback=await fetch(instance.origin+'/sop/api/state',{headers}).then(r=>r.json());
   assert.equal(readback.plans.find(p=>p.product_id==='persistent-fixture'&&p.month===month)?.sop,246);
   const reused=await runPreview([...configured,'--port',String(instance.port),'--backend-port',String(instance.backend)],{root,env});
   assert.equal(reused,null,'Repeat launch must reuse the live service');
@@ -75,7 +78,7 @@ test('default portal saves through the original SOP service and survives a full 
  assert.deepEqual(await readFile(workbook),archivedWorkbook,'Saving plans must not overwrite the archived workbook');
  instance=await start();
  try{
-  const state=await fetch(instance.origin+'/sop/api/state').then(r=>r.json());
+  const state=await fetch(instance.origin+'/sop/api/state',{headers}).then(r=>r.json());
   assert.equal(state.plans.find(p=>p.product_id==='persistent-fixture'&&p.month===month)?.sop,246);
   assert.deepEqual(await readFile(workbook),archivedWorkbook,'Restart must not rewrite the archived workbook');
   const logs=path.resolve(root,'../集成数据/logs/sop');

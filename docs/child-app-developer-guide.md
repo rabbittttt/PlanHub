@@ -7,7 +7,7 @@
 
 门户只登记入口、挂载静态文件或转发独立服务。业务源码、UI、数据、权限和算法在原项目维护；门户不注入脚本、不改 iframe 内容、不重写页面响应。需要子项目适配时，交由原项目任务处理。
 
-外层系统在工作台 iframe 的 load 事件中用 postMessage 发送 `{account, roleCode, roleName}`，目标 origin 填工作台的来源。工作台从直接父窗口接收消息，在 SOP 子页面加载及账号切换时转发。通过本地启动或发布包本机预览直接打开工作台时，SOP 使用 `local-debug`。正式服务等待外层账号。
+外层系统在工作台 iframe 的 load 事件中用 postMessage 发送 `{account, roleCode, roleName}`，目标 origin 填工作台的来源。工作台从直接父窗口接收消息，在 SOP 子页面加载及账号切换时转发。通过本地启动或发布包本机预览直接打开工作台时，SOP 使用 `local-debug`。正式服务等待外层账号。默认只接收同源父页面账号。跨来源嵌套须在部署机配置 `accountParentOrigin`。SOP 将此账号用于数据请求与操作记录。
 
 <a id="portal-integration"></a>
 ## 新增网页：双击向导

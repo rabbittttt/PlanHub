@@ -82,7 +82,7 @@ function renderNavigation() {
     link.dataset.app = app.id;
     const name = app.status === 'ready' ? app.name : `${app.name} · ${labels[app.status]}`;
     link.setAttribute('aria-label', name);
-    link.title = app.name;
+    link.title = name;
     link.append(icon(app.icon), element('span', 'nav-label', app.name));
     if (app.status !== 'ready') {
       const dot = element('span', 'nav-pending');
@@ -228,6 +228,7 @@ async function boot() {
     const response = await fetch('./config/apps.json', { cache: 'no-store', signal: AbortSignal.timeout(10000) });
     if (!response.ok) throw new Error(`配置请求失败（HTTP ${response.status}）`);
     config = validateConfig(await response.json());
+    window.planHubFrameAccount.configure(response.headers.get('PlanHub-Account-Parent-Origin'));
     if (response.headers.get('PlanHub-Local-Preview') === '1') window.planHubFrameAccount.useLocalPreview();
     const brand = sidebar.querySelector('.brand');
     brand.setAttribute('aria-label', config.platform.name);

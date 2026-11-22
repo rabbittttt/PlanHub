@@ -122,6 +122,9 @@ test('release validation rejects undeclared private data and checksum or case co
 test('container contracts keep original loopback, public prefix, external paths and required identities',async()=>{
   const bindings=await loadRuntimeBindings(root);
   assert.equal(validateRuntime(config),config);
+  const embedded={...config,accountParentOrigin:'https://company.example'};
+  assert.equal(validateRuntime(embedded),embedded);
+  assert.throws(()=>validateRuntime({...embedded,accountParentOrigin:'https://company.example/path'}),/accountParentOrigin/);
   assert.throws(()=>validateRuntime({...config,sharedDirectory:'../private'}),/relative paths/);
   assert.throws(()=>validateRuntime({...config,publicOrigin:'https://portal.example.invalid'}),/publicOrigin/);
   const order=containerSpec('orderiq',bindings.orderiq,config);assert.ok(order.args.includes('/runtime/data/orderiq/runtime'));assert.ok(order.args.includes('127.0.0.1'));

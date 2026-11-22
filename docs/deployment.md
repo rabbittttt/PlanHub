@@ -74,7 +74,7 @@ Windows 试运行直接读取 B 的 `planhub-runtime/`。正式部署时，Docke
    ```
 
 3. 在版本文件夹双击 **`build-docker.cmd`**。这一步根据包内程序构建镜像。首次构建需能访问基础镜像、系统软件包及 Python 依赖源。看到 `Docker images are ready` 后继续。
-4. 用记事本打开 **`planhub-runtime/config.json`**，将 `publicOrigin` 改成公司的实际访问地址，例如 `https://planhub.company.internal`，结尾不带 `/`。公司网关在 B 本机时，保留默认 `listenAddress`。网关在另一台电脑时，由部署同事把 `listenAddress` 设为 B 上供网关连接的内网 IP，并按公司要求限制访问范围。保存配置。
+4. 用记事本打开 **`planhub-runtime/config.json`**，将 `publicOrigin` 改成公司的实际访问地址，例如 `https://planhub.company.internal`，结尾不带 `/`。公司网关在 B 本机时，保留默认 `listenAddress`。网关在另一台电脑时，由部署同事把 `listenAddress` 设为 B 上供网关连接的内网 IP，并按公司要求限制访问范围。保存配置。若发送 SOP 账号的父系统与工作台不同源，在同一个 `config.json` 增加 `accountParentOrigin`，填写父系统实际的协议、主机及非默认端口，不含路径或尾部斜杠。同源嵌套无需此项。
 5. 在版本文件夹双击 **`start-docker.cmd`**。看到 **`Containers are healthy`** 表示正式容器已启动并通过健康检查。以后要停止整套服务，使用完整包里的 `stop-docker.cmd`。
 
 ## 第五步 从部门电脑验收

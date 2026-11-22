@@ -60,6 +60,8 @@ test('preview serves portal and explicit static mounts, including correct HEAD a
   assert.equal(head.status, 200);
   assert.equal(head.body, '');
   assert.equal(Number(head.headers['content-length']), Buffer.byteLength('<title>reports</title>'));
+  const escaped = await request(port, '/j%73?view=a%20b');
+  assert.equal(escaped.headers.location, '/j%73/?view=a%20b');
   const redirect = await request(port, '/reports?view=all');
   assert.equal(redirect.status, 308);
   assert.equal(redirect.headers.location, '/reports/?view=all');
@@ -105,7 +107,8 @@ test('public directory links cannot expose private files', async t => {
 
 test('ready static apps require artifacts while pending and hidden apps do not', async t => {
   const root = await fixture(t);
-  const raw = { platform: { name: '检查', defaultApp: 'home' }, groups: [{ id: 'business', name: '业务', apps: [
+  await writeFile(path.join(root,'package.json'), JSON.stringify({version:'1.2.3'}));
+  const raw = { platform: { name: '检查', defaultApp: 'home', version:'1.2.3' }, groups: [{ id: 'business', name: '业务', apps: [
     { id: 'reports', name: '报表', url: '/reports/', enabled: true, status: 'ready' },
     { id: 'forecast', name: '预测', url: '/forecast/', enabled: false, status: 'ready' },
     { id: 'sop', name: '计划', url: '/sop/', enabled: true, status: 'pending' },
@@ -115,6 +118,9 @@ test('ready static apps require artifacts while pending and hidden apps do not',
   const save = () => writeFile(path.join(root, 'portal/config/apps.json'), JSON.stringify(raw));
   await save();
   assert.equal((await validateWorkspace(root)).warnings.length, 0);
+  raw.platform.version='1.2.4';await save();
+  await assert.rejects(validateWorkspace(root), /版本不一致/);
+  raw.platform.version='1.2.3';
   raw.groups[0].apps[1].enabled = true;
   await save();
   await assert.rejects(validateWorkspace(root), /forecast/);

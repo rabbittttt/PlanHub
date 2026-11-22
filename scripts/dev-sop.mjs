@@ -27,8 +27,9 @@ function localSopUserHeader() {
     // Encode inside PowerShell so the Windows console code page cannot corrupt the account name.
     const command='[Console]::Write([Convert]::ToBase64String([Text.Encoding]::UTF8.GetBytes([Security.Principal.WindowsIdentity]::GetCurrent().Name)))';
     const result=spawnSync(powershell,['-NoLogo','-NoProfile','-NonInteractive','-Command',command],
-      {encoding:'utf8',windowsHide:true,timeout:10000});
+      {encoding:'utf8',windowsHide:true,timeout:30000});
     const encoded=result.stdout?.trim()||'';
+    if(result.error?.code==='ETIMEDOUT')throw new Error('读取 Windows 登录账户超时，请在系统空闲后重试。');
     if(result.error||result.status!==0||!encoded)throw new Error('无法读取当前 Windows 登录账户。');
     account=Buffer.from(encoded,'base64').toString('utf8');
     if(Buffer.from(account,'utf8').toString('base64')!==encoded)throw new Error('当前 Windows 登录账户编码无效。');

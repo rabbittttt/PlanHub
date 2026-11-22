@@ -8,7 +8,7 @@ const PROBE = "import sys,json; sys.version_info >= (3,10) or sys.exit('Python 3
 export function resolveSopPython({root,env=process.env,platform=process.platform,exists=existsSync,run=spawnSync}={}) {
   root=path.resolve(root);
   const check=(candidate,label)=>{
-    const result=run(candidate,['-B','-c',PROBE],{cwd:root,env:{...env,PYTHONIOENCODING:'utf-8',PYTHONDONTWRITEBYTECODE:'1'},encoding:'utf8',timeout:15000,windowsHide:true});
+    const result=run(candidate,['-B','-c',PROBE],{cwd:root,env:{...env,PYTHONIOENCODING:'utf-8',PYTHONDONTWRITEBYTECODE:'1'},encoding:'utf8',timeout:45000,windowsHide:true});
     let executable;
     if(!result.error&&result.status===0) {
       try {executable=JSON.parse(result.stdout.trim()).executable;} catch {}

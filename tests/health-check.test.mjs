@@ -13,6 +13,12 @@ test('lightweight page identity succeeds while a scanning catalog exceeds its de
  assert.deepEqual(await probeServiceHealth(pageProbe,{fetcher}),{ok:true,status:200});
 });
 
+test('the health probe bounds bytes read without relying on content-length',async()=>{
+ const fetcher=async()=>new Response('测试数据');
+ const result=await probeServiceHealth(pageProbe,{fetcher,maxBytes:8});
+ assert.equal(result.reason,'RESPONSE_TOO_LARGE');
+});
+
 test('wrong HTML identity, HTTP failure and legacy JSON probes remain distinguishable',async()=>{
  assert.equal((await probeServiceHealth(pageProbe,{fetcher:async()=>new Response('<title>Other service</title>')})).reason,'SERVICE_IDENTITY_MISMATCH');
  assert.equal((await probeServiceHealth(pageProbe,{fetcher:async()=>new Response('not-ready',{status:503})})).status,503);

@@ -62,7 +62,7 @@ main{min-width:0}
 /* The cycle workspace is a portal-only demo; application frames keep their own UI. */
 .home-view{padding-top:24px;padding-bottom:28px}
 .home-heading{display:flex;align-items:center;justify-content:space-between;gap:16px;margin-bottom:8px}
-.home-heading h1{font-size:28px;font-weight:700;line-height:1.25;letter-spacing:-.55px}
+.home-heading h1{font-weight:700;line-height:1.25;letter-spacing:-.55px}
 .home-context{color:var(--muted);font-size:13px;line-height:1.6;margin-top:4px}
 .home-heading-meta{display:flex;align-items:center;gap:8px;flex-wrap:wrap;justify-content:flex-end}
 .home-date{display:inline-flex;align-items:center;gap:7px;min-height:36px;padding:4px 11px;border:1px solid var(--line);border-radius:999px;background:var(--surface)}
@@ -124,7 +124,7 @@ main{min-width:0}
 .cycle-app-link svg,.cycle-app-unavailable svg{width:16px;height:16px;color:var(--icon)}
 .cycle-app-unavailable{color:var(--muted)}
 .cycle-app-unavailable>span:last-child{font-size:12px}
-.empty-state{max-width:600px;margin:auto;padding:100px 24px;text-align:center}.empty-state h1{font-size:24px;font-weight:600;margin:20px 0 12px}
+.empty-state{max-width:600px;margin:auto;padding:100px 24px;text-align:center}.empty-state h1{font-weight:600;margin:20px 0 12px}
 .empty-state p{color:var(--muted);overflow-wrap:anywhere}.empty-state button{margin-top:24px}
 .spinner{display:inline-block;width:28px;height:28px;border:2px solid #dce8e9;border-top-color:var(--accent);border-radius:50%;animation:spin 900ms linear infinite}
 @keyframes spin{to{transform:rotate(360deg)}}
@@ -145,7 +145,7 @@ main{min-width:0}
 @media(max-width:640px){
   :root{--sidebar-width:48px;--page-gutter:10px;--gap:10px;--radius:16px}
   .home-view{padding-top:16px;padding-bottom:24px}.home-heading{align-items:flex-start;flex-direction:column;gap:6px;margin-bottom:12px}
-  .home-heading h1{font-size:22px}.home-context{font-size:12px}#today{font-size:12px}
+  .home-context{font-size:12px}#today{font-size:12px}
   .home-heading-meta{justify-content:flex-start;gap:8px 12px}
   .cycle-demo-notice{margin-bottom:12px}
   .cycle-stages{grid-template-columns:repeat(2,minmax(0,1fr));margin-bottom:12px}

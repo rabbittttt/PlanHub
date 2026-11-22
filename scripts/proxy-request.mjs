@@ -1,5 +1,7 @@
 import http from 'node:http';
 
+export const PROXY_IDLE_TIMEOUT_MS = 120_000;
+
 function headersWithoutHop(headers) {
   const result={...headers};
   const hop=['connection','keep-alive','proxy-authenticate','proxy-authorization','te','trailer','transfer-encoding','upgrade',...(headers.connection||'').split(',').map(s=>s.trim().toLowerCase())];
@@ -17,7 +19,7 @@ export function proxyRequest(request,response,app,upstreamPath,send) {
     incoming.on('error',()=>response.destroy());
     incoming.pipe(response);
   });
-  upstream.setTimeout(120000,()=>upstream.destroy(new Error('Independent service timeout')));
+  upstream.setTimeout(PROXY_IDLE_TIMEOUT_MS,()=>upstream.destroy(new Error('Independent service timeout')));
   upstream.on('error',()=>{if(!response.headersSent)send(502,'Independent application unavailable; start its service or check integration configuration');else response.destroy();});
   request.on('aborted',()=>upstream.destroy());
   response.on('close',()=>{if(!response.writableEnded)upstream.destroy();});

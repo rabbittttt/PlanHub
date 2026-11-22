@@ -31,6 +31,11 @@ function docker {
     if($Arguments[0] -eq 'info'){return 'linux/x86_64'}
     if($Arguments[0] -eq 'compose' -and $Arguments[1] -eq 'version'){return '2.24.0'}
     if($Arguments[0] -eq 'ps'){if($dockerTestState.hasNetwork){return 'network-id'}else{return ''}}
+    if($Arguments[0] -eq 'image' -and $Arguments[1] -eq 'ls'){
+        $tag=$Arguments[-1].Substring('reference='.Length)
+        if($dockerTestState.images.ContainsKey($tag)){return $dockerTestState.images[$tag].Id}
+        return ''
+    }
     if($Arguments[0] -eq 'inspect'){
         $owner=if($dockerTestState.foreignRuntime){'different-runtime'}else{$env:PLANHUB_RUNTIME}
         return ConvertTo-Json -Depth 10 -InputObject @(@{Config=@{Labels=@{'planhub.runtime'=$owner}};State=@{Running=$true};Image=('sha256:'+'c'*64)})
