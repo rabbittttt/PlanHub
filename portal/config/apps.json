@@ -2,8 +2,6 @@
   "platform": {
     "name": "智选车计划部数据平台",
     "sidebarName": "智选车计划部工作台",
-    "organization": "智选车",
-    "shortName": "计划部数据平台",
     "version": "0.2.2",
     "defaultApp": "home",
     "loadTimeoutMs": 20000,
