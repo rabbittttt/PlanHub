@@ -28,6 +28,12 @@ window.planHubFrameAccount = (() => {
       if (configured) return;
       configured = true;
       extraOrigin = origin;
+      if (!extraOrigin && window.parent !== window) {
+        const parentUrl = location.ancestorOrigins?.[0] || document.referrer;
+        if (parentUrl) {
+          try { extraOrigin = new URL(parentUrl).origin; } catch { /* No usable parent origin. */ }
+        }
+      }
       if (pending && (pending.origin === location.origin || pending.origin === extraOrigin)) update(pending.value);
       pending = null;
     },
