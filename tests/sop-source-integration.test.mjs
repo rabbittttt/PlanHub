@@ -293,3 +293,52 @@ test('SOP uses the same portal shared root and never silently falls back when it
   assert.equal(settings.sharedDataRoot,path.dirname(orders));
   assert.equal(settings.dataDirectory,path.join(original,'data'));
 });
+
+test('ordinary preview recovers a repaired SOP and survives a later SOP exit',async t=>{
+  const project=path.resolve(path.dirname(fileURLToPath(import.meta.url)),'..');
+  const python=resolveSopPython({root:project,sourceRoot:path.resolve(project,'../SOP维护')});
+  const {base,root}=await fixture(t);
+  const original=await source(path.join(base,'sop'));
+  await data(original);
+  await writeFile(path.join(original,'server.py'),`import sys
+from pathlib import Path
+from http.server import BaseHTTPRequestHandler, HTTPServer
+class Handler(BaseHTTPRequestHandler):
+    def do_GET(self):
+        self.send_response(200)
+        self.end_headers()
+        self.wfile.write(b'fixture')
+server = HTTPServer(('127.0.0.1', int(sys.argv[sys.argv.index('--port') + 1])), Handler)
+while True:
+    server.handle_request()
+    marker = Path('exit-once')
+    if marker.exists():
+        marker.unlink()
+        break
+server.server_close()
+`);
+  const port=await freePort();
+  let backend=await freePort();while(backend===port)backend=await freePort();
+  const rules=path.join(base,'rules.py');
+  const server=await runPreview(['--sop-source',original,'--data-root',original,'--shared-config',rules,
+    '--port',String(port),'--backend-port',String(backend)],{root,env:{SOP_PYTHON_PATH:python,PLANHUB_DATA_ROOT:base},sopRetryMs:1000});
+  const origin='http://127.0.0.1:'+port;
+  async function waitForSop(wanted){
+    const deadline=Date.now()+30000;
+    do {
+      const health=await fetch(origin+'/api/portal/health').then(response=>response.json());
+      if(health.unavailableApps.includes('sop')===!wanted)return health.instanceId;
+      await new Promise(resolve=>setTimeout(resolve,100));
+    }while(Date.now()<deadline);
+    assert.fail('SOP readiness did not change to '+wanted);
+  }
+  try{
+    const instance=await waitForSop(false);
+    await writeFile(rules,'MERGE_GROUPS = {}');
+    assert.equal(await waitForSop(true),instance);
+    await writeFile(path.join(original,'exit-once'),'');
+    assert.equal(await fetch(origin+'/sop/').then(response=>response.text()),'fixture');
+    assert.equal(await waitForSop(false),instance);
+    assert.equal(await waitForSop(true),instance);
+  }finally{await new Promise(resolve=>server.close(resolve));}
+});

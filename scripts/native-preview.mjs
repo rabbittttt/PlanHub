@@ -9,7 +9,7 @@ import {parseArgs} from 'node:util';
 import {setTimeout as delay} from 'node:timers/promises';
 import {validateDelivery,hashFile} from './delivery-validation.mjs';
 import {checkSnapshotCompatibility} from './preview-compatibility.mjs';
-import {containerSpec,checkService,createContainerPortal,validateRuntime,readJson} from './container-runtime.mjs';
+import {releaseSopGateway,containerSpec,checkService,createContainerPortal,validateRuntime,readJson} from './container-runtime.mjs';
 import {startLocalPreviewPortal,LOCAL_PREVIEW_PORT,LOCAL_PREVIEW_ORIGIN} from './local-preview-gateway.mjs';
 import {createServer} from './dev-server.mjs';
 import {spawnService,stopService} from './service-process.mjs';
@@ -191,7 +191,7 @@ export async function runNativePreview(plan,{startService=spawnService,serviceTi
       if(id==='sop'){
         const rules=path.join(plan.runtimeRoot,...plan.config.sopSharedConfig.split('/'));await noPreviewLinks(rules);await access(rules);
         const gatewayFile=path.join(plan.runtimeRoot,'config/sop-local.json');await noPreviewLinks(gatewayFile);await mkdir(path.dirname(gatewayFile),{recursive:true});
-        await writeFile(gatewayFile,JSON.stringify({base_path:'/sop',public_origin:plan.config.publicOrigin,proxy_secret_env:'SOP_LOCAL_RELEASE_SECRET',allow_writes:true,data_dir:spec.data,source_dir:path.join(spec.shared,'订单汇总'),shared_config:rules,plan_file:path.join(spec.shared,'SOP计划','SOP计划维护.xlsx')}));
+        await writeFile(gatewayFile,JSON.stringify(releaseSopGateway(spec,plan.config.publicOrigin,rules)));
       }
       const logDirectory=path.join(plan.runtimeRoot,'logs',id);
       await allocation.reservations.get(id).release();

@@ -2,7 +2,7 @@ import http from 'node:http';
 
 export const PROXY_IDLE_TIMEOUT_MS = 120_000;
 
-function headersWithoutHop(headers) {
+export function headersWithoutHop(headers) {
   const result={...headers};
   const hop=['connection','keep-alive','proxy-authenticate','proxy-authorization','te','trailer','transfer-encoding','upgrade',...(headers.connection||'').split(',').map(s=>s.trim().toLowerCase())];
   for(const key of hop)delete result[key];
@@ -14,8 +14,12 @@ export function proxyRequest(request,response,app,upstreamPath,send) {
   // Keep public Host + Origin paired: the original application's same-origin check remains effective.
   for(const key of Object.keys(headers))if(key.startsWith('x-sop-')||key.startsWith('x-config-')||key.startsWith('x-planhub-')||key.startsWith('x-forwarded-')||key==='forwarded')delete headers[key];
   Object.assign(headers,app.headersForRequest?.(request)??{});
-  const upstream=http.request({hostname:target.hostname,port:target.port||80,path:upstreamPath,method:request.method,headers},incoming=>{
-    response.writeHead(incoming.statusCode,headersWithoutHop(incoming.headers));
+  return forwardRequest(request,response,{hostname:target.hostname,port:target.port||80,path:upstreamPath,headers},send);
+}
+
+export function forwardRequest(request,response,options,send,responseHeaders=headersWithoutHop) {
+  const upstream=http.request({...options,method:request.method},incoming=>{
+    response.writeHead(incoming.statusCode,responseHeaders(incoming.headers));
     incoming.on('error',()=>response.destroy());
     incoming.pipe(response);
   });
@@ -24,4 +28,5 @@ export function proxyRequest(request,response,app,upstreamPath,send) {
   request.on('aborted',()=>upstream.destroy());
   response.on('close',()=>{if(!response.writableEnded)upstream.destroy();});
   request.pipe(upstream);
+  return upstream;
 }

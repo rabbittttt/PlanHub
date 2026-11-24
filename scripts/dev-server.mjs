@@ -4,7 +4,7 @@ import path from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 
 import {loadAppIntegrations, publicFile, STATIC_MIME_TYPES} from './app-integrations.mjs';
-import {PROXY_IDLE_TIMEOUT_MS,proxyRequest} from './proxy-request.mjs';
+import {proxyRequest} from './proxy-request.mjs';
 import {handlePortalControl} from './portal-instance.mjs';
 import {readServicePorts} from './service-ports.mjs';
 const PROJECT_ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
@@ -54,23 +54,14 @@ export function createServer({ root = PROJECT_ROOT, portalRoot = path.join(root,
       return;
     }
     if (sopProxy && parts[0] === 'sop') {
+      if (sopProxy.available && !sopProxy.available()) return send(503, 'SOP service unavailable');
       if (pathname === '/sop') return send(308, 'Redirecting', { Location: directoryLocation() });
-      const forwarded = { ...request.headers, host: `127.0.0.1:${sopProxy.port}` };
-      for (const header of Object.keys(forwarded)) if (header.startsWith('x-sop-') || header.startsWith('x-planhub-') || header.startsWith('x-config-') || header.startsWith('x-forwarded-') || ['forwarded', 'connection', 'transfer-encoding', 'proxy-authorization', 'upgrade', 'te', 'trailer'].includes(header)) delete forwarded[header];
-      forwarded['x-sop-proxy-key'] = sopProxy.secret;
-      forwarded['x-sop-user'] = typeof sopProxy.user === 'function' ? sopProxy.user(request) : sopProxy.user;
-      const upstream = http.request({ hostname: '127.0.0.1', port: sopProxy.port, path: request.url, method: request.method, headers: forwarded }, incoming => {
-        const incomingHeaders = { ...incoming.headers };
-        delete incomingHeaders['transfer-encoding']; delete incomingHeaders.connection;
-        response.writeHead(incoming.statusCode, incomingHeaders);
-        incoming.on('error', () => response.destroy());
-        incoming.pipe(response);
-      });
-      upstream.setTimeout(PROXY_IDLE_TIMEOUT_MS, () => upstream.destroy(new Error('SOP preview timed out')));
-      upstream.on('error', () => { if (!response.headersSent) send(502, 'Local SOP service unavailable'); else response.destroy(); });
-      request.on('aborted', () => upstream.destroy());
-      response.on('close', () => { if (!response.writableEnded) upstream.destroy(); });
-      request.pipe(upstream);
+      const target = `http://127.0.0.1:${sopProxy.port}`;
+      proxyRequest(request,response,{target,headersForRequest:()=>({
+        host: new URL(target).host,
+        'x-sop-proxy-key': sopProxy.secret,
+        'x-sop-user': typeof sopProxy.user === 'function' ? sopProxy.user(request) : sopProxy.user
+      })},request.url,send);
       return;
     }
     if (!['GET', 'HEAD'].includes(request.method)) return send(405, 'Method not allowed', { Allow: 'GET, HEAD' });

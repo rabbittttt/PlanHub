@@ -92,3 +92,7 @@ Windows 试运行直接读取 B 的 `planhub-runtime/`。正式部署时，Docke
 - **更新应用数据或配置**：停止使用这些文件的服务，备份待改内容，只替换 `planhub-runtime/` 中本次需要更新的文件，再启动并验证。
 
 运行日志在 `planhub-runtime/logs/`；查 Docker 服务日志可在版本目录运行 `.\deploy.ps1 -Action Logs -AppId orderiq`，应用编号按需替换。
+
+### 从共享目录核对 B 的版本
+
+A 的交付包在 `delivery.json` 的 `versions` 列出应用版本。B 使用正式 Docker 时，打开 `planhub-runtime/deployment-state.json` 核对 `versions` 和 `updatedAt`；B 使用默认 Windows 试运行时，看同目录 `native-direct.json` 的 `versions` 和 `confirmedAt`。这些值记录 B 上最近一次成功启动时确认的版本。旧包或尚未完成启动时可能没有版本记录。查看当前进程健康状态仍需访问 B 的服务。共享这些状态文件时只授予读取权限，含密钥的运行配置仅供部署机使用。

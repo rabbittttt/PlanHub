@@ -1,5 +1,5 @@
 // Local portal integration. SOP code and persistent data belong to the independent project.
-import {mkdir,mkdtemp,writeFile,copyFile,readdir,stat,readFile,realpath} from 'node:fs/promises';
+import {mkdir,mkdtemp,writeFile,copyFile,readdir,stat,readFile,realpath,unlink,rmdir} from 'node:fs/promises';
 import {existsSync} from 'node:fs';
 import {spawnSync} from 'node:child_process';
 import {hostname,userInfo} from 'node:os';
@@ -139,6 +139,7 @@ export async function resolvePreviewSettings(args=process.argv.slice(2),{root=RO
 
 export async function assertPreviewPortsAvailable(port,backendPort) {
   for(const [label,value] of [['门户',port],['SOP服务',backendPort]]) {
+    if(value===undefined)continue;
     await new Promise((resolve,reject)=>{
       const probe=net.createServer();
       probe.once('error',error=>{
@@ -152,36 +153,8 @@ export async function assertPreviewPortsAvailable(port,backendPort) {
   }
 }
 
-export async function runPreview(args=process.argv.slice(2),options={}) {
-  const values=previewOptions(args);
-  if(values.help)return null;
-  const requestedRoot=options.root||ROOT;
-  const existing=await probePortal(values.port);
-  if(existing&&existing.workspaceId!==await workspaceId(requestedRoot))throw new Error('门户端口属于另一个工作区；请使用自己的端口。');
-  // An unknown listener must still fail before inspecting/copying business data.
-  if(!existing)await assertPreviewPortsAvailable(values.port,values.backendPort);
-  const settings=await resolvePreviewSettings(args,options);
+async function startSop(settings,python,runtimeEnv,userHeader,secret,onChild) {
   const {root,sourceRoot,dataRoot,dataDirectory,snapshot,salesSourceDir,planSourceFile,sharedConfig,port,backendPort}=settings;
-  const runtimeEnv={...process.env,...(options.env||{})};
-  if(settings.sharedDataRoot)runtimeEnv.SHARED_DATA_ROOT=settings.sharedDataRoot;
-  const applications=await loadAppIntegrations(root,{env:runtimeEnv});
-  for(const [id,app] of Object.entries(applications))if(app.type==='proxy'&&[port,backendPort].includes(Number(new URL(app.target).port||80)))throw new Error(id+' 服务端口不能与门户或 SOP 端口相同');
-  const python=resolveSopPython({root,sourceRoot,env:runtimeEnv});
-  const userHeader=localSopUserHeader();
-  const configId=await configurationId({...settings,userHeader},applications,python);
-  if(existing){
-    if(existing.unavailableApps?.length)throw new Error('门户有未成功启动或已退出的服务（'+existing.unavailableApps.join('、')+'）；请处理启动日志中的原因，再停止并重新启动门户。');
-    if(existing.configId!==configId)throw new Error('已有门户使用不同代码版本或配置；请先运行“停止本地门户.cmd”再启动。');
-    try {
-      const session=await fetch('http://127.0.0.1:'+port+'/sop/api/session',{signal:AbortSignal.timeout(2000)});
-      await session.arrayBuffer();if(!session.ok)throw new Error('SOP');
-      for(const [id,app] of Object.entries(applications))if(app.type==='proxy'&&!await serviceHealthy(app))throw new Error(id);
-    }catch(error){throw new Error('门户已运行，但后端尚未响应（'+error.message+'）；请运行“停止本地门户.cmd”后重新启动。');}
-    console.log('本地门户已在运行，继续使用：http://127.0.0.1:'+port+'/');
-    console.log('未重复启动后端；需要停止时运行“停止本地门户.cmd”。');
-    return null;
-  }
-  const runtime=await createPortalInstance(root,port,configId);
   const pythonEnv={...runtimeEnv,SOP_PYTHON_PATH:python,PYTHONIOENCODING:'utf-8',PYTHONDONTWRITEBYTECODE:'1'};
   for(const key of Object.keys(pythonEnv))if(key.toLowerCase()==='path')delete pythonEnv[key];
   pythonEnv.PATH=path.dirname(python)+path.delimiter+(runtimeEnv.PATH??runtimeEnv.Path??'');
@@ -222,19 +195,20 @@ export async function runPreview(args=process.argv.slice(2),options={}) {
       await writeFile(path.join(data,'sales.json'),JSON.stringify({meta:{notes:['仅供本地界面验收的演示数据，不代表业务数据。']},products:[{id:'preview',brand:'演示',model:'本地验收 2026款',version:'示例版本'}],sales:[]}));
     }
   }
-  const secret=crypto.randomBytes(32).toString('hex');
   const gateway={base_path:'/sop',public_origin:`http://127.0.0.1:${port}`,proxy_secret_env:'SOP_DEV_PROXY_SECRET',allow_writes:true,data_dir:data,source_dir:source,shared_config:rules,plan_file:plan};
   const gatewayFile=path.join(config,'gateway.json');
   await writeFile(gatewayFile,JSON.stringify(gateway,null,2));
   const logDirectory=path.join(settings.logRoot,'sop');
   const env={...pythonEnv,SOP_LOG_DIR:logDirectory,SOP_DEV_PROXY_SECRET:secret,SOP_EXCEL_ENGINE:'python',PYTHONUNBUFFERED:'1'};
   const child=spawnService(python,[path.join(sourceRoot,'server.py'),'--port',String(backendPort),'--gateway-config',gatewayFile],{cwd:sourceRoot,env,logDirectory});
-  let stopApplications=()=>{};
-  const cleanupOwned=()=>{stopService(child);stopApplications();};
-  process.once('exit',cleanupOwned);
-  let failed=false,stopping=false;
-  child.on('error',error=>{console.error(error.message);failed=true;});
-  child.on('exit',()=>{failed=true;});
+  if(!snapshot)child.once('close',async()=>{
+    try{await unlink(gatewayFile);await rmdir(config);await rmdir(preview);}
+    catch(error){if(error.code!=='ENOENT')console.warn('运行目录保留：'+preview+'（'+error.code+'）');}
+  });
+  onChild(child);
+  let failed=false;
+  child.on('error',error=>{failed=true;console.error(error.message);});
+  child.once('exit',()=>{failed=true;});
   let ready=false;
   for(let i=0;i<100&&!failed;i++) {
     try {
@@ -244,28 +218,7 @@ export async function runPreview(args=process.argv.slice(2),options={}) {
     } catch {}
     await new Promise(resolve=>setTimeout(resolve,250));
   }
-  let server;
-  try {
-    if(!ready)throw new Error(`独立 SOP 服务未启动；请查看日志：${child.serviceLogs.stderr}`);
-    stopApplications=await startAppServices(applications,{root,env:runtimeEnv,logRoot:settings.logRoot});
-    if(failed)throw new Error('SOP 在其他应用启动期间已退出，请检查原项目日志。');
-    server=createServer({root,applications,runtime,localPreview:true,sopProxy:{port:backendPort,secret,user:userHeader}});
-  } catch(error) {cleanupOwned();process.removeListener('exit',cleanupOwned);throw error;}
-  server.startupWarnings=stopApplications.failures??[];
-  runtime.identity.unavailableApps=stopApplications.unavailableApps??[];
-  const closeChild=()=>{stopping=true;cleanupOwned();process.removeListener('exit',cleanupOwned);process.removeListener('SIGINT',stop);process.removeListener('SIGTERM',stop);};
-  function stop(){stopping=true;stopService(child);stopApplications();server.close();setTimeout(()=>server.closeAllConnections?.(),1000).unref();}
-  runtime.stop=stop;
-  server.once('close',()=>{closeChild();void unregisterPortal(root,runtime);});
-  child.on('exit',()=>{if(!stopping&&server.listening){console.error('独立 SOP 服务已退出，本地门户预览随之停止。');server.close();}});
-  try {
-    await new Promise((resolve,reject)=>{
-      server.once('error',reject);
-      server.listen(port,'127.0.0.1',()=>{server.removeListener('error',reject);resolve();});
-    });
-  } catch(error) {closeChild();throw error;}
-  try {await registerPortal(root,runtime);} catch(error){stop();throw error;}
-  console.log(`SOP 门户预览：http://127.0.0.1:${port}/#/app/sop`);
+  if(!ready||failed)throw new Error(`独立 SOP 服务未启动；请查看日志：${child.serviceLogs.stderr}`);
   console.log(`SOP 唯一源码：${sourceRoot}`);
   console.log(`SOP Python：${python}`);
   console.log(`SOP 服务日志：${child.serviceLogs.stderr}`);
@@ -277,8 +230,133 @@ export async function runPreview(args=process.argv.slice(2),options={}) {
     console.log(`销售来源：${source}；计划保存于上述持久数据库，Excel 通过业务页面导入导出。`);
     console.log('共享规则：'+rules);
   }
+}
+
+export async function runPreview(args=process.argv.slice(2),options={}) {
+  const root=options.root||ROOT;
+  const values=previewOptions(args,{root});
+  if(values.help)return null;
+  const {port,backendPort}=values;
+  const strict=Boolean(values.snapshot||options.requireSop);
+  const existing=await probePortal(port);
+  if(existing&&existing.workspaceId!==await workspaceId(root))throw new Error('门户端口属于另一个工作区；请使用自己的端口。');
+  if(!existing)await assertPreviewPortsAvailable(port,strict?backendPort:undefined);
+  const runtimeEnv={...process.env,...options.env};
+  const shared=await loadSharedDataRoot(root,{env:runtimeEnv});
+  if(shared)runtimeEnv.SHARED_DATA_ROOT=shared;
+  const applications=await loadAppIntegrations(root,{env:runtimeEnv});
+  for(const [id,app] of Object.entries(applications))if(app.type==='proxy'&&[port,backendPort].includes(Number(new URL(app.target).port||80)))throw new Error(id+' 服务端口不能与门户或 SOP 端口相同');
+  const bindings=structuredClone(applications);
+  async function resolveSop() {
+    const settings=await resolvePreviewSettings(args,options);
+    const python=resolveSopPython({root,sourceRoot:settings.sourceRoot,env:runtimeEnv});
+    const userHeader=localSopUserHeader();
+    const configId=await configurationId({...settings,userHeader},bindings,python);
+    return {settings,python,userHeader,configId};
+  }
+  if(existing){
+    if(existing.unavailableApps?.length)throw new Error('门户仍在运行，暂不可用：'+existing.unavailableApps.join('、')+'。请查看启动日志。');
+    const {configId}=await resolveSop();
+    if(existing.configId!==configId)throw new Error('已有门户使用不同代码版本或配置；请先运行“停止本地门户.cmd”再启动。');
+    try {
+      const session=await fetch('http://127.0.0.1:'+port+'/sop/api/session',{signal:AbortSignal.timeout(2000)});
+      await session.arrayBuffer();if(!session.ok)throw new Error('SOP');
+      for(const [id,app] of Object.entries(applications))if(app.type==='proxy'&&!await serviceHealthy(app))throw new Error(id);
+    }catch(error){throw new Error('门户已运行，但后端尚未响应（'+error.message+'）；请运行“停止本地门户.cmd”后重新启动。');}
+    console.log('本地门户已在运行，继续使用：http://127.0.0.1:'+port+'/');
+    console.log('未重复启动后端；需要停止时运行“停止本地门户.cmd”。');
+    return null;
+  }
+  const runtime=await createPortalInstance(root,port,crypto.randomUUID());
+  const secret=crypto.randomBytes(32).toString('hex');
+  let userHeader,child,stopApplications,retryTimer,closing=false,sopReady=false;
+  const abort=new AbortController();
+  const warnings=[];
+  let lastWarning='';
+  const retryMs=options.sopRetryMs??60000;
+  function markSopUnavailable(message) {
+    sopReady=false;
+    if(closing||strict)return;
+    const warning=`sop 接入暂不可用：${message}；后端端口 ${backendPort}。其他入口继续可用，${Math.ceil(retryMs/1000)} 秒后重试。`;
+    if(warning!==lastWarning)console.warn(warning);
+    lastWarning=warning;
+    clearTimeout(retryTimer);
+    retryTimer=setTimeout(()=>{void launchSop();},retryMs);
+    retryTimer.unref();
+  }
+  async function launchSop(){
+    try {
+      await assertPreviewPortsAvailable(undefined,backendPort);
+      const config=await resolveSop();
+      if(closing)return;
+      userHeader=config.userHeader;
+      await startSop(config.settings,config.python,runtimeEnv,userHeader,secret,owned=>{
+        child=owned;
+        if(closing){stopService(owned);return;}
+        owned.once('exit',()=>{
+          if(sopReady)markSopUnavailable('服务已退出，日志：'+owned.serviceLogs.stderr);
+        });
+      });
+      if(closing)return;
+      runtime.identity.configId=config.configId;
+      sopReady=true;
+      lastWarning='';
+    }catch(error){
+      stopService(child);
+      markSopUnavailable(error.message);
+      if(strict)throw error;
+    }
+  }
+  const server=createServer({root,applications,runtime,localPreview:true,sopProxy:{
+    port:backendPort,secret,user:()=>userHeader,available:()=>sopReady
+  }});
+  Object.defineProperty(runtime.identity,'unavailableApps',{enumerable:true,get:()=>[
+    ...(sopReady?[]:['sop']),...Object.keys(applications).filter(id=>applications[id].startupUnavailable)
+  ]});
+  server.unavailableAppIds=()=>runtime.identity.unavailableApps;
+  for(const app of Object.values(applications))if(app.type==='proxy')app.startupUnavailable=true;
+  function cleanup(){
+    closing=true;
+    abort.abort();
+    clearTimeout(retryTimer);
+    stopService(child);
+    stopApplications?.();
+  }
+  function stop(){cleanup();server.close();server.closeAllConnections?.();}
+  runtime.stop=stop;
+  process.once('exit',cleanup);
+  server.once('close',()=>{
+    cleanup();
+    process.removeListener('exit',cleanup);
+    process.removeListener('SIGINT',stop);
+    process.removeListener('SIGTERM',stop);
+    void unregisterPortal(root,runtime);
+  });
+  try{
+    await new Promise((resolve,reject)=>{
+      server.once('error',reject);
+      server.listen(port,'127.0.0.1',()=>{server.removeListener('error',reject);resolve();});
+    });
+    console.log(`本地门户：http://127.0.0.1:${port}/`);
+    process.once('SIGINT',stop);process.once('SIGTERM',stop);
+    // Finish ownership registration for both branches even if a strict snapshot fails.
+    await registerPortal(root,runtime);
+    const results=await Promise.allSettled([launchSop(),startAppServices(applications,{root,env:runtimeEnv,signal:abort.signal}).then(stop=>{
+      stopApplications=stop;
+      if(closing)stop();
+    })]);
+    for(const result of results)if(result.status==='rejected')throw result.reason;
+    if(closing)throw new Error('门户启动已取消');
+    if(lastWarning)warnings.push(lastWarning);
+    warnings.push(...stopApplications.failures);
+    server.startupWarnings=warnings;
+  }catch(error){
+    cleanup();
+    if(server.listening)await new Promise(resolve=>server.close(resolve));
+    else process.removeListener('exit',cleanup);
+    throw error;
+  }
   console.log('当前为本机入口，代理身份不代表 Windows 域认证。Ctrl+C 停止。');
-  process.once('SIGINT',stop);process.once('SIGTERM',stop);
   return server;
 }
 

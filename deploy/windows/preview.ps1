@@ -133,6 +133,7 @@ if(-not $Snapshot){
         Save-Json $derived $settings
         Save-Json $marker @{schemaVersion=1;mayBeRunning=$true}
         Native 'start' $source
+        Save-Json $marker @{schemaVersion=1;mayBeRunning=$true;versions=$manifest.versions;confirmedAt=[DateTime]::UtcNow.ToString('o')}
         Write-Host ('Reading and saving live data in: '+$source)
         Write-Host 'Open http://127.0.0.1:4173/. Shared updates follow each application refresh cycle.'
         return

@@ -142,7 +142,13 @@ try {
     }
     Invoke-DeliveryDocker -Arguments ($compose+@('ps'))
     $installed=if($wholeStack){@($manifest.applications)}else{@($state.applications)+$selected|Select-Object -Unique}
-    Write-DeliveryJson $stateFile ([ordered]@{running=$true;configHash=$configHash;contractHash=$manifest.contractHash;applications=@($installed);lastDelivery=$package;updatedAt=[DateTime]::UtcNow.ToString('o')})
+    # Partial updates keep the last verified version of each untouched service.
+    $confirmed=[ordered]@{}
+    if(-not $wholeStack -and $state.PSObject.Properties['versions']){
+        foreach($item in $state.versions.PSObject.Properties){$confirmed[$item.Name]=$item.Value}
+    }
+    foreach($id in $selected){$confirmed[$id]=$manifest.versions.$id}
+    Write-DeliveryJson $stateFile ([ordered]@{running=$true;versions=$confirmed;lastDeliveryHash=$deliveryHash;configHash=$configHash;contractHash=$manifest.contractHash;applications=@($installed);lastDelivery=$package;updatedAt=[DateTime]::UtcNow.ToString('o')})
     Write-Host 'Containers are healthy. Finish the company gateway connection and browser acceptance.'
     Write-Host ('Public URL: '+$config.publicOrigin)
 }finally{if($null -ne $lock){$lock.Dispose()}}

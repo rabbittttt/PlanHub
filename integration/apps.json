@@ -4,13 +4,7 @@
     "orderiq": {
       "type": "proxy",
       "target": "http://127.0.0.1:{port}",
-      "stripPrefix": true,
       "rootRoutes": [],
-      "healthPath": "/health",
-      "healthKeys": [
-        "status",
-        "application"
-      ],
       "start": {
         "cwd": "../订单分析/scripts/generate_html",
         "command": "../.venv/Scripts/python.exe",
@@ -20,18 +14,13 @@
           "--port",
           "{port}"
         ]
-      }
+      },
+      "useReleaseContract": true
     },
     "forecast": {
       "type": "proxy",
       "target": "http://127.0.0.1:{port}",
-      "stripPrefix": true,
       "rootRoutes": [],
-      "healthPath": "/healthz",
-      "healthKeys": [
-        "ok",
-        "app"
-      ],
       "start": {
         "cwd": "../销量预测",
         "command": "../.venv/Scripts/python.exe",
@@ -47,22 +36,12 @@
           "{basePath}"
         ]
       },
-      "healthExpected": {
-        "ok": true,
-        "app": "sales-forecast-live",
-        "public_prefix": "{basePath}"
-      }
+      "useReleaseContract": true
     },
     "quicklook": {
       "type": "proxy",
       "target": "http://127.0.0.1:{port}",
-      "stripPrefix": true,
       "rootRoutes": [],
-      "healthPath": "/healthz",
-      "healthKeys": [
-        "ok",
-        "app"
-      ],
       "start": {
         "cwd": "../数据速查",
         "command": "../.venv/Scripts/python.exe",
@@ -88,7 +67,8 @@
             "config"
           ]
         }
-      ]
+      ],
+      "useReleaseContract": true
     },
     "leads": {
       "type": "static",
@@ -101,15 +81,7 @@
     "vehicle-config": {
       "type": "proxy",
       "target": "http://127.0.0.1:{port}",
-      "stripPrefix": true,
       "rootRoutes": [],
-      "healthPath": "/healthz",
-      "healthKeys": [
-        "ok",
-        "app",
-        "public_prefix"
-      ],
-      "healthText": null,
       "start": {
         "cwd": "../配置管理",
         "command": "../.venv/Scripts/python.exe",
@@ -124,11 +96,7 @@
           "{basePath}"
         ]
       },
-      "healthExpected": {
-        "ok": true,
-        "app": "vehicle-config",
-        "public_prefix": "{basePath}"
-      }
+      "useReleaseContract": true
     }
   },
   "dataRoot": "../工作台数据"

@@ -48,3 +48,5 @@
 品牌的 SVG、PNG、ICO 以 `portal/assets/planning-icon.svg` 为主。2026-11-09 将 P 的竖笔向下延长 4.8 个画布单位，保留笔直平收的轮廓，并调整图形的垂直留白。浏览器标签采用透明底的 `favicon.svg`、`favicon.ico` 和 32px PNG。导出器为 `scripts/export-planning-icon.py`。旧版布局及实施记录通过 Git 历史查阅。
 
 运行 `npm run check` 与 `npm test`。在浏览器查看桌面、手机和断点附近截图，核对分栏比例、卡片密度、溢出、键盘焦点、演示交互、各应用嵌入和待接入提示。使用隔离数据验证业务视图。
+
+导航回归检查 1440 和 390 两种宽度下的展开、收起、边界和圆角。固定样例截图位于 `tests/visual-baselines/`，仅使用测试导航。确认视觉变更后，在 Windows Edge、Playwright、Pillow 环境中设置 `PLANHUB_UPDATE_VISUAL_BASELINES=1`，运行 `tests/test_app_navigation.py` 的 unittest 发现命令更新，然后清除该变量并复测。

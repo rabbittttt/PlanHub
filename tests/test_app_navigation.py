@@ -3,6 +3,8 @@
 Requires Playwright and local Edge. All business pages are disposable HTTP fixtures.
 """
 import json
+import io
+import os
 import threading
 import unittest
 from collections import Counter
@@ -159,6 +161,52 @@ class AppNavigationTests(unittest.TestCase):
         self.assertEqual(self.counts['GET', '/alpha/'], 0)
         self.navigate('alpha')
         self.assertEqual(self.counts['GET', '/alpha/'], 1)
+
+    def test_embedded_page_meets_sidebar_and_viewport_edges(self):
+        self.navigate('alpha')
+        self.page.emulate_media(reduced_motion='reduce')
+        for width in (1440, 390):
+            self.page.set_viewport_size({'width': width, 'height': 900})
+            for expanded in (False, True):
+                with self.subTest(width=width, expanded=expanded):
+                    toggle = self.page.locator('#nav-toggle')
+                    if toggle.get_attribute('aria-expanded') != str(expanded).lower():
+                        toggle.click()
+                    box = self.page.locator('#app-frame').bounding_box()
+                    rail = self.page.locator('.sidebar').bounding_box()
+                    self.assertAlmostEqual(box['x'], rail['x'] + rail['width'], delta=1)
+                    self.assertAlmostEqual(box['y'], 0, delta=1)
+                    self.assertAlmostEqual(box['x'] + box['width'], width, delta=1)
+                    self.assertAlmostEqual(box['y'] + box['height'], 900, delta=1)
+                    for selector in ('.frame-container', '#app-frame'):
+                        radius = self.page.locator(selector).evaluate('(el) => getComputedStyle(el).borderTopLeftRadius')
+                        self.assertEqual(radius, '0px')
+
+    def test_sidebar_visual_baselines(self):
+        from PIL import Image, ImageChops
+        self.navigate('alpha')
+        self.page.emulate_media(reduced_motion='reduce')
+        folder = ROOT / 'tests' / 'visual-baselines'
+        update = os.environ.get('PLANHUB_UPDATE_VISUAL_BASELINES') == '1'
+        for width in (1440, 390):
+            self.page.set_viewport_size({'width': width, 'height': 900})
+            for expanded in (False, True):
+                with self.subTest(width=width, expanded=expanded):
+                    toggle = self.page.locator('#nav-toggle')
+                    if toggle.get_attribute('aria-expanded') != str(expanded).lower():
+                        toggle.click()
+                    expected = folder / f'sidebar-{width}-{"open" if expanded else "closed"}.png'
+                    # Only synthetic navigation goes into Git. App pixels belong to the child project.
+                    self.page.mouse.move(width - 1, 850)
+                    image = self.page.locator('.sidebar').screenshot(animations='disabled')
+                    if update:
+                        folder.mkdir(exist_ok=True)
+                        expected.write_bytes(image)
+                    with Image.open(expected) as baseline, Image.open(io.BytesIO(image)) as actual:
+                        self.assertEqual(actual.size, baseline.size)
+                        diff = ImageChops.difference(baseline.convert('RGB'), actual.convert('RGB'))
+                        changed = sum(diff.convert('L').histogram()[25:])
+                        self.assertLessEqual(changed, actual.width * actual.height * 0.005)
 
     def test_mobile_navigation_keeps_hidden_pages_out_of_focus_order(self):
         for width, height in ((375, 812), (812, 375)):

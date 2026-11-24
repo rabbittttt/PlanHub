@@ -63,10 +63,24 @@ export async function loadAppIntegrations(root,{env=process.env}={}) {
   if(!defaults.applications||!local.applications)throw new Error('应用接入配置必须包含 applications');
   const persistentRoot=await loadPersistentDataRoot(root,{env});
   const result={}; const routes=new Set();
+  const published=Object.values(defaults.applications).some(app=>app.useReleaseContract)
+    ? await json(path.join(root,'deploy/docker/bindings.json'),{}) : {};
+  for(const [id,app] of Object.entries(defaults.applications)){
+    if(!app.useReleaseContract)continue;
+    const contract=published[id];
+    if(contract?.type!=='service'||!contract.healthExpected||!Object.keys(contract.healthExpected).length)
+      throw new Error('缺少应用发布健康契约：'+id);
+    Object.assign(app,{stripPrefix:contract.stripPrefix,healthPath:contract.healthPath,
+      healthExpected:contract.healthExpected,healthKeys:Object.keys(contract.healthExpected)});
+  }
   for(const id of new Set([...Object.keys(defaults.applications),...Object.keys(local.applications)])) {
     if(!/^[a-z][a-z0-9-]*$/.test(id)||['sop','api','assets','config','css','js','home','data','scripts','services','deploy','logs','tests'].includes(id))throw new Error('无效或保留的接入 ID: '+id);
     const override=local.applications[id];
     const app={...defaults.applications[id],...override};
+    if(defaults.applications[id]?.useReleaseContract&&override&&!Object.hasOwn(override,'healthExpected')&&
+       ((override.healthPath&&override.healthPath!==defaults.applications[id].healthPath)||override.healthText)){
+      delete app.healthExpected;
+    }
     // Preserve partial legacy JSON overrides when defaults switch to a page marker.
     const pageDefault=defaults.applications[id]?.healthText;
     const ownKeys=override&&Object.hasOwn(override,'healthKeys');

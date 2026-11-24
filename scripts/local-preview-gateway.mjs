@@ -1,5 +1,6 @@
 // Portal-owned loopback preview bridge. The authenticated portal stays intact.
 import http from 'node:http';
+import {headersWithoutHop,forwardRequest} from './proxy-request.mjs';
 
 export const LOCAL_PREVIEW_PORT=4173;
 export const LOCAL_PREVIEW_ORIGIN=`http://127.0.0.1:${LOCAL_PREVIEW_PORT}`;
@@ -16,8 +17,7 @@ export function validatePreviewConfig(config,{allowLegacy=false}={}){
 }
 
 function withoutTransportIdentity(headers,{allowControl=false}={}){
-  const result={...headers};
-  for(const name of ['connection','keep-alive','proxy-authenticate','proxy-authorization','te','trailer','transfer-encoding','upgrade',...(headers.connection??'').split(',').map(value=>value.trim().toLowerCase())])delete result[name];
+  const result=headersWithoutHop(headers);
   for(const name of Object.keys(result))if((name.startsWith('x-planhub-')&&!(allowControl&&name==='x-planhub-control'))||name.startsWith('x-config-')||name.startsWith('x-sop-')||name.startsWith('x-forwarded-')||name==='forwarded')delete result[name];
   return result;
 }
@@ -46,17 +46,8 @@ export function createLocalPreviewGateway({config,targetPort,allowControl=false}
     headers.host=new URL(config.publicOrigin).host;
     headers['x-planhub-key']=config.proxySecret;
     headers['x-planhub-user']=preview.user;
-    const upstream=http.request({hostname:'127.0.0.1',port:targetPort,path:request.url,method:request.method,headers},incoming=>{
-      response.writeHead(incoming.statusCode,withoutTransportIdentity(incoming.headers));
-      incoming.on('error',()=>response.destroy());
-      incoming.pipe(response);
-    });
+    const upstream=forwardRequest(request,response,{hostname:'127.0.0.1',port:targetPort,path:request.url,headers},send,withoutTransportIdentity);
     active.add(upstream);upstream.once('close',()=>active.delete(upstream));
-    upstream.setTimeout(120000,()=>upstream.destroy(new Error('Local preview request timed out')));
-    upstream.on('error',()=>send(502,'Local preview portal unavailable.'));
-    request.on('aborted',()=>upstream.destroy());
-    response.on('close',()=>{if(!response.writableEnded)upstream.destroy();});
-    request.pipe(upstream);
   });
   server.on('upgrade',(_request,socket)=>socket.end('HTTP/1.1 400 Bad Request\r\nConnection: close\r\nContent-Length: 0\r\n\r\n'));
   server.on('connect',(_request,socket)=>socket.end('HTTP/1.1 405 Method Not Allowed\r\nConnection: close\r\nContent-Length: 0\r\n\r\n'));

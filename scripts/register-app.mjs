@@ -95,6 +95,11 @@ export async function planRegistration(root,input){
     for(const dir of ['portal/config','integration','config.local'])await mkdir(path.join(temporary,dir),{recursive:true});
     await writeFile(path.join(temporary,'portal/config/apps.json'),json(registry));
     await writeFile(path.join(temporary,'integration/apps.json'),await readFile(path.join(root,'integration/apps.json'),'utf8'));
+    const releaseBindings=await readOptional(path.join(root,'deploy/docker/bindings.json'));
+    if(releaseBindings!==null){
+      await mkdir(path.join(temporary,'deploy/docker'),{recursive:true});
+      await writeFile(path.join(temporary,'deploy/docker/bindings.json'),releaseBindings);
+    }
     try{await writeFile(path.join(temporary,'integration/ports.json'),await readFile(path.join(root,'integration/ports.json'),'utf8'));}catch(error){if(error.code!=='ENOENT')throw error;}
     await writeFile(path.join(temporary,'config.local/apps.json'),json(local));
     const integrations=await loadAppIntegrations(temporary);

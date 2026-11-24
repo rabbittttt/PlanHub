@@ -253,8 +253,12 @@ test('one shared root reaches every service without local patches and survives w
   const template=JSON.parse(await readFile(new URL('../integration/apps.json',import.meta.url),'utf8'));
   await writeFile(path.join(f.root,'integration/apps.json'),JSON.stringify(template));
   await writeFile(path.join(f.root,'integration/ports.json'),await readFile(new URL('../integration/ports.json',import.meta.url)));
+  await mkdir(path.join(f.root,'deploy/docker'),{recursive:true});
+  const contracts=JSON.parse(await readFile(new URL('../deploy/docker/bindings.json',import.meta.url),'utf8'));
+  await writeFile(path.join(f.root,'deploy/docker/bindings.json'),JSON.stringify(contracts));
   async function check(root,relative){
     const apps=await loadAppIntegrations(root,{env:{}});
+    assert.deepEqual(apps.orderiq.healthExpected,contracts.orderiq.healthExpected);
     for(const app of Object.values(apps))if(app.start)assert.equal(app.start.env.SHARED_DATA_ROOT,path.resolve(root,relative));
     assert.ok(!apps.orderiq.start.args.includes('--input'),'Default order startup uses the common source contract');
   }

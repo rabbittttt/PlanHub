@@ -6,7 +6,7 @@ import path from 'node:path';
 import {fileURLToPath} from 'node:url';
 import {mkdtemp,mkdir,writeFile,realpath,rm} from 'node:fs/promises';
 import os from 'node:os';
-import {previewOptions} from '../scripts/dev-sop.mjs';
+import {runPreview,previewOptions} from '../scripts/dev-sop.mjs';
 import {readServicePorts} from '../scripts/service-ports.mjs';
 
 const root=path.resolve(path.dirname(fileURLToPath(import.meta.url)),'..');
@@ -61,4 +61,26 @@ test('occupied portal or SOP ports fail before snapshot reads or Python startup'
       assert.doesNotMatch(result.stderr,/ENOENT|sales\.json/);
     }
   } finally {await close(occupied);}
+});
+
+test('a missing SOP leaves the workspace and a separately mounted page available',async t=>{
+  const root=await mkdtemp(path.join(os.tmpdir(),'planhub-degraded-'));
+  t.after(()=>rm(root,{recursive:true,force:true}));
+  for(const dir of ['portal','integration','report'])await mkdir(path.join(root,dir));
+  await writeFile(path.join(root,'portal/index.html'),'workspace');
+  await writeFile(path.join(root,'report/index.html'),'report');
+  await writeFile(path.join(root,'integration/apps.json'),JSON.stringify({applications:{
+    report:{type:'static',root:'report',entry:'index.html',publicPaths:['index.html']}
+  }}));
+  const allocated=await Promise.all([listener(),listener()]);
+  const [port,backend]=allocated.map(server=>server.address().port);
+  await Promise.all(allocated.map(close));
+  const server=await runPreview(['--port',String(port),'--backend-port',String(backend),'--sop-source','absent'],{root});
+  t.after(()=>close(server));
+  const origin='http://127.0.0.1:'+port;
+  assert.equal(await fetch(origin).then(r=>r.text()),'workspace');
+  assert.equal(await fetch(origin+'/report/').then(r=>r.text()),'report');
+  assert.equal((await fetch(origin+'/sop/')).status,503);
+  assert.deepEqual((await fetch(origin+'/api/portal/health').then(r=>r.json())).unavailableApps,['sop']);
+  assert.match(server.startupWarnings.join(' '),/absent/);
 });

@@ -99,6 +99,10 @@ export function createContainerPortal(payload,bindings,config,{root='/runtime',r
   });
   return server;
 }
+export function releaseSopGateway(spec,publicOrigin,rules){
+  return {base_path:'/sop',public_origin:publicOrigin,proxy_secret_env:'SOP_LOCAL_RELEASE_SECRET',allow_writes:true,data_dir:spec.data,source_dir:path.join(spec.shared,'订单汇总'),shared_config:rules,plan_file:path.join(spec.shared,'SOP计划/SOP计划维护.xlsx')};
+}
+
 export async function runContainer(id,{appRoot='/app',runtime='/runtime'}={}){
   const config=validateRuntime(await readJson(path.join(runtime,'config.json'))),bindings=await readJson(path.join(appRoot,'bindings.json')),binding=bindings[id];
   if(!binding)throw new Error('Unknown container application: '+id);
@@ -116,7 +120,7 @@ export async function runContainer(id,{appRoot='/app',runtime='/runtime'}={}){
   if(id==='sop'){
     const rules=privatePath(runtime,config.sopSharedConfig);await access(rules);
     await mkdir(path.join(runtime,'config'),{recursive:true});
-    await writeFile(path.join(runtime,'config/sop-local.json'),JSON.stringify({base_path:'/sop',public_origin:config.publicOrigin,proxy_secret_env:'SOP_LOCAL_RELEASE_SECRET',allow_writes:true,data_dir:spec.data,source_dir:path.join(spec.shared,'订单汇总'),shared_config:rules,plan_file:path.join(spec.shared,'SOP计划/SOP计划维护.xlsx')}));
+    await writeFile(path.join(runtime,'config/sop-local.json'),JSON.stringify(releaseSopGateway(spec,config.publicOrigin,rules)));
   }
   const directory=spec.env.PLANHUB_APP_LOG_DIR;
   const child=spawn('/usr/local/bin/python',spec.args,{cwd:release.payload,env:spec.env,stdio:['ignore','pipe','pipe']});

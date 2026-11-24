@@ -81,6 +81,7 @@ try{
     & $entry -Action Start
     $stateFile=Join-Path $runtime 'deployment-state.json'
     Check ((Get-Content -LiteralPath $stateFile -Raw|ConvertFrom-Json).running) 'No running deployment record'
+    Check ((Get-Content -LiteralPath $stateFile -Raw|ConvertFrom-Json).versions.planhub -eq 'v1') 'No confirmed application version'
     Check ((Get-Content -LiteralPath (Join-Path $runtime 'deployment-active.json') -Raw|ConvertFrom-Json).mayBeRunning) 'Startup did not mark possible writers before success'
     Check (($dockerTestState.calls|Where-Object {$_ -match 'up -d --wait --wait-timeout 180$'}).Count -eq 1) 'Start did not wait for health'
     # Selection 8 contains all applications but no Windows runtime. Docker tools

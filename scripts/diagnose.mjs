@@ -73,7 +73,7 @@ async function latestLog(root,id,logRoot){
     return logs.sort((a,b)=>b.modifiedAt.localeCompare(a.modifiedAt))[0]||null;
   }catch{return null;}
 }
-export async function collectDiagnostics({root=ROOT,port,fetcher=fetch,run=execute}={}){
+export async function collectDiagnostics({root=ROOT,port,appIds,fetcher=fetch,run=execute}={}){
   root=await realpath(root);
   port??=(readServicePorts(root,{optional:true})??readServicePorts(ROOT)).portal;
   const report={root,node:process.versions.node,port,localConfiguration:{apps:(await location(path.join(root,'config.local/apps.json'))).ok,sop:(await location(path.join(root,'config.local/sop.json'))).ok},workspaceFolders:[],portal:{},applications:[]};
@@ -88,6 +88,7 @@ export async function collectDiagnostics({root=ROOT,port,fetcher=fetch,run=execu
       registry=validateConfig(JSON.parse((await readFile(path.join(root,'portal/config/apps.json'),'utf8')).replace(/^\uFEFF/,'')));integrations=await loadAppIntegrations(root);}
   catch{report.configurationError='接入配置无效：请核对 portal/config/apps.json、integration/apps.json 和 config.local/apps.json';return report;}
   for(const app of orderedApps(registry.apps)){
+    if(appIds&&!appIds.includes(app.id))continue;
     const result={id:app.id,name:app.name,configuredStatus:app.status,checks:[],issues:[]};report.applications.push(result);
     if(app.status!=='ready'){result.note='尚未接入或维护中，不属于启动故障';continue;}
     try{

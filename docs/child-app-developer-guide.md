@@ -94,17 +94,9 @@ node scripts/register-app.mjs --config config.local/new-app.json
 > 使用本手册登记内网应用。仅修改门户配置及通用工具，优先复用 register-app 和发布工具；不修改业务源码、页面、权限或数据规则。路径保持可迁移，不把实际数据与本机配置提交 Git。无法访问真实网页时说明已验证范围，不把替代样例验收当成正式业务验收。
 
 <a id="current-contracts"></a>
-## 当前版本核对（2026-11-17）
+## 当前应用配置
 
-- **车型配置**：动态服务 `/vehicle-config/`，开发源码 `../配置管理`，健康接口 `/healthz`；`scripts/build_release.py` 生成独立通用包。Docker 显式启用 `--require-proxy-identity`，保留原有 `X-Config-User`、`X-Config-Proxy-Key` 及 ASCII 操作人契约，不使用容器账号冒充业务用户。
-
-- **SOP管理**：继续使用原网关、整段 /sop/ 代理与原构建器；业务新增标签不需门户逐项登记。新版计划保存在数据库，Excel 从页面导出、修改后导入；服务器旧维护表仅归档，不再自动同步。正式资料对账来源通过 SOP_RECONCILE_DIR 指向 shared/对账资料。
-- **订单分析**：动态服务 /orderiq/，健康接口 /health。本地由门户统一传入 SHARED_DATA_ROOT，读取共享订单目录；正式部署显式传 --input、--data-dir、--state-dir、--web-dir，动态日志通过 PLANHUB_APP_LOG_DIR 写入包外 logs/orderiq/。原 Git 仓库在订单分析/scripts，构建入口 generate_html/package_release.py；直接从同版模板生成发布前端，不依赖 Excel、旧 runtime 或已生成批次。业务数据由部署后的原服务处理，打包无需先运行 main.py。
-- **数据速查**：动态服务 /quicklook/，健康接口 /healthz；新版自动扫描使用 SHARED_DATA_ROOT，工作区来源的相对路径仍由 DATA_QUICKLOOK_SOURCE_BASE 解释。
-- **线索声量**：当前可见交付仍是 lead-dashboard.html 静态样例。若内网已改动态，在内网重新运行接入向导更新同一 leads ID，再配置该项目发布包；不能将样例当作正式动态验收。
-- **销量预测**：动态服务 /forecast/，dynamic/serve.py 启动；scripts/build_release.py 构建标准包。--public-prefix 配置公共前缀，--data-dir 或 SALES_FORECAST_DATA_DIR 外置页面与缓存，动态日志由 PLANHUB_APP_LOG_DIR 指定，SHARED_DATA_ROOT 指定共享输入。/healthz 只检测服务，/readyz 区分首次等待、就绪与生成失败；/api/status 提供更新状态。首次生成前页面自动等待，不把尚无报表当成进程启动失败。静态入口仍可在原项目独立使用。
-
-SOP 的接入说明与协作约定已同步当前实现：门户默认使用持久数据库，Excel 从页面导入导出，仅显式 --snapshot 才使用测试副本。
+应用目录、启动命令和共享输入见 [开发接入配置](../integration/apps.json)。已发布的动态应用可设置 `useReleaseContract: true`，直接读取 [发布绑定](../deploy/docker/bindings.json) 中的前缀处理、健康路径和响应期望值。本机特例使用 `config.local/apps.json`。B 机的实际操作见 [部署手册](deployment.md)。
 
 <a id="docker-contracts"></a>
 ## 发布包、本机验收与 Docker 集成
