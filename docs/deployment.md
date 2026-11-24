@@ -53,11 +53,11 @@ Windows 试运行直接读取 B 的 `planhub-runtime/`。正式部署时，Docke
 
    | 从哪里取 | 放到 B 的哪里 |
    |---|---|
-   | A 的 `../订单分析/scripts/config/shared_config.py` | `planhub-runtime/config/shared_config.py` |
+   | A 的 `../订单分析/scripts/config/shared_config.py`（车型配置发布、SOP 读取的规则原件） | `planhub-runtime/config/shared_config.py`（默认位置，由 `config.json` 的 `sopSharedConfig` 指定） |
    | 部门共享 Excel 及其业务子目录；A 上默认在 `../工作台数据/shared/` | 将目录**里面的内容**放到 `planhub-runtime/shared/`，保留子目录名，包括预留的 `原始销量/` |
    | 需要带到 B 的应用记录；A 上在 `../工作台数据/database/` | 停止写入源数据的服务并备份，再把所需应用子目录放到 `planhub-runtime/database/`。跳过 SOP 的 `service.json`、`service.pid`。从空数据开始的应用保留空目录即可 |
 
-   A 的相对路径均从门户源码目录算起。表中列的是首次准备的默认位置；B 已有配置时，以 `prepare.cmd` 窗口显示的实际目录为准。数据速查按本次从共享文件开始使用，`database/quicklook/` 留空即可。
+   A 的相对路径均从门户源码目录算起。表中列的是首次准备的默认位置；B 已有配置时，以 `prepare.cmd` 窗口显示的实际目录为准。数据速查首次只从共享文件建库时，可留空 `database/quicklook/`。要沿用已有上传、设置或分析记录时，停服后迁移完整的 `database/quicklook/`，并在 B 核对原始文件路径。
 
 3. 双击版本文件夹中的 **`preview.cmd`**。浏览器会打开 **`http://127.0.0.1:4173/`**。本机试运行优先使用各子应用的默认端口，遇到冲突会自动选空闲端口，门户入口固定为 4173。从门户打开各网页，核对能否看到 B 上的实际数据。试运行中的保存和上传会写入这份 `planhub-runtime/`。
 4. 验证完成后双击 **`stop-preview.cmd`**。确认停止成功后，将 B 上的版本文件夹和旁边的 `planhub-runtime/` 一起留给部署同事。

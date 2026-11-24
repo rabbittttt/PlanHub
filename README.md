@@ -20,7 +20,7 @@
 
 开发版启动后，从计划工作台目录运行 `..\.venv\Scripts\python.exe -B scripts/check-app-styles.py`，用 Edge 对照桌面和手机宽度检查真实入口的底色、标题和模块导航。可用 `--url` 指定其他预览地址。
 
-Python 测试使用当前环境的 `python`。浏览器回归需要 Playwright 和 Edge，请核对 unittest 输出中的跳过项。
+`npm run test:py` 调用 PATH 中的 `python`。从门户根目录直接运行 `..\.venv\Scripts\python.exe -B -m unittest discover -s tests`，即可使用工作区共享环境。浏览器回归需要 Playwright 和 Edge，请核对 unittest 输出中的跳过项。
 
 源码目录需要 Node.js 20+ 和各原项目的 Python 环境；本机设置放在 `config.local/`。开发启动成功 3 秒后窗口关闭，后台继续运行。不要让两套服务同时写同一份业务数据。
 
@@ -39,6 +39,6 @@ Python 测试使用当前环境的 `python`。浏览器回归需要 Playwright �
 
 ## 集中持久目录
 
-开发版的应用记录在 `../工作台数据/database/`，共享 Excel 在 `../工作台数据/shared/`。B 上的配置和数据保存在包外的 `planhub-runtime/`。首次放置数据见[部署说明第三步](docs/deployment.md#第三步-在-b-放好数据并试运行)。
+开发版的应用记录在 `../工作台数据/database/`，共享 Excel 在 `../工作台数据/shared/`。启动异常先看 `../工作台数据/logs/launcher/`，再看 `logs/<应用 ID>/` 下对应服务的日志。订单分析和销量预测的静态 HTML 及生成日志保存在各自项目。B 上的配置和数据保存在包外的 `planhub-runtime/`。首次放置数据见[部署说明第三步](docs/deployment.md#第三步-在-b-放好数据并试运行)。
 
 本地联调时，SOP 暂不可用仍可打开首页和其他应用。启动窗口列出失败入口的诊断；修复 SOP 配置后，门户每 60 秒重新尝试连接或启动。显式隔离测试要求 SOP 就绪。

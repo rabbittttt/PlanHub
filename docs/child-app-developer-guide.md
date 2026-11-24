@@ -82,7 +82,7 @@ node scripts/register-app.mjs --config config.local/new-app.json
 
 更新代码后双击 `发布应用.bat`，选择应用，工具自动调用原项目构建入口并校验版本包，具体操作见 [部署手册](deployment.md)。A 制作普通文件夹，首次附带 Windows 运行环境，后续可只打程序；不要求 A 或 B 预装 Docker。B 可先本机试运行；部署同事后续使用同一份应用产物构建 Docker 镜像。构建入口应直接从当前源码生成同版前后端，不依赖开发机历史报表或正式业务数据；静态应用收集首次已登记的真实发布文件。发布包不可覆盖，版本与数据分开；程序更新和数据刷新是两条流程。正式版本只使用已验收产物。
 
-验收至少检查页面、全部资源、子路径、同源嵌入、关键查询与下载；动态应用再检查保存、导入导出和重启持久化。门户侧执行 `npm run check`、`npm test`。配置检查通过不代表业务验收或内网部署完成。
+验收至少检查页面、全部资源、子路径、同源嵌入、关键查询与下载；动态应用再检查保存、导入导出和重启持久化。门户侧执行 `npm run check`、`npm test`。开发门户启动后，在门户根目录用 `..\.venv\Scripts\python.exe -B scripts/check-app-styles.py` 检查已登记子页的桌面和手机导航。新增入口如果输出 `SKIP` 且提示未登记导航控件，应在该脚本补充对应的标题和导航选择器，再运行验收。内网部署还需在 B 验证业务操作。
 
 <a id="portal-ai-task"></a>
 ## 发给业务开发者 AI
@@ -120,7 +120,7 @@ Node.js 完整许可证从运行程序所在目录读取（支持文本和 RTF�
 | 内容 | 外置路径及首次迁移注意事项 |
 |---|---|
 | 共享输入 | `shared/` 下保留原业务目录，例如 `订单汇总`、`对账资料`；销量预测可能更新共享派生表，不能全部只读 |
-| SOP | `database/sop/` 为持久数据库；`config/shared_config.py` 必须是真实规则；旧维护 Excel 不再自动同步 |
+| SOP | `database/sop/` 为持久数据库；默认与车型配置共用 `config/shared_config.py`（由 `sopSharedConfig` 指定）；计划 Excel 通过业务页导入、导出 |
 | 订单分析 | `database/orderiq/runtime/` 与 `database/orderiq/annotations/`；前端来自镜像，输入来自共享订单目录 |
 | 销量预测 | `database/forecast/`；存活健康与生成就绪分开，`/forecast/readyz` 才表明报表可用 |
 | 数据速查 | 持久目录为 `database/quicklook/`；迁移时保留数据库、上传和设置，核对原件路径；发布配置 `quicklookSourceBase` 用于解释工作区相对来源路径 |
