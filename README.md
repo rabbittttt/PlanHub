@@ -18,6 +18,8 @@
 | 回归测试 | `npm test`（Node）、`npm run test:py`（Python）、`npm run test:deploy`（Windows 部署脚本测试） |
 | 前台运行 | `npm start`，保留终端 |
 
+开发版启动后，从计划工作台目录运行 `..\.venv\Scripts\python.exe -B scripts/check-app-styles.py`，用 Edge 对照桌面和手机宽度检查真实入口的底色、标题和模块导航。可用 `--url` 指定其他预览地址。
+
 Python 测试使用当前环境的 `python`。浏览器回归需要 Playwright 和 Edge，请核对 unittest 输出中的跳过项。
 
 源码目录需要 Node.js 20+ 和各原项目的 Python 环境；本机设置放在 `config.local/`。开发启动成功 3 秒后窗口关闭，后台继续运行。不要让两套服务同时写同一份业务数据。

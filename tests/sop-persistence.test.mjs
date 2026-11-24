@@ -33,13 +33,21 @@ test('isolated seeds and demo require explicit snapshot mode',()=>{
 test('default portal saves through the original SOP service and survives a full process restart',async t=>{
  const sourceRoot=path.resolve(project,process.env.SOP_SOURCE_ROOT||'../SOP维护');
  let python;
- try{await stat(path.join(sourceRoot,'sop/store.py'));python=resolveSopPython({root:project});}
+ try{await stat(path.join(sourceRoot,'server.py'));python=resolveSopPython({root:project});}
  catch(error){t.skip('Independent SOP and Python dependencies required: '+error.message);return;}
  const {root,dataRoot,rules}=await fixture(t);
  const env={PLANHUB_DATA_ROOT:'../集成数据',SOP_PYTHON_PATH:python,SOP_DATA_DIR:'',SOP_SOURCE_DIR:'',SOP_PLAN_DIR:'',SHARED_DATA_ROOT:''};
  const workbook=path.join(dataRoot,'input_file','SOP计划维护.xlsx');
- const initialized=spawnSync(python,['-B','-c',"import sys,pathlib; sys.path.insert(0,sys.argv[1]); from sop.store import SOPStore; from sop.workbook import WorkbookSync; p=pathlib.Path(sys.argv[2]); store=SOPStore(p/'data/sop.sqlite3',p/'data/sales.json'); result=WorkbookSync(store,sys.argv[3]).sync(force_export=True); store.close(); assert result['status']=='synced',result",sourceRoot,dataRoot,workbook],{env:{...process.env,PYTHONDONTWRITEBYTECODE:'1',SOP_EXCEL_ENGINE:'python'},encoding:'utf8',windowsHide:true});
- assert.equal(initialized.status,0,initialized.stderr);
+ const makeArchive = [
+  'import sys',
+  'from openpyxl import Workbook',
+  'book = Workbook()',
+  'book.active.append(["product_id", "sop"])',
+  'book.active.append(["persistent-fixture", 12])',
+  'book.save(sys.argv[1])',
+ ].join('\n');
+ const archived = spawnSync(python,['-B','-c',makeArchive,workbook],{encoding:'utf8',windowsHide:true});
+ assert.equal(archived.status,0,archived.stderr);
  // Current SOP keeps server-side maintenance workbooks as archives; plans persist in SQLite.
  const archivedWorkbook=await readFile(workbook);
  const configured=['--sop-source',sourceRoot,'--data-root',dataRoot,'--shared-config',rules];
