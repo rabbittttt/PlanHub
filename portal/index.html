@@ -11,9 +11,9 @@
   <link rel="icon" href="./assets/favicon.ico?v=clear-p-20261119" sizes="any">
   <link rel="icon" href="./assets/favicon.svg?v=clear-p-20261119" type="image/svg+xml">
   <link rel="apple-touch-icon" href="./assets/apple-touch-icon.png?v=clear-p-20261119">
-  <link rel="stylesheet" href="./css/portal.css?v=app-directory-1">
+  <link rel="stylesheet" href="./css/portal.css?v=workflow-1">
   <script src="./js/frame-account.js?v=parent-origin-2"></script>
-  <script type="module" src="./js/portal.js?v=app-directory-1"></script>
+  <script type="module" src="./js/portal.js?v=workflow-1"></script>
 </head>
 <body>
   <a class="skip-link" href="#main">跳转到工作区</a>
@@ -36,7 +36,30 @@
       <div id="boot-state" class="empty-state" role="status"><span class="spinner"></span><h1>正在准备工作空间</h1><p>加载应用配置…</p></div>
       <section id="home-view" class="home-view page-width" hidden aria-labelledby="home-title">
         <h1 id="home-title">智选车计划部工作台</h1>
-        <ul id="home-apps" class="app-directory" aria-label="业务应用"></ul>
+        <div id="workflow-stages" role="group" aria-label="选择计划阶段"></div>
+        <div class="workflow-body">
+          <section class="workflow-panel" aria-labelledby="tasks-title">
+            <header class="panel-heading">
+              <h2 id="tasks-title">办事清单</h2>
+              <span id="selected-stage"></span>
+            </header>
+            <ul id="workflow-tasks" class="task-list"></ul>
+          </section>
+          <div class="workflow-aside">
+            <section class="workflow-panel" aria-labelledby="months-title">
+              <h2 id="months-title">月份参考</h2>
+              <dl id="plan-windows"></dl>
+            </section>
+            <section class="workflow-panel" id="records-panel" aria-labelledby="records-title" hidden>
+              <h2 id="records-title">计划记录</h2>
+              <div id="plan-records"></div>
+            </section>
+          </div>
+        </div>
+        <section aria-labelledby="directory-title">
+          <h2 id="directory-title">全部应用</h2>
+          <ul id="home-apps" class="app-directory" aria-labelledby="directory-title"></ul>
+        </section>
       </section>
 
       <section id="app-view" class="app-view" hidden aria-labelledby="app-title">

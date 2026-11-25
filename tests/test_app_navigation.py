@@ -125,7 +125,8 @@ class AppNavigationTests(unittest.TestCase):
         home = self.page.locator('#home-view')
         home.wait_for(state='visible')
         self.assertEqual(home.locator('h1').inner_text(), self.config['platform']['name'])
-        cards = home.get_by_role('listitem')
+        directory = home.locator('#home-apps')
+        cards = directory.get_by_role('listitem')
         self.assertEqual(cards.count(), 4)
         for app in apps:
             if app['enabled']:
@@ -135,14 +136,54 @@ class AppNavigationTests(unittest.TestCase):
                     self.assertEqual(card.get_by_role('link').count(), 0)
                     self.assertIn({'pending': '待接入', 'maintenance': '维护中'}[app['status']], card.inner_text())
         self.assertEqual(home.get_by_role('heading', name='Hidden', exact=True).count(), 0)
-        links = home.get_by_role('link')
+        links = directory.get_by_role('link')
         self.assertEqual([item.get_attribute('href') for item in links.all()], ['#/app/alpha', '#/app/beta'])
-        self.assertNotRegex(home.inner_text(), r'(?i)demo|演示|本轮工作清单')
+        self.assertNotRegex(home.inner_text(), r'(?i)demo|演示')
+        for stage in home.locator('#workflow-stages').get_by_role('button').all():
+            stage.click()
+            self.assertEqual(home.locator('#workflow-tasks').get_by_role('link').count(), 0)
         links.first.focus()
         self.page.keyboard.press('Enter')
         self.page.wait_for_url('**/#/app/alpha')
         self.page.wait_for_selector('#frame-overlay', state='hidden')
         self.assertEqual(self.page.locator('iframe:visible').get_attribute('data-app'), 'alpha')
+
+    def test_workflow_stages_show_distinct_tasks_and_registered_app_links(self):
+        apps = [
+            {'id': app_id, 'name': app_id, 'url': f'/{app_id}/', 'enabled': True, 'status': 'ready'}
+            for app_id in ('sop', 'orderiq', 'forecast', 'quicklook', 'leads', 'vehicle-config')
+        ]
+        self.config['groups'][0]['apps'] = apps
+        self.page.reload()
+        self.page.locator('#home-view').wait_for(state='visible')
+        stages = self.page.locator('#workflow-stages').get_by_role('button')
+        tasks = self.page.locator('#workflow-tasks')
+        self.assertEqual(stages.count(), 4)
+        allowed = {f"#/app/{app['id']}" for app in apps}
+        seen_tasks = set()
+        for stage in stages.all():
+            stage.click()
+            task_text = tasks.inner_text().strip()
+            self.assertTrue(task_text)
+            self.assertNotIn(task_text, seen_tasks)
+            seen_tasks.add(task_text)
+            self.assertEqual(tasks.get_by_role('checkbox').count(), 0)
+            links = tasks.get_by_role('link')
+            self.assertGreater(links.count(), 0)
+            for link in links.all():
+                self.assertIn(link.get_attribute('href'), allowed)
+        months = self.page.locator('#plan-windows dd').all_inner_texts()
+        self.assertEqual(len(months), 3)
+        self.assertEqual(len(set(months)), 3)
+        records = self.page.locator('#plan-records')
+        self.assertEqual(records.get_by_role('link').first.get_attribute('href'), '#/app/sop')
+        next(app for app in apps if app['id'] == 'sop')['status'] = 'maintenance'
+        self.page.reload()
+        self.page.locator('#home-view').wait_for(state='visible')
+        self.assertEqual(records.get_by_role('link').count(), 0)
+        for stage in stages.all():
+            stage.click()
+            self.assertEqual(tasks.locator('a[href="#/app/sop"]').count(), 0)
 
     def test_all_apps_preserve_documents_drafts_and_history_without_new_requests(self):
         instances = {}

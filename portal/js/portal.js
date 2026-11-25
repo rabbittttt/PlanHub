@@ -1,4 +1,5 @@
 import { validateConfig, routeFromHash, orderedApps } from './config.js';
+import { stages } from './workflow.js';
 
 const $ = id => document.getElementById(id);
 const paths = {
@@ -91,18 +92,88 @@ function renderNavigation() {
     $('app-nav').append(link);
   }
 }
+function appEntry(app, className) {
+  if (app.status !== 'ready') return element('div', className);
+  const link = element('a', className);
+  link.href = `#/app/${app.id}`;
+  return link;
+}
+
+function taskEntry(app, title) {
+  const row = appEntry(app, 'task-entry');
+  const symbol = element('span', 'task-symbol');
+  symbol.append(icon(app.icon));
+  row.append(symbol, element('span', 'task-title', title));
+  const destination = element('span', 'task-destination', app.name);
+  if (app.status === 'ready') destination.append(icon('arrow'));
+  else destination.append(element('span', 'app-status', labels[app.status]));
+  row.append(destination);
+  return row;
+}
+
+function renderWorkflow() {
+  const apps = new Map(config.apps.map(app => [app.id, app]));
+  const stageGroup = $('workflow-stages');
+  function selectStage(stage, selectedButton) {
+    for (const button of stageGroup.children) {
+      button.setAttribute('aria-pressed', String(button === selectedButton));
+    }
+    $('selected-stage').textContent = stage.name;
+    const tasks = $('workflow-tasks');
+    tasks.replaceChildren();
+    for (const { title, appId } of stage.tasks) {
+      const app = apps.get(appId);
+      if (!app) continue;
+      const item = element('li');
+      item.append(taskEntry(app, title));
+      tasks.append(item);
+    }
+    if (!tasks.children.length) tasks.append(element('li', 'workflow-empty', '此阶段暂无已登记的办事入口'));
+  }
+  for (const stage of stages) {
+    const button = element('button', 'stage-card');
+    button.type = 'button';
+    button.setAttribute('aria-controls', 'workflow-tasks');
+    const symbol = element('span', 'stage-symbol');
+    symbol.append(icon(stage.icon));
+    button.append(symbol, element('strong', 'stage-title', stage.name), element('span', 'stage-subjects', stage.subjects));
+    button.addEventListener('click', () => selectStage(stage, button));
+    stageGroup.append(button);
+  }
+  selectStage(stages[0], stageGroup.firstElementChild);
+  const sop = apps.get('sop');
+  if (sop) {
+    $('plan-records').append(taskEntry(sop, '查看版本与历史快照'));
+    $('records-panel').hidden = false;
+  }
+}
+
+function renderMonths() {
+  const format = new Intl.DateTimeFormat('zh-CN', { timeZone: 'Asia/Shanghai', year: 'numeric', month: 'long' });
+  const parts = format.formatToParts(new Date());
+  const year = Number(parts.find(part => part.type === 'year').value);
+  const month = Number.parseInt(parts.find(part => part.type === 'month').value, 10);
+  const windows = $('plan-windows');
+  windows.replaceChildren();
+  for (const [offset, label] of ['本月', '下月', '下下月'].entries()) {
+    const item = element('div');
+    const date = new Date(Date.UTC(year, month - 1 + offset, 1));
+    item.append(element('dt', '', label), element('dd', '', format.format(date)));
+    windows.append(item);
+  }
+}
+
 function renderDirectory() {
   const list = $('home-apps');
   list.replaceChildren();
   for (const app of orderedApps(config.apps)) {
     const ready = app.status === 'ready';
     const item = element('li');
-    const card = element(ready ? 'a' : 'div', 'app-card');
+    const card = appEntry(app, 'app-card');
     const symbol = element('span', 'app-symbol');
     symbol.append(icon(app.icon));
-    card.append(symbol, element('h2', 'app-name', app.name));
+    card.append(symbol, element('h3', 'app-name', app.name));
     if (ready) {
-      card.href = `#/app/${app.id}`;
       card.append(icon('arrow'));
     } else {
       card.append(element('span', 'app-status', labels[app.status]));
@@ -242,7 +313,11 @@ function navigate() {
     link.classList.toggle('active', active);
     if (active) link.setAttribute('aria-current', 'page'); else link.removeAttribute('aria-current');
   });
-  if (app) openApp(app); else stopLoading();
+  if (app) openApp(app);
+  else {
+    stopLoading();
+    renderMonths();
+  }
 }
 async function boot() {
   try {
@@ -260,6 +335,7 @@ async function boot() {
     if (brandName.textContent !== shortName) brandName.textContent = shortName;
     $('home-title').textContent = config.platform.name;
     renderNavigation();
+    renderWorkflow();
     renderDirectory();
     $('boot-state').hidden = true;
     navigate();

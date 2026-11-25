@@ -63,6 +63,36 @@ h1,h2,h3,h4,p{margin:0}
 main{min-width:0}
 .home-view{padding-block:24px 32px}
 #home-title{font-size:var(--type-title);font-weight:700;line-height:1.45;margin-bottom:20px}
+#workflow-stages,.workflow-body,.workflow-aside{display:grid;gap:var(--gap)}
+#workflow-stages{grid-template-columns:repeat(4,minmax(0,1fr))}
+.stage-card,.workflow-panel{min-width:0;background:var(--surface);border:1px solid var(--line);border-radius:var(--radius);box-shadow:var(--shadow)}
+.stage-card{display:grid;grid-template-columns:36px minmax(0,1fr);align-content:center;align-items:center;gap:2px 12px;min-height:88px;padding:14px 18px;color:var(--ink);text-align:left}
+.stage-card:hover{border-color:var(--accent)}
+.stage-card[aria-pressed="true"]{border-color:var(--accent);background:var(--accent-soft);color:var(--accent-hover)}
+.stage-symbol,.task-symbol{display:grid;place-items:center;border-radius:10px;background:var(--surface-soft);color:var(--icon)}
+.stage-symbol{grid-row:span 2;width:36px;height:36px}
+.stage-card[aria-pressed="true"] .stage-symbol{background:var(--accent);color:white}
+.stage-title,.workflow-panel h2,#directory-title{font-size:var(--type-section);font-weight:650}
+.stage-subjects,#selected-stage,.task-destination,#plan-windows dt,.workflow-empty{color:var(--muted);font-size:var(--type-note)}
+.workflow-body{grid-template-columns:minmax(0,1.65fr) minmax(0,1fr);margin-block:var(--gap) 24px}
+.workflow-panel{padding:18px 20px}
+.panel-heading{display:flex;justify-content:space-between;align-items:baseline;gap:8px}
+.task-list,#plan-windows{list-style:none;margin:12px 0 0;padding:0}
+.task-list li+li{border-top:1px solid var(--line)}
+.task-entry{display:flex;align-items:center;gap:12px;min-height:55px;padding:6px 4px;border-radius:6px;overflow-wrap:anywhere}
+a.task-entry:hover,a.task-entry:focus-visible{background:var(--accent-soft);color:var(--accent-hover)}
+.task-symbol{width:32px;height:32px;flex:none}
+.task-symbol svg,.task-destination svg{width:16px;height:16px}
+.task-title{font-weight:550}
+.task-destination{display:inline-flex;align-items:center;gap:6px;margin-inline-start:auto}
+a.task-entry:hover .task-destination{color:inherit}
+.workflow-empty{padding-block:12px}
+#plan-windows{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:8px}
+#plan-windows div+div{border-inline-start:1px solid var(--line);padding-inline-start:12px}
+#plan-windows dd{margin:2px 0 0;font-weight:600;font-variant-numeric:tabular-nums}
+#plan-records{margin-top:6px}
+#plan-records .task-entry{min-height:44px}
+#directory-title{margin-bottom:10px}
 .app-directory{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:var(--gap);list-style:none;margin:0;padding:0}
 .app-card{display:grid;grid-template-columns:38px minmax(0,1fr) auto;align-items:center;align-content:start;gap:14px 12px;height:100%;padding:20px;background:var(--surface);border:1px solid var(--line);border-radius:var(--radius);box-shadow:var(--shadow);overflow-wrap:anywhere}
 a.app-card{transition:border-color 160ms,background-color 160ms}
@@ -87,12 +117,29 @@ a.app-card:hover,a.app-card:focus-visible{border-color:var(--accent);background:
 .noscript{position:fixed;inset:0;display:grid;place-items:center;background:white;z-index:100}
 @media(max-width:1039px){
   :root{--page-gutter:20px}
+  .stage-card{grid-template-columns:minmax(0,1fr);padding:14px;gap:5px}
+  .stage-symbol{grid-row:auto}
+  .workflow-body{grid-template-columns:minmax(0,1.3fr) minmax(0,1fr)}
   .app-directory{grid-template-columns:repeat(2,minmax(0,1fr))}
+}
+@media(max-width:820px){
+  #workflow-stages{grid-template-columns:repeat(2,minmax(0,1fr))}
+  .workflow-body{grid-template-columns:minmax(0,1fr)}
 }
 @media(max-width:640px){
   :root{--sidebar-width:48px;--page-gutter:10px;--gap:10px;--radius:16px}
   .home-view{padding-block:16px 24px}
   #home-title{margin-bottom:14px}
+  .stage-card{padding:10px 12px;min-height:86px;gap:3px}
+  .stage-symbol{width:28px;height:28px}
+  .stage-symbol svg{width:17px;height:17px}
+  .stage-subjects{line-height:1.4}
+  .workflow-body{margin-bottom:16px}
+  .workflow-panel{padding:14px}
+  .task-entry{display:grid;grid-template-columns:28px minmax(0,1fr);gap:0 9px}
+  .task-symbol{grid-row:span 2;width:28px;height:28px}
+  .task-destination{margin:0}
+  #plan-windows div+div{padding-inline-start:6px}
   .app-directory{grid-template-columns:minmax(0,1fr)}
   .app-card{padding:14px;row-gap:8px}
   .secondary-button{min-height:44px}.frame-overlay{padding:22px}.frame-overlay h2{font-size:20px}.frame-overlay p{font-size:13px}
