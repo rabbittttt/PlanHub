@@ -75,7 +75,7 @@ main{min-width:0}
 .stage-card[aria-pressed="true"] .stage-number{color:var(--accent)}
 .stage-title,.workflow-panel h2,#directory-title{font-size:var(--type-section);font-weight:650}
 .stage-subjects,#selected-stage,.task-destination,.workflow-empty{color:var(--muted);font-size:var(--type-note)}
-.workflow-body{grid-template-columns:minmax(265px,.82fr) minmax(0,1.7fr);align-items:start;margin-block:var(--gap) 24px}
+.workflow-body{grid-template-columns:minmax(265px,.82fr) minmax(0,1.7fr);margin-block:var(--gap) 24px}
 .workflow-panel{padding:18px 20px}
 .panel-heading{display:flex;justify-content:space-between;align-items:baseline;gap:8px}
 .task-list{list-style:none;margin:12px 0 0;padding:0}
@@ -88,7 +88,7 @@ a.task-entry:hover,a.task-entry:focus-visible{background:var(--accent-soft);colo
 .task-destination{display:inline-flex;align-items:center;gap:6px;margin-inline-start:auto}
 a.task-entry:hover .task-destination{color:inherit}
 .workflow-empty{padding-block:12px}
-.workflow-aside{align-content:start;min-width:0}
+.workflow-aside{grid-template-rows:1fr;min-width:0}
 .order-calendar{container-type:inline-size;font-variant-numeric:tabular-nums}
 .calendar-heading,.calendar-nav,.calendar-feedback{display:flex;align-items:center;gap:8px}
 .calendar-heading{justify-content:space-between;flex-wrap:wrap;margin-bottom:12px}

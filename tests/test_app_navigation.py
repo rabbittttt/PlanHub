@@ -166,6 +166,9 @@ class AppNavigationTests(unittest.TestCase):
         self.assertEqual(stages.locator('.stage-number').all_inner_texts(), ['01', '02', '03', '04'])
         self.assertEqual(stages.locator('svg, img, [data-icon]').count(), 0)
         allowed = {f"#/app/{app['id']}" for app in apps}
+        task_card = self.page.get_by_role('region', name='办事清单')
+        record_card = self.page.locator('#records-panel')
+        calendar = self.page.locator('#workbench-calendar')
         seen_tasks = set()
         for stage in stages.all():
             stage.click()
@@ -173,13 +176,20 @@ class AppNavigationTests(unittest.TestCase):
             self.assertTrue(task_text)
             self.assertNotIn(task_text, seen_tasks)
             seen_tasks.add(task_text)
+            left_bottom = record_card.evaluate('el => el.getBoundingClientRect().bottom')
+            right = calendar.bounding_box()
+            self.assertAlmostEqual(task_card.bounding_box()['y'], right['y'], delta=1)
+            self.assertAlmostEqual(left_bottom, right['y'] + right['height'], delta=1)
             self.assertEqual(tasks.get_by_role('checkbox').count(), 0)
             links = tasks.get_by_role('link')
             self.assertGreater(links.count(), 0)
             for link in links.all():
                 self.assertIn(link.get_attribute('href'), allowed)
         self.assertEqual(self.page.get_by_role('heading', name='月份参考').count(), 0)
-        self.assertTrue(self.page.locator('#workbench-calendar').is_visible())
+        self.page.set_viewport_size({'width': 390, 'height': 844})
+        record_bounds = record_card.bounding_box()
+        self.assertLess(task_card.evaluate('el => el.getBoundingClientRect().bottom'), record_bounds['y'])
+        self.assertLess(record_bounds['y'] + record_bounds['height'], calendar.bounding_box()['y'])
         records = self.page.locator('#plan-records')
         self.assertEqual(records.get_by_role('link').first.get_attribute('href'), '#/app/sop')
         next(app for app in apps if app['id'] == 'sop')['status'] = 'maintenance'
