@@ -78,16 +78,20 @@ test('complete program-only update skips Windows environment collection and rema
   assert.equal(manifest.runtimeMode,'reuse');assert.match(manifest.snapshotContractHash,/^[a-f0-9]{64}$/);
   assert.ok(!(await readdir(destination)).includes('runtime'));assert.ok(!Object.keys(manifest.files).some(name=>name.startsWith('runtime/')));
   assert.ok(Object.keys(manifest.files).includes('runtime-common.ps1'));
-  await assert.rejects(buildDelivery([leads],path.join(base,'partial'),{withoutRuntime:true}),/complete application set/);
+  await assert.rejects(buildDelivery([leads],path.join(base,'partial'),{withoutRuntime:true}),/requires planhub/);
   manifest.runtimeMode='included';await json(path.join(destination,'delivery.json'),manifest);
   await assert.rejects(validateDelivery(destination),/runtime\/node/);
 });
-test('single-app Docker update omits Windows-only files and retains Linux build inputs',async t=>{
+test('deliveries always require the registered application set and include the Windows preview launcher',async t=>{
   const base=await temporary(t),app=await release(base,'quicklook',{'server.py':'# source-owned fixture','requirements.txt':'openpyxl>=3.1,<4\n'},{type:'service',healthPath:'/healthz'});
-  const destination=path.join(base,'dynamic');await buildDelivery([app],destination,{collectRuntime(){assert.fail('unexpected Windows runtime collection');}});
-  const {manifest}=await validateDelivery(destination);assert.equal(manifest.runtimeMode,'none');
+  const destination=path.join(base,'dynamic');
+  await assert.rejects(buildDelivery([app],destination),/requires planhub/);
+  const portal=await release(base,'planhub',{'index.html':'portal','config/apps.json':'{"groups":[{"apps":[{"id":"quicklook","enabled":true}]}]}'});
+  await assert.rejects(buildDelivery([portal],destination),/Incomplete delivery/);
+  await buildDelivery([portal,app],destination,{withoutRuntime:true});
+  const {manifest}=await validateDelivery(destination);assert.equal(manifest.runtimeMode,'reuse');
   assert.equal(await readFile(path.join(destination,'releases/quicklook/payload/requirements.txt'),'utf8'),'openpyxl>=3.1,<4\n');
-  for(const name of Object.keys(manifest.files))assert.doesNotMatch(name,/^runtime\/|^(stop-)?preview\.|native-preview|preview-compatibility|windows-runtime|migrate-(shared|storage)\.py/);
+  assert.ok(manifest.files['preview.cmd']);assert.ok(manifest.files['stop-preview.cmd']);
   assert.match(manifest.images.quicklook.fingerprint,/^[a-f0-9]{64}$/);
   assert.match(await readFile(path.join(destination,'docker/quicklook.Dockerfile'),'utf8'),/RUN python -m pip install/);
 });
@@ -199,8 +203,9 @@ test('prepare.cmd initializes the current layout and preserves application data 
 
 test('prepare creates the vehicle catalog inside the configured shared root without a duplicate private directory',{skip:process.platform!=='win32'},async t=>{
   const base=await temporary(t),app=await release(base,'vehicle-config',{'server.py':'# fixture only','requirements.txt':''},{type:'service',healthPath:'/healthz'});
+  const portal=await release(base,'planhub',{'index.html':'portal','config/apps.json':'{"groups":[{"apps":[{"id":"vehicle-config","enabled":true}]}]}'});
   const destination=path.join(base,'delivery'),runtime=path.join(base,'planhub-runtime');
-  await buildDelivery([app],destination,{collectRuntime:fakeRuntime});
+  await buildDelivery([portal,app],destination,{collectRuntime:fakeRuntime});
   await mkdir(runtime);await json(path.join(runtime,'config.json'),{...config,sharedDirectory:'business/shared'});
   const result=spawnSync('powershell.exe',['-NoProfile','-ExecutionPolicy','Bypass','-File',path.join(destination,'deploy.ps1'),'-Action','Prepare','-RuntimeDirectory',runtime],{encoding:'utf8',windowsHide:true,env:Object.fromEntries(Object.entries(process.env).filter(([key])=>key.toUpperCase()!=='PSMODULEPATH'))});
   assert.equal(result.status,0,result.stderr||result.stdout);

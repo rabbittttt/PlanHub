@@ -3,7 +3,7 @@ import path from 'node:path';
 import net from 'node:net';
 import crypto from 'node:crypto';
 import {spawnSync} from 'node:child_process';
-import {access,lstat,readdir,writeFile,mkdir,unlink} from 'node:fs/promises';
+import {access,lstat,readdir,writeFile,mkdir,rename,unlink} from 'node:fs/promises';
 import {fileURLToPath,pathToFileURL} from 'node:url';
 import {parseArgs} from 'node:util';
 import {setTimeout as delay} from 'node:timers/promises';
@@ -14,7 +14,7 @@ import {startLocalPreviewPortal,LOCAL_PREVIEW_PORT,LOCAL_PREVIEW_ORIGIN} from '.
 import {createServer} from './dev-server.mjs';
 import {spawnService,stopService} from './service-process.mjs';
 import {createPortalInstance,registerPortal,unregisterPortal,probePortal,stopPortal,workspaceId} from './portal-instance.mjs';
-import {resolveWindowsRuntime} from './windows-runtime.mjs';
+import {probeWindowsRuntime,resolveWindowsRuntime} from './windows-runtime.mjs';
 
 const SELF=fileURLToPath(import.meta.url);
 const PORT=LOCAL_PREVIEW_PORT;
@@ -42,7 +42,7 @@ async function noTreeLinks(root){
     else if(!entry.isFile())throw new Error('Non-file snapshot entries are not allowed: '+filename);
   }
 }
-export async function loadNativePlan(packageRoot,runtimeRoot){
+export async function loadNativePlan(packageRoot,runtimeRoot,{directConfig}={}){
   packageRoot=path.resolve(packageRoot);runtimeRoot=path.resolve(runtimeRoot);
   await noPreviewLinks(runtimeRoot);
   const previewRoot=path.join(path.dirname(packageRoot),'planhub-preview');
@@ -52,7 +52,7 @@ export async function loadNativePlan(packageRoot,runtimeRoot){
   const delivery=await validateDelivery(packageRoot,{requireComplete:true});
   await noTreeLinks(runtimeRoot);
   const configFile=path.join(runtimeRoot,direct?'native-preview.json':'config.json');await noPreviewLinks(configFile);
-  const config=validateRuntime(await readJson(configFile));
+  const config=validateRuntime(directConfig??await readJson(configFile));
   if(!config.preview)throw new Error('Use preview.cmd to prepare the local runtime identity.');
   if(direct){
     if(config.preview.mode!=='direct'||path.resolve(config.preview.sourceDirectory)!==runtimeRoot)throw new Error('Invalid direct runtime identity.');
@@ -76,8 +76,9 @@ export async function loadNativePlan(packageRoot,runtimeRoot){
   const configId=digest(JSON.stringify({packageRoot,delivery:delivery.manifest,config,runtimeDirectory:windowsRuntime.directory,runtimeFingerprint:windowsRuntime.fingerprint}));
   return {...delivery,packageRoot,runtimeRoot,config,configId,bindings,python,node:windowsRuntime.node,runtimeDirectory:windowsRuntime.directory,runtimeFingerprint:windowsRuntime.fingerprint,port:PORT};
 }
-async function existing(plan){
+async function existing(plan,expectedIdentity){
   const running=await probePortal(plan.port);if(!running)return false;
+  if(expectedIdentity&&(running.pid!==expectedIdentity.pid||running.instanceId!==expectedIdentity.instanceId))throw new Error('The preview instance changed during its readiness check.');
   if(running.workspaceId!==await workspaceId(plan.runtimeRoot)||running.configId!==plan.configId)throw new Error('Another package or snapshot is running. Stop it with its stop-preview.cmd first.');
   const record=await readPortRecord(plan,running);
   for(const [id,binding] of Object.entries(plan.bindings))if(id!=='planhub'){
@@ -86,14 +87,15 @@ async function existing(plan){
   }
   return true;
 }
-async function readPortRecord(plan,running){
-  const filename=path.join(plan.runtimeRoot,'native-ports.json');await noPreviewLinks(filename);
-  const ownerFile=path.join(plan.runtimeRoot,'native-owner.json');await noPreviewLinks(ownerFile);
-  const owner=await readJson(ownerFile),record=await readJson(filename),ids=Object.keys(plan.bindings).filter(id=>id!=='planhub').sort(),ports=new Set([plan.port]);
-  if(record.schemaVersion!==1||record.pid!==running.pid||record.instanceId!==running.instanceId||record.configId!==plan.configId||owner.pid!==running.pid||typeof owner.lease!=='string'||owner.lease!==record.lease||!record.ports||Array.isArray(record.ports)||Object.keys(record.ports).sort().join('|')!==ids.join('|')||!record.processes||Array.isArray(record.processes)||Object.keys(record.processes).sort().join('|')!==ids.join('|'))throw new Error('Running preview port record does not match its owned process. Stop this preview before restarting.');
+async function readPortRecord({runtimeRoot,bindings},running){
+  const filename=path.join(runtimeRoot,'native-ports.json');await noPreviewLinks(filename);
+  const ownerFile=path.join(runtimeRoot,'native-owner.json');await noPreviewLinks(ownerFile);
+  const owner=await readJson(ownerFile),record=await readJson(filename);
+  const ids=Object.keys(bindings??record.ports??{}).filter(id=>id!=='planhub').sort(),ports=new Set([running.port]);
+  if(record.schemaVersion!==1||record.pid!==running.pid||record.instanceId!==running.instanceId||record.configId!==running.configId||owner.pid!==running.pid||typeof owner.lease!=='string'||owner.lease!==record.lease||!record.ports||Array.isArray(record.ports)||Object.keys(record.ports).sort().join('|')!==ids.join('|')||!record.processes||Array.isArray(record.processes)||Object.keys(record.processes).sort().join('|')!==ids.join('|'))throw new Error('Running preview port record does not match its owned process. Stop this preview before restarting.');
   for(const id of ids){
     const port=record.ports[id],pid=record.processes[id];
-    if(!Number.isInteger(port)||port<1024||port>65535||ports.has(port)||!Number.isInteger(pid)||pid<=0||(plan.bindings[id].type==='static'&&pid!==running.pid))throw new Error('Invalid running preview port mapping. Stop this preview before restarting.');ports.add(port);
+    if(!Number.isInteger(port)||port<1024||port>65535||ports.has(port)||!Number.isInteger(pid)||pid<=0||(bindings?.[id].type==='static'&&pid!==running.pid))throw new Error('Invalid running preview port mapping. Stop this preview before restarting.');ports.add(port);
   }
   return record;
 }
@@ -159,20 +161,40 @@ export async function runNativePreview(plan,{startService=spawnService,serviceTi
   const unlock=await claimRuntime(plan.runtimeRoot);
   const children=[],staticServers=[];let server,stopping=false,allocation;
   const cleanup=()=>{for(const child of children)stopService(child);for(const listener of staticServers){listener.close();listener.closeAllConnections?.();}};
-  let runtime;
+  const releaseOwnership=async()=>{
+    for(let attempt=0;attempt<100;attempt++){
+      if(children.every(child=>!child.pid||child.exitCode!==null||child.signalCode!==null||!pidIsAlive(child.pid))){
+        await clearPortRecord(plan,unlock.lease);await unlock();return;
+      }
+      await delay(100);
+    }
+    console.error('后台进程仍在退出，保留试运行记录。请稍后再次运行 stop-preview.cmd。');
+  };
+  let runtime,finalizing;
+  const finalize=()=>finalizing??=(async()=>{
+    stopping=true;cleanup();
+    process.removeListener('exit',cleanup);process.removeListener('SIGINT',stop);process.removeListener('SIGTERM',stop);
+    try{if(runtime)await unregisterPortal(plan.runtimeRoot,runtime);}finally{await releaseOwnership();}
+  })();
   const stop=()=>{if(stopping)return;stopping=true;cleanup();server?.close();server?.closeAllConnections?.();};
   process.once('exit',cleanup);
   try{
     runtime=await createPortalInstance(plan.runtimeRoot,plan.port,plan.configId);
     // Let the authenticated inner response pass through the loopback bridge
     // before closing either side of the accepted control request.
-    runtime.stop=()=>setTimeout(stop,100);
+    runtime.stop=()=>setTimeout(()=>{
+      if(stopping)return;
+      stopping=true;
+      // Stop accepting new requests. Let in-flight saves and downloads finish
+      // before the 'close' handler stops the business services.
+      server.close();
+    },100);
     await freePreviewPort(plan.port);
     allocation=await allocateBackendBindings(plan);
     const ports=Object.fromEntries(Object.entries(allocation.bindings).filter(([id])=>id!=='planhub').map(([id,binding])=>[id,binding.port]));
     const portFile=path.join(plan.runtimeRoot,'native-ports.json');await noPreviewLinks(portFile);
     const portRecord={schemaVersion:1,pid:process.pid,instanceId:runtime.identity.instanceId,lease:unlock.lease,configId:plan.configId,ports,processes:{}};
-    await writeFile(portFile,JSON.stringify(portRecord));
+    await saveRuntimeJson(portFile,portRecord);
     for(const [id,binding] of Object.entries(allocation.bindings)){
       if(id==='planhub')continue;
       const release=plan.releases[id];
@@ -200,6 +222,7 @@ export async function runNativePreview(plan,{startService=spawnService,serviceTi
       let failed=false;
       child.once('error',()=>{failed=true;});
       child.once('exit',()=>{failed=true;if(server?.listening&&!stopping){console.error(id+' exited. Stopping this preview process set.');stop();}});
+      await saveRuntimeJson(portFile,portRecord);
       const started=Date.now();let ready=false;
       while(!failed&&Date.now()-started<serviceTimeoutMs){
         try{
@@ -211,25 +234,31 @@ export async function runNativePreview(plan,{startService=spawnService,serviceTi
       if(!ready||failed)throw new Error(id+' did not start. See '+logDirectory);
       console.log(id+' ready (loopback port '+binding.port+').');
     }
-    if(children.some(child=>child.exitCode!==null||child.signalCode!==null))throw new Error('A preview service exited during startup. See '+path.join(plan.runtimeRoot,'logs'));
-    await writeFile(portFile,JSON.stringify(portRecord));
+    await saveRuntimeJson(portFile,portRecord);
     const portal=createContainerPortal(plan.releases.planhub.payload,allocation.bindings,plan.config,{root:plan.runtimeRoot,runtime});
+    await registerPortal(plan.runtimeRoot,runtime);
     server=await startLocalPreviewPortal(portal,plan.config,{port:plan.port,host:'127.0.0.1',allowControl:true});
-    await registerPortal(plan.runtimeRoot,runtime);server.runtime=runtime;
-    server.once('close',async()=>{stopping=true;cleanup();process.removeListener('exit',cleanup);process.removeListener('SIGINT',stop);process.removeListener('SIGTERM',stop);await unregisterPortal(plan.runtimeRoot,runtime);await clearPortRecord(plan,unlock.lease);await unlock();});
+    server.runtime=runtime;
+    server.once('close',finalize);
     process.once('SIGINT',stop);process.once('SIGTERM',stop);
+    if(children.some(child=>child.exitCode!==null||child.signalCode!==null)||!await existing(plan,runtime.identity)){
+      throw new Error('A preview service exited during startup. See '+path.join(plan.runtimeRoot,'logs'));
+    }
     return server;
-  }catch(error){stop();process.removeListener('exit',cleanup);if(allocation)await Promise.allSettled([...allocation.reservations.values()].map(reservation=>reservation.release()));await clearPortRecord(plan,unlock.lease);await unlock();throw error;}
+  }catch(error){stop();if(allocation)await Promise.allSettled([...allocation.reservations.values()].map(reservation=>reservation.release()));await finalize();throw error;}
 }
 export async function startNativePreview(packageRoot,runtimeRoot,{settleMs=3000,timeoutMs=600000}={}){
   const plan=await loadNativePlan(packageRoot,runtimeRoot);
   if(await existing(plan)){console.log('Local preview is already running: '+LOCAL_PREVIEW_ORIGIN+'/');return {reused:true,port:plan.port};}
+  return launchPreparedPreview(plan,{settleMs,timeoutMs});
+}
+async function launchPreparedPreview(plan,{settleMs=3000,timeoutMs=600000}={}){
   await freePreviewPort(plan.port);
   const logDirectory=path.join(plan.runtimeRoot,'logs','launcher');
   await noPreviewLinks(logDirectory);
   for(const name of ['stdout.log','stderr.log'])await noPreviewLinks(path.join(logDirectory,name));
   const child=spawnService(plan.manifest.runtimeMode==='reuse'?plan.node:process.execPath,
-    [SELF,'worker','--package',plan.packageRoot,'--runtime',plan.runtimeRoot],
+    [SELF,'worker','--prepared','--package',plan.packageRoot,'--runtime',plan.runtimeRoot],
     {cwd:plan.packageRoot,detached:true,ipc:true,logDirectory});
   let exited=false;child.once('exit',()=>{exited=true;});
   try{
@@ -237,36 +266,133 @@ export async function startNativePreview(packageRoot,runtimeRoot,{settleMs=3000,
       const timer=setTimeout(()=>reject(new Error('Preview startup timed out.')),timeoutMs);
       const done=fn=>value=>{clearTimeout(timer);fn(value);};
       child.once('message',done(resolve));child.once('error',done(reject));child.once('exit',done(()=>reject(new Error('Preview worker exited before becoming ready.'))));
+      // A private parent/child pipe transmits the verified plan. It is never
+      // written to the delivery or exposed on a socket or command line.
+      child.send({plan},error=>{if(error)done(reject)(error);});
     });
     if(message.type!=='ready'||message.configId!==plan.configId)throw new Error(message.error||'Preview worker identity mismatch.');
     const end=Date.now()+settleMs;
+    let current;
     do{
-      const current=await probePortal(plan.port);
+      current=await probePortal(plan.port);
       if(exited||!current||current.pid!==child.pid||current.configId!==plan.configId||current.workspaceId!==await workspaceId(plan.runtimeRoot))throw new Error('Preview did not stay running after startup.');
       await delay(Math.min(100,Math.max(0,end-Date.now())));
     }while(Date.now()<end);
+    if(!await existing(plan,current))throw new Error('The preview stopped during its final service health checks.');
     if(child.connected)child.disconnect();child.unref();
     console.log('Local preview: '+LOCAL_PREVIEW_ORIGIN+'/');console.log('Data and logs: '+plan.runtimeRoot);
     return {reused:false,port:plan.port};
   }catch(error){stopService(child);if(child.connected)child.disconnect();child.unref();throw new Error(error.message+' See launcher logs: '+logDirectory);}
 }
+async function readOptionalJson(filename){
+  await noPreviewLinks(filename);
+  try{return await readJson(filename);}catch(error){if(error.code!=='ENOENT')throw error;return null;}
+}
+async function saveRuntimeJson(filename,value){
+  await noPreviewLinks(filename);
+  const temporary=filename+'.'+crypto.randomUUID()+'.tmp';
+  await writeFile(temporary,JSON.stringify(value)+'\n',{flag:'wx',mode:0o600});
+  try{await rename(temporary,filename);}
+  finally{await unlink(temporary).catch(error=>{if(error.code!=='ENOENT')throw error;});}
+}
+function pidIsAlive(pid){
+  if(!Number.isInteger(pid)||pid<=0)throw new Error('Invalid preview process record.');
+  try{process.kill(pid,0);return true;}catch(error){if(error.code==='ESRCH')return false;throw error;}
+}
+function hasLiveChildren(record){
+  return Object.values(record?.processes??{}).some(pid=>pid!==record.pid&&pidIsAlive(pid));
+}
+
+// preview.ps1 holds deployment.lock throughout this operation. Keep the old
+// settings and listener in place until the candidate and its inputs pass.
+export async function switchNativePreview(packageRoot,runtimeRoot,user,launchOptions){
+  packageRoot=path.resolve(packageRoot);runtimeRoot=path.resolve(runtimeRoot);
+  if(runtimeRoot!==path.join(path.dirname(packageRoot),'planhub-runtime'))throw new Error('Direct preview requires the sibling planhub-runtime.');
+  const sourceFile=path.join(runtimeRoot,'config.json'),configFile=path.join(runtimeRoot,'native-preview.json');
+  const receiptFile=path.join(runtimeRoot,'native-direct.json');
+  await noPreviewLinks(sourceFile);await noPreviewLinks(receiptFile);
+  const source=await readJson(sourceFile);
+  if(Object.hasOwn(source,'preview'))throw new Error('Use the original planhub-runtime/config.json for direct preview.');
+  const sourceConfigHash=(await hashFile(sourceFile)).toUpperCase();
+  const previous=await readOptionalJson(configFile);
+  const sameSettings=previous?.preview?.sourceConfigHash===sourceConfigHash&&previous.preview.user===user;
+  const config=sameSettings?previous:{...source,publicOrigin:LOCAL_PREVIEW_ORIGIN,listenAddress:'127.0.0.1',port:PORT,
+    preview:{schemaVersion:1,mode:'direct',user,sourceDirectory:runtimeRoot,sourceConfigHash,createdAt:new Date().toISOString()}};
+  console.log('切换前正在校验发布包、Windows 运行环境和数据路径，当前服务可继续使用。');
+  const plan=await loadNativePlan(packageRoot,runtimeRoot,{directConfig:config});
+  if(!(await lstat(path.join(runtimeRoot,config.sharedDirectory))).isDirectory())throw new Error('Prepare the shared data directory first.');
+  if(plan.bindings.sop&&!(await lstat(path.join(runtimeRoot,config.sopSharedConfig))).isFile())throw new Error('Provide shared_config.py before starting SOP.');
+  const requirements=[];
+  for(const [id,binding] of Object.entries(plan.bindings)){
+    if(binding.type!=='service')continue;
+    const release=plan.releases[id];
+    const spec=containerSpec(id,binding,config,{runtime:runtimeRoot,payload:release.payload,python:plan.python,pathApi:path});
+    portablePythonArguments(spec.args,release);
+    requirements.push(path.join(release.payload,'requirements.txt'));
+  }
+  if(requirements.length&&plan.manifest.runtimeMode!=='reuse'){
+    await probeWindowsRuntime({directory:plan.runtimeDirectory,node:plan.node,python:plan.python},requirements);
+  }
+  if(sourceConfigHash!==(await hashFile(sourceFile)).toUpperCase())throw new Error('Runtime configuration changed during validation. Run preview.cmd again.');
+  const running=await probePortal(PORT),workspace=await workspaceId(runtimeRoot);
+  if(running&&running.workspaceId!==workspace)throw new Error('Port belongs to a different workbench or snapshot. It was left running.');
+  let switchedAt;
+  const reused=running?.configId===plan.configId;
+  if(reused){
+    if(!await existing(plan))throw new Error('Preview stopped during verification. Run preview.cmd again.');
+  }else{
+    if(running){
+      if(!previous)throw new Error('The current preview configuration is missing. The running preview was left in place.');
+      await readPortRecord({runtimeRoot},running);
+      console.log('新发布包已通过预检，正在停止旧服务并切换版本…');
+      switchedAt=Date.now();
+      await stopNativePreview(runtimeRoot);
+    }else{
+      await freePreviewPort(PORT);
+      const owner=await readOptionalJson(path.join(runtimeRoot,'native-owner.json'));
+      const ports=await readOptionalJson(path.join(runtimeRoot,'native-ports.json'));
+      if((owner&&pidIsAlive(owner.pid))||hasLiveChildren(ports))throw new Error('A previous preview is still using the runtime. Wait for it to finish stopping.');
+    }
+    await saveRuntimeJson(receiptFile,{schemaVersion:1,mayBeRunning:true});
+    await saveRuntimeJson(configFile,config);
+    await launchPreparedPreview(plan,launchOptions);
+  }
+  const current=await probePortal(PORT);
+  if(!current||current.configId!==plan.configId||current.workspaceId!==workspace)throw new Error('The new preview identity could not be confirmed.');
+  const receipt={schemaVersion:1,mayBeRunning:true,packageDirectory:packageRoot,versions:plan.manifest.versions,configId:current.configId,instanceId:current.instanceId,confirmedAt:new Date().toISOString()};
+  if(switchedAt)receipt.switchSeconds=Number(((Date.now()-switchedAt)/1000).toFixed(1));
+  if(reused){
+    const previousReceipt=await readOptionalJson(receiptFile);
+    if(previousReceipt?.instanceId===current.instanceId&&Number.isFinite(previousReceipt.switchSeconds))receipt.switchSeconds=previousReceipt.switchSeconds;
+  }
+  await saveRuntimeJson(receiptFile,receipt);
+  console.log((reused?'该版本已在运行，已核对服务：':'已启动并核对发布包：')+path.basename(packageRoot));
+  if(switchedAt)console.log('从请求停止旧服务到确认新版本就绪共 '+receipt.switchSeconds+' 秒。');
+  console.log('本次试运行版本回执：'+receiptFile);
+  return {reused,port:PORT,instanceId:current.instanceId};
+}
+
 export async function stopNativePreview(runtimeRoot){
   await noPreviewLinks(runtimeRoot);
   const direct=path.basename(runtimeRoot)==='planhub-runtime';
   const config=validateRuntime(await readJson(path.join(runtimeRoot,direct?'native-preview.json':'config.json')),{allowLegacyPreview:true});
   if(!config.preview)throw new Error('Stop requires a native local runtime identity.');
   const port=config.port,identity=await probePortal(port);
+  const ports=await readOptionalJson(path.join(runtimeRoot,'native-ports.json'));
   if(!identity){
     try{const owner=await readJson(path.join(runtimeRoot,'native-owner.json'));try{process.kill(owner.pid,0);throw new Error('Preview is still starting or has not finished stopping. Retry shortly.');}catch(error){if(error.code!=='ESRCH')throw error;}}catch(error){if(error.code!=='ENOENT')throw error;}
+    if(hasLiveChildren(ports))throw new Error('Preview child processes are still running. No unrelated or unverified PID will be stopped.');
     console.log('No native preview is running.');return;
   }
   await stopPortal(runtimeRoot,port);
-  for(let attempt=0;attempt<50;attempt++){
+  // Allow a request accepted before shutdown to finish. A timeout leaves the
+  // runtime claimed, so another worker cannot start on top of it.
+  for(let attempt=0;attempt<1350;attempt++){
     try{await access(path.join(runtimeRoot,'native-owner.json'));}catch(error){
       if(error.code!=='ENOENT')throw error;
       let exited=identity.pid===process.pid;
       if(!exited){try{process.kill(identity.pid,0);}catch(error){if(error.code==='ESRCH')exited=true;else throw error;}}
-      if(exited){console.log('Local preview and its child services stopped. Data retained.');return;}
+      if(exited&&!hasLiveChildren(ports)){console.log('Local preview and its child services stopped. Data retained.');return;}
     }
     await delay(100);
   }
@@ -275,14 +401,24 @@ export async function stopNativePreview(runtimeRoot){
 if(process.argv[1]&&import.meta.url===pathToFileURL(path.resolve(process.argv[1])).href){
   try{
     const mode=process.argv[2];
-    const {values}=parseArgs({args:process.argv.slice(3),options:{package:{type:'string'},runtime:{type:'string'},'contract-hash':{type:'string'}},strict:true});
+    const {values}=parseArgs({args:process.argv.slice(3),options:{package:{type:'string'},runtime:{type:'string'},user:{type:'string'},prepared:{type:'boolean'},'contract-hash':{type:'string'}},strict:true});
     if(!values.runtime)throw new Error('Use preview.cmd to select an isolated runtime snapshot.');
     const packageRoot=path.resolve(values.package??path.join(path.dirname(SELF),'..')),runtimeRoot=path.resolve(values.runtime);
     if(mode==='check-snapshot')console.log(JSON.stringify(await checkSnapshotCompatibility(packageRoot,runtimeRoot,values['contract-hash'])));
     else if(mode==='start')await startNativePreview(packageRoot,runtimeRoot);
+    else if(mode==='switch')await switchNativePreview(packageRoot,runtimeRoot,values.user);
     else if(mode==='stop')await stopNativePreview(runtimeRoot);
     else if(mode==='worker'){
-      const plan=await loadNativePlan(packageRoot,runtimeRoot);await runNativePreview(plan);
+      let plan;
+      if(values.prepared){
+        if(!process.connected)throw new Error('Prepared preview workers require private launcher IPC.');
+        plan=await new Promise((resolve,reject)=>{
+          process.once('message',message=>resolve(message?.plan));
+          process.once('disconnect',()=>reject(new Error('The preview launcher closed before startup.')));
+        });
+        if(plan?.packageRoot!==packageRoot||plan.runtimeRoot!==runtimeRoot)throw new Error('Prepared worker paths do not match.');
+      }else{plan=await loadNativePlan(packageRoot,runtimeRoot);}
+      await runNativePreview(plan);
       if(process.connected)process.send({type:'ready',configId:plan.configId});if(process.connected)process.disconnect();
     }else throw new Error('Use start or stop.');
   }catch(error){console.error(error.message);if(process.connected){process.send({type:'error',error:error.message});process.disconnect();}process.exitCode=1;}

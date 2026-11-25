@@ -25,6 +25,15 @@ import fs from 'node:fs';import path from 'node:path';
 const args=process.argv.slice(2),runtime=args[args.indexOf('--runtime')+1];
 if(fs.existsSync(path.join(runtime,'fixture-fail.json')))process.exit(7);
 fs.appendFileSync(path.join(runtime,'fixture-native-calls.txt'),args[0]+'\n');
+if(args[0]==='switch'){
+  const delivery=args[args.indexOf('--package')+1],user=args[args.indexOf('--user')+1];
+  if(!args.includes('--package')||!args.includes('--user')||!user)throw new Error('The switch command requires a delivery and Windows identity.');
+  const manifest=JSON.parse(fs.readFileSync(path.join(delivery,'delivery.json'),'utf8'));
+  fs.writeFileSync(path.join(runtime,'native-preview.json'),JSON.stringify({preview:{mode:'direct',user}}));
+  fs.writeFileSync(path.join(runtime,'native-direct.json'),JSON.stringify({
+    schemaVersion:1,mayBeRunning:true,packageDirectory:delivery,versions:manifest.versions,confirmedAt:new Date().toISOString()
+  }));
+}
 if(args[0]==='check-snapshot'){
   const proof=path.join(runtime,'fixture-compatibility.json');
   if(!fs.existsSync(proof))process.exit(8);
@@ -46,15 +55,47 @@ Put (Join-Path $source 'shared/orders.xlsx') 'fixture shared input bytes'
 Put (Join-Path $source 'data/sop/sop.sqlite3') 'fixture saved plan bytes'
 $entry=Join-Path $package 'preview.ps1'
 function docker {throw 'Native preview must not invoke Docker.'}
+$opened=[System.Collections.Generic.List[string]]::new()
+function Start-Process([string]$FilePath){$opened.Add($FilePath)}
 try{
     $originalConfig=(Get-FileHash -LiteralPath (Join-Path $source 'config.json')).Hash
-    & $entry -Action Start
+    & $entry -Action Start -OpenBrowser
+    $v1Hash=(Get-FileHash -LiteralPath (Join-Path $package 'delivery.json')).Hash.Substring(0,16).ToLowerInvariant()
+    Check ($opened.Count -eq 1 -and $opened[0] -ceq "http://127.0.0.1:4173/?preview=$v1Hash") 'Browser must open the confirmed first delivery'
     Check ((Read (Join-Path $source 'native-preview.json')).preview.mode -eq 'direct') 'Default startup must use direct persistent data'
     Check (-not(Test-Path -LiteralPath (Join-Path $scratch 'planhub-preview'))) 'Direct startup must not create a snapshot'
     Check ((Get-FileHash -LiteralPath (Join-Path $source 'config.json')).Hash -eq $originalConfig) 'Direct startup changed source configuration'
+    $callsFile=Join-Path $source 'fixture-native-calls.txt'
+    $directMarker=Join-Path $source 'native-direct.json'
+    Check ((Get-Content -Raw -LiteralPath $callsFile).Trim() -ceq 'switch') 'The default preview must validate and activate the requested package in a single launcher call'
+    Check ((Read $directMarker).packageDirectory -ceq $package) 'The direct launcher receipt was overwritten'
+    $directUpdate=Join-Path $scratch 'delivery-direct-update'
+    Copy-Item -LiteralPath $package -Destination $directUpdate -Recurse
+    $v2Manifest=Read (Join-Path $directUpdate 'delivery.json')
+    $v2Manifest.versions.sop='fixture-v2'
+    Save (Join-Path $directUpdate 'delivery.json') $v2Manifest
+    $updateEntry=Join-Path $directUpdate 'preview.ps1'
+    # Older launchers recorded versions but did not record a package directory.
+    Save $directMarker @{schemaVersion=1;mayBeRunning=$true;versions=$manifest.versions;confirmedAt='2026-11-01T00:00:00Z'}
+    $oldMarker=(Get-FileHash -LiteralPath $directMarker).Hash
+    $oldConfig=(Get-FileHash -LiteralPath (Join-Path $source 'native-preview.json')).Hash
+    Put (Join-Path $source 'fixture-fail.json') 'candidate preflight failure'
+    Reject {& $updateEntry -Action Start -OpenBrowser}
+    Check ($opened.Count -eq 1) 'A failed switch opened the previous dashboard as if the update had succeeded'
+    Check ((Get-FileHash -LiteralPath $directMarker).Hash -eq $oldMarker -and (Get-FileHash -LiteralPath (Join-Path $source 'native-preview.json')).Hash -eq $oldConfig) 'A failed candidate preflight changed the current package receipt or configuration'
+    Remove-Item -LiteralPath (Join-Path $source 'fixture-fail.json')
+    & $updateEntry -Action Start -OpenBrowser
+    $v2Hash=(Get-FileHash -LiteralPath (Join-Path $directUpdate 'delivery.json')).Hash.Substring(0,16).ToLowerInvariant()
+    Check ($opened.Count -eq 2 -and $opened[1] -ceq "http://127.0.0.1:4173/?preview=$v2Hash" -and $opened[0] -cne $opened[1]) 'The new browser entry must identify the entire delivery even when only a child version changed'
+    $active=Read $directMarker
+    Check ($active.packageDirectory -ceq $directUpdate -and $active.versions.sop -ceq 'fixture-v2') 'The verified update did not record the new package'
+    Check (((Get-Content -LiteralPath $callsFile) -join ',') -ceq 'switch,switch') 'PowerShell stopped the active dashboard before delegating the version switch'
+    Check ((Get-FileHash -LiteralPath (Join-Path $source 'config.json')).Hash -eq $originalConfig) 'A direct package update changed the persistent configuration'
     Reject {& $entry -Action Start -Snapshot}
     & $entry -Action Stop
-    Check ((Read (Join-Path $source 'native-direct.json')).mayBeRunning -eq $false) 'Direct stop must release Docker exclusion'
+    $stopped=Read $directMarker
+    Check ($stopped.mayBeRunning -eq $false) 'Direct stop must release Docker exclusion'
+    Check ($stopped.packageDirectory -ceq $directUpdate -and $stopped.versions.sop -ceq 'fixture-v2' -and $stopped.confirmedAt -ceq $active.confirmedAt) 'Direct stop must retain the last verified package, versions and confirmation time'
     Remove-Item -LiteralPath (Join-Path $source 'native-preview.json')
     Remove-Item -LiteralPath (Join-Path $source 'deployment.lock')
     $message=''
@@ -187,6 +228,7 @@ try{
     Write-Output ('Native snapshot checks passed: '+$script:checks)
 }finally{
     Remove-Item Function:docker -ErrorAction SilentlyContinue
+    Remove-Item Function:Start-Process -ErrorAction SilentlyContinue
     Remove-Item Function:Read-Host -ErrorAction SilentlyContinue
     Remove-Variable -Name NativePreviewFixtureChoice -Scope Global -ErrorAction SilentlyContinue
     $resolved=[IO.Path]::GetFullPath($scratch);$tempRoot=[IO.Path]::GetFullPath([IO.Path]::GetTempPath()).TrimEnd('\','/')

@@ -6,6 +6,7 @@ param(
     [switch]$RefreshSnapshot,
     [ValidateSet('Keep','Refresh')][string]$UpdateMode='Keep',
     [switch]$ChooseUpdate,
+    [switch]$OpenBrowser,
     [string]$SourceDirectory=''
 )
 $ErrorActionPreference='Stop'
@@ -48,11 +49,23 @@ function Actor {
         return 'SID\'+$sid
     }finally{$identity.Dispose()}
 }
-function Native([string]$Mode,[string]$Runtime){
+function Native([string]$Mode,[string]$Runtime,[string]$UserName){
     Remove-Item Env:NODE_OPTIONS -ErrorAction SilentlyContinue
     Remove-Item Env:NODE_PATH -ErrorAction SilentlyContinue
-    & $node (Join-Path $package 'launcher/native-preview.mjs') $Mode --package $package --runtime $Runtime
+    $arguments=@($Mode,'--package',$package,'--runtime',$Runtime)
+    if($UserName){$arguments+=@('--user',$UserName)}
+    & $node (Join-Path $package 'launcher/native-preview.mjs') @arguments
     if($LASTEXITCODE -ne 0){throw ('Native preview failed. Logs: '+(Join-Path $Runtime 'logs'))}
+}
+function Open-ReadyPreview {
+    $version=(Get-FileHash -LiteralPath (Join-Path $package 'delivery.json') -Algorithm SHA256).Hash.Substring(0,16).ToLowerInvariant()
+    $url='http://127.0.0.1:4173/?preview='+$version
+    Write-Host ('当前试运行包：'+(Split-Path -Leaf $package))
+    Write-Host $url
+    if($OpenBrowser){
+        try{Start-Process -FilePath $url}
+        catch{Write-Warning '试运行已就绪。请复制上方地址到浏览器打开。'}
+    }
 }
 function Snapshot-Contract($State,$Manifest,[string]$Runtime){
     $current=$Manifest.PSObject.Properties['snapshotContractHash']
@@ -90,6 +103,7 @@ function Copy-Tree([string]$From,[string]$To){
 }
 No-Link $source;No-Link $previewRoot
 if((Within $source $previewRoot) -or (Within $previewRoot $source) -or (Within $package $source) -or (Within $source $package)){throw 'Preview snapshots, source data and the package must be separate directories.'}
+if($Action -eq 'Start'){Write-Host '正在检查发布包和 Windows 运行环境…'}
 $manifest=& (Join-Path $package 'deploy.ps1') -Action Validate
 if(-not $manifest.complete){throw 'Use a complete package built with selection 0 or 8 for local preview.'}
 $runtimeHelper=Join-Path $package 'runtime-common.ps1';No-Link $runtimeHelper
@@ -111,9 +125,17 @@ if(-not $Snapshot){
         $derived=Join-Path $source 'native-preview.json';No-Link $derived
         $marker=Join-Path $source 'native-direct.json';No-Link $marker
         if($Action -eq 'Stop'){
-            if(-not(Test-Path -LiteralPath $derived) -and (Test-Path -LiteralPath (Join-Path $source 'native-owner.json'))){throw 'Local owner exists but its derived configuration is missing. Restore that configuration before stopping.'}
+            if(-not(Test-Path -LiteralPath $derived) -and ((Test-Path -LiteralPath (Join-Path $source 'native-owner.json')) -or (Test-Path -LiteralPath (Join-Path $source 'native-ports.json')))){throw '本机试运行的进程记录仍在，缺少 native-preview.json，无法确认服务已经停止。'}
             if(Test-Path -LiteralPath $derived){Native 'stop' $source}
-            Save-Json $marker @{schemaVersion=1;mayBeRunning=$false}
+            $receipt=[pscustomobject]@{schemaVersion=1}
+            if(Test-Path -LiteralPath $marker){
+                try{
+                    $previous=Read-Json $marker
+                    if($previous.schemaVersion -eq 1){$receipt=$previous}
+                }catch{Write-Warning '已确认停服，先前的版本回执无法读取。'}
+            }
+            $receipt|Add-Member -Force -NotePropertyName mayBeRunning -NotePropertyValue $false
+            Save-Json $marker $receipt
             Write-Host 'Local services stopped. Persistent data retained.'
             return
         }
@@ -127,15 +149,9 @@ if(-not $Snapshot){
         foreach($name in @('sharedDirectory','sopSharedConfig','quicklookSourceBase')){$null=Source-Path $settings.$name}
         if(-not(Test-Path -LiteralPath (Source-Path $settings.sharedDirectory) -PathType Container)){throw 'Prepare the shared data directory first.'}
         if('sop' -in $manifest.applications -and -not(Test-Path -LiteralPath (Source-Path $settings.sopSharedConfig) -PathType Leaf)){throw 'Provide the real shared_config.py before startup.'}
-        if(Test-Path -LiteralPath $derived){Native 'stop' $source}
-        $settings.publicOrigin='http://127.0.0.1:4173';$settings.listenAddress='127.0.0.1';$settings.port=4173
-        $settings|Add-Member -NotePropertyName preview -NotePropertyValue ([pscustomobject]@{schemaVersion=1;mode='direct';user=(Actor);sourceDirectory=$source;sourceConfigHash=(Get-FileHash -LiteralPath $sourceFile -Algorithm SHA256).Hash;createdAt=[DateTime]::UtcNow.ToString('o')})
-        Save-Json $derived $settings
-        Save-Json $marker @{schemaVersion=1;mayBeRunning=$true}
-        Native 'start' $source
-        Save-Json $marker @{schemaVersion=1;mayBeRunning=$true;versions=$manifest.versions;confirmedAt=[DateTime]::UtcNow.ToString('o')}
-        Write-Host ('Reading and saving live data in: '+$source)
-        Write-Host 'Open http://127.0.0.1:4173/. Shared updates follow each application refresh cycle.'
+        Native 'switch' $source (Actor)
+        Write-Host ('当前使用的数据目录：'+$source)
+        Open-ReadyPreview
         return
     }finally{if($null -ne $directLock){$directLock.Dispose()}}
 }
@@ -238,7 +254,7 @@ try{
         $sourceLock.Dispose();$sourceLock=$null
     }
     Native 'start' $runtime
-    Write-Host 'Open http://127.0.0.1:4173/ in the browser on this computer.'
+    Open-ReadyPreview
     Write-Host 'Use stop-preview.cmd to stop. Trial edits remain in the snapshot only.'
 }finally{
     if($null -ne $sourceLock){$sourceLock.Dispose()}

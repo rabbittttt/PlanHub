@@ -12,6 +12,8 @@ param(
     [switch]$BuildOnly
 )
 $ErrorActionPreference='Stop'
+if($BuildOnly -and (-not $AppId -or $All -or $WithoutRuntime)){throw 'BuildOnly stages one application and cannot create a delivery.'}
+if(($AppId -or $ReleasePath) -and -not $BuildOnly){throw '单个应用不能单独交付。请选 0 或 8 打包整套工作台。'}
 . (Join-Path $PSScriptRoot 'Publish.Common.ps1')
 $root=Split-Path -Parent $PSScriptRoot
 Set-Location -LiteralPath $root
@@ -28,30 +30,20 @@ $runtimePython=Resolve-PublishPath ([string](Get-PublishValue $config 'runtimePy
 $registry=Get-Content -LiteralPath (Join-Path $root 'portal/config/apps.json') -Raw -Encoding UTF8 | ConvertFrom-Json
 $apps=@([pscustomobject]@{id='planhub';name='计划工作台门户'})
 $apps+=@($registry.groups | ForEach-Object {$_.apps} | Where-Object {$_.enabled})
-if (-not $AppId -and -not $All) {
-    if($NonInteractive){throw 'AppId is required.'}
+if (-not $BuildOnly -and -not $All) {
+    if($NonInteractive){throw 'Use -All to package all applications, optionally with -WithoutRuntime.'}
     Write-Host '0. 打包全部应用及 Windows 运行环境（首次交付选此项）'
     Write-Host '8. 打包全部应用，仅程序（B 复用旧完整包的运行环境）'
-    Write-Host '其他编号用于单个应用更新：'
-    $applicationChoices=@{}
-    for($i=0;$i -lt $apps.Count;$i++){
-        $choiceNumber=$i+1;if($choiceNumber -ge 8){$choiceNumber++}
-        $applicationChoices[[string]$choiceNumber]=$apps[$i].id
-        Write-Host ("{0}. {1} ({2})" -f $choiceNumber,$apps[$i].name,$apps[$i].id)
-    }
-    $selected=Read-Host '选择需要发布的应用编号'
-    $number=0
-    if(-not[int]::TryParse($selected,[ref]$number) -or ($number -notin @(0,8) -and -not $applicationChoices.ContainsKey([string]$number))){throw 'Invalid selection.'}
-    if($number -eq 8){$All=$true;$WithoutRuntime=$true}elseif($number -eq 0){$All=$true}else{$AppId=$applicationChoices[[string]$number]}
+    $selected=Read-Host '选择打包方式（0 或 8）'
+    if($selected -notin @('0','8')){throw '请输入 0 或 8。'}
+    $All=$true
+    $WithoutRuntime=$selected -eq '8'
 }
-if($WithoutRuntime -and (-not $All -or $BuildOnly)){throw 'WithoutRuntime requires All and cannot be used with BuildOnly.'}
-if($All -and -not $BuildOnly -and -not $WithoutRuntime){
+if($All -and -not $WithoutRuntime){
     & node (Join-Path $root 'scripts/build-delivery.mjs') --check-node-runtime | Out-Host
     if($LASTEXITCODE -ne 0){throw 'Node.js runtime preflight failed. See the exact version and license error above; no applications have been rebuilt.'}
 }
 if($All) {
-    if($AppId -or $ReleasePath){throw 'All cannot be combined with AppId or ReleasePath.'}
-    if($Action -and $Action -ne 'Package'){throw 'All supports packaging only. Send or deploy packages individually.'}
     if($Version){Assert-PublishVersion $Version}
     $completed=@()
     $failures=@()
@@ -192,10 +184,4 @@ if($kind -eq 'release'){
     }
 }
 Write-Host ("应用校验通过：{0} {1}" -f $AppId,$Version)
-if($BuildOnly){return [pscustomobject]@{appId=$AppId;version=$Version;releasePath=$destination;action=$Action}}
-$delivery=Join-Path $root ('release/'+$AppId+'-'+(Get-Date -Format 'yyyyMMdd-HHmmss-fff'))
-& node (Join-Path $root 'scripts/build-delivery.mjs') --python $runtimePython $delivery $destination | Out-Host
-if($LASTEXITCODE -ne 0){throw 'Delivery packaging failed. No completed delivery folder was published.'}
-Write-Host ('只复制此文件夹到 B：'+$delivery)
-if($NonInteractive){return [pscustomobject]@{deliveryPath=$delivery}}
-Open-PublishDeliveryFolder -Path $delivery
+return [pscustomobject]@{appId=$AppId;version=$Version;releasePath=$destination;action=$Action}

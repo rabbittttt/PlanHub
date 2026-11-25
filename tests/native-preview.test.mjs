@@ -19,7 +19,7 @@ const gatewayFile=path.join(harness,'local-preview-gateway.mjs'),gatewaySource=a
 assert.match(gatewaySource,/export const LOCAL_PREVIEW_PORT=4173;/);
 await writeFile(gatewayFile,gatewaySource.replace('export const LOCAL_PREVIEW_PORT=4173;','export const LOCAL_PREVIEW_PORT='+harnessPort+';'));
 const fromHarness=name=>import(pathToFileURL(path.join(harness,name)).href);
-const {loadNativePlan,runNativePreview,startNativePreview,stopNativePreview,freePreviewPort}=await fromHarness('native-preview.mjs');
+const {loadNativePlan,runNativePreview,startNativePreview,switchNativePreview,stopNativePreview,freePreviewPort}=await fromHarness('native-preview.mjs');
 const {spawnService}=await fromHarness('service-process.mjs');
 const {createPortalInstance,registerPortal,unregisterPortal,probePortal,workspaceId}=await fromHarness('portal-instance.mjs');
 const {createServer}=await fromHarness('dev-server.mjs');
@@ -106,6 +106,96 @@ test('direct local services read changing shared files and preserve external con
   await assert.rejects(loadNativePlan(f.packageRoot,f.runtimeRoot),/configuration changed/);
 });
 async function stopOnExit(t,f){t.after(async()=>{const identity=await probePortal(PORT);if(identity&&identity.workspaceId===await workspaceId(f.runtimeRoot))await stopNativePreview(f.runtimeRoot);});}
+
+test('direct switch keeps an active delivery through validation and confirms the replacement before returning',async t=>{
+  const f=await fixture(t,{dynamic:false}),live=path.join(f.root,'planhub-runtime');
+  await stopOnExit(t,{runtimeRoot:live});
+  const source={...f.config,publicOrigin:'https://planhub.example.org'};delete source.preview;
+  await put(path.join(live,'config.json'),source);
+  const input=path.join(live,'shared','preserved.txt');await put(input,'shared input');
+  const launch=packageRoot=>switchNativePreview(packageRoot,live,'DEPT\\user',{settleMs:100,timeoutMs:10000});
+  const old=await launch(f.packageRoot);
+  assert.equal((await readJson(path.join(live,'native-direct.json'))).switchSeconds,undefined);
+  assert.equal((await launch(f.packageRoot)).instanceId,old.instanceId);
+  const settingsBefore=await readFile(path.join(live,'native-preview.json'));
+  const newer=path.join(f.root,'planhub-next');
+  await cp(f.packageRoot,newer,{recursive:true});
+  await put(path.join(newer,'releases/planhub/payload/index.html'),'new home');
+  await assert.rejects(launch(newer),/damaged/);
+  assert.equal((await probePortal(PORT)).instanceId,old.instanceId);
+  assert.match(await (await fetch(ORIGIN)).text(),/Fixture portal/);
+  assert.deepEqual(await readFile(path.join(live,'native-preview.json')),settingsBefore);
+  const releaseFile=path.join(newer,'releases/planhub/app-release.json'),releaseInfo=await readJson(releaseFile);
+  releaseInfo.version='fixture-v2';
+  Object.assign(releaseInfo.files.find(item=>item.path==='index.html'),{sha256:sha('new home'),bytes:8});
+  await put(releaseFile,releaseInfo);
+  const files=await hashFiles(newer);delete files['delivery.json'];
+  await put(path.join(newer,'delivery.json'),{...f.manifest,versions:{planhub:'fixture-v2'},files});
+  const next=await launch(newer);
+  assert.notEqual(next.instanceId,old.instanceId);
+  assert.equal(await (await fetch(ORIGIN)).text(),'new home');
+  const receipt=await readJson(path.join(live,'native-direct.json'));
+  assert.ok(receipt.switchSeconds>0);
+  await launch(newer);
+  assert.equal((await readJson(path.join(live,'native-direct.json'))).switchSeconds,receipt.switchSeconds);
+  assert.equal(receipt.packageDirectory,newer);assert.equal(receipt.instanceId,next.instanceId);
+  assert.equal(receipt.versions.planhub,'fixture-v2');assert.equal(receipt.mayBeRunning,true);
+  assert.equal(await readFile(input,'utf8'),'shared input');assert.deepEqual(await readJson(path.join(live,'config.json')),source);
+  // Force the next worker to miss its readiness deadline after the old
+  // worker has actually stopped. Docker must still see a conservative marker.
+  await assert.rejects(switchNativePreview(f.packageRoot,live,'DEPT\\user',{timeoutMs:1}),/startup timed out/);
+  const interrupted=await readJson(path.join(live,'native-direct.json'));
+  assert.equal(interrupted.mayBeRunning,true);assert.equal(interrupted.confirmedAt,undefined);
+  const retried=await launch(newer);assert.notEqual(retried.instanceId,next.instanceId);
+  await stopNativePreview(live);
+  const foreign=http.createServer((_req,res)=>res.end('not this workbench'));
+  await listen(foreign,PORT);
+  try{
+    await assert.rejects(launch(newer),/unavailable/);
+    assert.equal(await(await fetch(ORIGIN)).text(),'not this workbench');
+    assert.equal((await readJson(path.join(live,'native-direct.json'))).instanceId,retried.instanceId);
+  }finally{await close(foreign);}
+});
+
+test('an accepted save finishes before authenticated preview shutdown releases the data',async t=>{
+  const f=await fixture(t);await stopOnExit(t,f);
+  const plan=await loadNativePlan(f.packageRoot,f.runtimeRoot);
+  const gate=path.join(f.runtimeRoot,'fixture-release-save'),saved=path.join(f.runtimeRoot,'fixture-saved');
+  const service=`import fs from 'node:fs';import http from 'node:http';
+    const [port,gate,saved]=process.argv.slice(2);
+    http.createServer((req,res)=>{
+      if(req.url==='/healthz'){res.end(JSON.stringify({ok:true,app:'vehicle-config'}));return;}
+      req.resume();res.write('accepted ');
+      const timer=setInterval(()=>{if(fs.existsSync(gate)){clearInterval(timer);fs.writeFileSync(saved,'completed');res.end('saved');}},10);
+    }).listen(Number(port),'127.0.0.1');`;
+  await put(f.fake,service);
+  await runNativePreview(plan,{startService:(_command,args,options)=>spawnService(process.execPath,
+    [f.fake,args[args.indexOf('--port')+1],gate,saved],options),serviceTimeoutMs:5000});
+  const save=await fetch(ORIGIN+'/vehicle-config/save',{method:'POST',body:'draft'});
+  const completion=save.text(),stopped=stopNativePreview(f.runtimeRoot);
+  try{
+    for(let attempt=0;attempt<100&&await probePortal(PORT);attempt++)await new Promise(resolve=>setTimeout(resolve,20));
+    assert.equal(await probePortal(PORT),null);
+    await assert.rejects(readFile(saved),/ENOENT/);
+    assert.ok((await readJson(path.join(f.runtimeRoot,'native-owner.json'))).lease);
+  }finally{await put(gate,'finish');}
+  assert.equal(await completion,'accepted saved');await stopped;
+  assert.equal(await readFile(saved,'utf8'),'completed');
+  await assert.rejects(readFile(path.join(f.runtimeRoot,'native-owner.json')),/ENOENT/);
+});
+
+test('a backend that stops passing health checks when the gateway opens prevents a readiness confirmation',async t=>{
+  const f=await fixture(t),plan=await loadNativePlan(f.packageRoot,f.runtimeRoot);
+  await stopOnExit(t,f);
+  await put(f.fake,`import http from 'node:http';
+    let calls=0;
+    const server=http.createServer((_req,res)=>res.end(JSON.stringify({ok:++calls===1,app:'vehicle-config'})));
+    server.listen(Number(process.argv[2]),'127.0.0.1');`);
+  await assert.rejects(runNativePreview(plan,{startService:fixtureSpawner(f),serviceTimeoutMs:5000}),/health identity mismatch/);
+  assert.equal(await probePortal(PORT),null);
+  await freePreviewPort(f.port);
+  await assert.rejects(readFile(path.join(f.runtimeRoot,'native-owner.json')),/ENOENT/);
+});
 
 test('native preview uses the registered child default port without a separate preview preference',async t=>{
   const f=await fixture(t),plan=await loadNativePlan(f.packageRoot,f.runtimeRoot),seen=[];

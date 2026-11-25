@@ -48,13 +48,15 @@ try {
         Check ($Arguments[0].EndsWith('build-delivery.mjs')) 'Packaging must not invoke the Docker image builder'
         if($Arguments[1] -eq '--check-node-runtime'){$publishTestState.runtimePreflights++;$global:LASTEXITCODE=0;return}
         $publishTestState.deliveryArgs=$Arguments
-        $output=if($Arguments -contains '--without-runtime'){$Arguments[5]}elseif($Arguments[1] -eq '--complete'){$Arguments[4]}else{$Arguments[3]}
+        $output=if($Arguments -contains '--without-runtime'){$Arguments[5]}else{$Arguments[4]}
         [void][IO.Directory]::CreateDirectory($output)
         $global:LASTEXITCODE=0
     }
-    $delivery=& $publish -AppId planhub -Version docker-v2 -ConfigPath $config -NonInteractive
-    Check ($delivery.deliveryPath -match '[\\/]release[\\/]planhub-') 'One-app delivery must use English release directory'
-    Check ($publishTestState.deliveryArgs.Count -eq 5) 'Single-app delivery should contain only selected release and runtime executable'
+    Reject {& $publish -AppId planhub -Version docker-v2 -ConfigPath $config -NonInteractive}
+    function Read-Host {return '1'}
+    Reject {& $publish -ConfigPath $config}
+    Remove-Item Function:Read-Host
+    Check (-not (Test-Path -LiteralPath (Join-Path $fixture 'release'))) 'Single-app requests must not produce a delivery'
     Put (Join-Path $fixture 'portal/config/apps.json') '{"groups":[]}'
     $all=& $publish -All -Version all-v3 -ConfigPath $config -NonInteractive
     Check ($publishTestState.deliveryArgs[1] -eq '--complete') 'Selection 0 must enforce a complete delivery package'
