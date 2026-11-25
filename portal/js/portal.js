@@ -1,4 +1,5 @@
 import { validateConfig, routeFromHash, orderedApps } from './config.js';
+import { createOrderCalendar } from './order-calendar.js';
 import { stages } from './workflow.js';
 
 const $ = id => document.getElementById(id);
@@ -29,7 +30,7 @@ document.querySelector('.skip-link').addEventListener('click', event => {
   $('main').focus();
 });
 const labels = { ready: '已接入', pending: '待接入', maintenance: '维护中' };
-let config, current = 'home', sequence = 0, controller, timer, activeFrame;
+let config, calendar, current = 'home', sequence = 0, controller, timer, activeFrame;
 const appFrames = new Map();
 
 function deliverSopAccount(entry) {
@@ -130,13 +131,12 @@ function renderWorkflow() {
     }
     if (!tasks.children.length) tasks.append(element('li', 'workflow-empty', '此阶段暂无已登记的办事入口'));
   }
-  for (const stage of stages) {
+  for (const [index, stage] of stages.entries()) {
     const button = element('button', 'stage-card');
     button.type = 'button';
     button.setAttribute('aria-controls', 'workflow-tasks');
-    const symbol = element('span', 'stage-symbol');
-    symbol.append(icon(stage.icon));
-    button.append(symbol, element('strong', 'stage-title', stage.name), element('span', 'stage-subjects', stage.subjects));
+    const number = element('span', 'stage-number', String(index + 1).padStart(2, '0'));
+    button.append(number, element('strong', 'stage-title', stage.name), element('span', 'stage-subjects', stage.subjects));
     button.addEventListener('click', () => selectStage(stage, button));
     stageGroup.append(button);
   }
@@ -145,21 +145,6 @@ function renderWorkflow() {
   if (sop) {
     $('plan-records').append(taskEntry(sop, '查看版本与历史快照'));
     $('records-panel').hidden = false;
-  }
-}
-
-function renderMonths() {
-  const format = new Intl.DateTimeFormat('zh-CN', { timeZone: 'Asia/Shanghai', year: 'numeric', month: 'long' });
-  const parts = format.formatToParts(new Date());
-  const year = Number(parts.find(part => part.type === 'year').value);
-  const month = Number.parseInt(parts.find(part => part.type === 'month').value, 10);
-  const windows = $('plan-windows');
-  windows.replaceChildren();
-  for (const [offset, label] of ['本月', '下月', '下下月'].entries()) {
-    const item = element('div');
-    const date = new Date(Date.UTC(year, month - 1 + offset, 1));
-    item.append(element('dt', '', label), element('dd', '', format.format(date)));
-    windows.append(item);
   }
 }
 
@@ -313,10 +298,12 @@ function navigate() {
     link.classList.toggle('active', active);
     if (active) link.setAttribute('aria-current', 'page'); else link.removeAttribute('aria-current');
   });
-  if (app) openApp(app);
-  else {
+  if (app) {
+    calendar.hide();
+    openApp(app);
+  } else {
     stopLoading();
-    renderMonths();
+    void calendar.refresh();
   }
 }
 async function boot() {
@@ -336,6 +323,7 @@ async function boot() {
     $('home-title').textContent = config.platform.name;
     renderNavigation();
     renderWorkflow();
+    calendar = createOrderCalendar($('workbench-calendar'), config.apps.find(app => app.id === 'orderiq'));
     renderDirectory();
     $('boot-state').hidden = true;
     navigate();
@@ -350,3 +338,7 @@ async function boot() {
 $('retry-app').addEventListener('click', () => { const app = config.apps.find(a => a.id === current); if (app) openApp(app, { reload: true }); });
 window.addEventListener('hashchange', navigate);
 boot();
+
+document.addEventListener('visibilitychange', () => {
+  if (document.visibilityState === 'visible' && current === 'home') void calendar?.refresh();
+});

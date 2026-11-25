@@ -38,23 +38,35 @@
         <h1 id="home-title">智选车计划部工作台</h1>
         <div id="workflow-stages" role="group" aria-label="选择计划阶段"></div>
         <div class="workflow-body">
-          <section class="workflow-panel" aria-labelledby="tasks-title">
-            <header class="panel-heading">
-              <h2 id="tasks-title">办事清单</h2>
-              <span id="selected-stage"></span>
-            </header>
-            <ul id="workflow-tasks" class="task-list"></ul>
-          </section>
           <div class="workflow-aside">
-            <section class="workflow-panel" aria-labelledby="months-title">
-              <h2 id="months-title">月份参考</h2>
-              <dl id="plan-windows"></dl>
+            <section class="workflow-panel" aria-labelledby="tasks-title">
+              <header class="panel-heading">
+                <h2 id="tasks-title">办事清单</h2>
+                <span id="selected-stage"></span>
+              </header>
+              <ul id="workflow-tasks" class="task-list"></ul>
             </section>
             <section class="workflow-panel" id="records-panel" aria-labelledby="records-title" hidden>
               <h2 id="records-title">计划记录</h2>
               <div id="plan-records"></div>
             </section>
           </div>
+          <section class="workflow-panel order-calendar" id="workbench-calendar" aria-labelledby="calendar-title">
+            <header class="calendar-heading">
+              <div><h2 id="calendar-title">订单日历</h2><p class="calendar-month" aria-live="polite"></p></div>
+              <div class="calendar-nav" role="group" aria-label="选择月份">
+                <button type="button" data-month-step="-1" aria-label="上个月">‹</button>
+                <button type="button" data-month-step="0">本月</button>
+                <button type="button" data-month-step="1" aria-label="下个月">›</button>
+              </div>
+            </header>
+            <table aria-labelledby="calendar-title">
+              <thead><tr><th scope="col">周次</th><th scope="col">一</th><th scope="col">二</th><th scope="col">三</th><th scope="col">四</th><th scope="col">五</th><th scope="col">六</th><th scope="col">日</th></tr></thead>
+              <tbody></tbody>
+            </table>
+            <div class="calendar-feedback"><span class="calendar-status" role="status"></span><button class="calendar-retry" type="button" hidden>重试</button></div>
+            <section id="calendar-day-details" class="calendar-detail" aria-label="当日标注" hidden></section>
+          </section>
         </div>
         <section aria-labelledby="directory-title">
           <h2 id="directory-title">全部应用</h2>

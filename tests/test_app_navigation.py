@@ -36,6 +36,7 @@ class AppNavigationTests(unittest.TestCase):
         self.counts = Counter()
         self.status = {}
         self.delays = {}
+        self.json_responses = {}
         owner = self
         self.config = {'platform': {'name': 'Fixture portal', 'defaultApp': 'home', 'loadTimeoutMs': 1000},
                   'groups': [{'id': 'test', 'name': 'Fixture apps', 'apps': [
@@ -66,6 +67,9 @@ class AppNavigationTests(unittest.TestCase):
                     gate.wait(3)
                 if path == '/config/apps.json':
                     body = json.dumps(owner.config).encode()
+                    kind = 'application/json'
+                elif path in owner.json_responses:
+                    body = json.dumps(owner.json_responses[path]).encode()
                     kind = 'application/json'
                 elif path.startswith(('/alpha/', '/beta/', '/pending/', '/escaped/')):
                     body = (f'<!doctype html><title>{path}</title><input aria-label="draft">'
@@ -159,6 +163,8 @@ class AppNavigationTests(unittest.TestCase):
         stages = self.page.locator('#workflow-stages').get_by_role('button')
         tasks = self.page.locator('#workflow-tasks')
         self.assertEqual(stages.count(), 4)
+        self.assertEqual(stages.locator('.stage-number').all_inner_texts(), ['01', '02', '03', '04'])
+        self.assertEqual(stages.locator('svg, img, [data-icon]').count(), 0)
         allowed = {f"#/app/{app['id']}" for app in apps}
         seen_tasks = set()
         for stage in stages.all():
@@ -172,9 +178,8 @@ class AppNavigationTests(unittest.TestCase):
             self.assertGreater(links.count(), 0)
             for link in links.all():
                 self.assertIn(link.get_attribute('href'), allowed)
-        months = self.page.locator('#plan-windows dd').all_inner_texts()
-        self.assertEqual(len(months), 3)
-        self.assertEqual(len(set(months)), 3)
+        self.assertEqual(self.page.get_by_role('heading', name='月份参考').count(), 0)
+        self.assertTrue(self.page.locator('#workbench-calendar').is_visible())
         records = self.page.locator('#plan-records')
         self.assertEqual(records.get_by_role('link').first.get_attribute('href'), '#/app/sop')
         next(app for app in apps if app['id'] == 'sop')['status'] = 'maintenance'
@@ -184,6 +189,80 @@ class AppNavigationTests(unittest.TestCase):
         for stage in stages.all():
             stage.click()
             self.assertEqual(tasks.locator('a[href="#/app/sop"]').count(), 0)
+
+    def open_calendar(self, entries, subjects, *, catalog_status=200):
+        self.config['groups'][0]['apps'].append({
+            'id': 'orderiq', 'name': '订单分析', 'url': '/alternate-order/',
+            'enabled': True, 'status': 'ready',
+        })
+        self.json_responses['/alternate-order/api/annotations'] = {'entries': entries}
+        self.json_responses['/alternate-order/api/catalog'] = {'subjects': subjects}
+        self.status['/alternate-order/api/catalog'] = catalog_status
+        self.page.context.new_cdp_session(self.page).send('Emulation.setTimezoneOverride', {'timezoneId': 'America/Los_Angeles'})
+        self.page.clock.set_fixed_time('2026-12-31T17:30:00Z')
+        self.page.reload()
+        calendar = self.page.locator('#workbench-calendar')
+        calendar.wait_for(state='visible')
+        return calendar
+
+    def test_calendar_places_order_notes_on_dates_and_tracks_iso_weeks_across_new_year(self):
+        model_note = {'date': '2027-01-08', 'text': '样例车型上市'}
+        entries = [
+            {'id': 'jan-note', 'date': '2027-01-06', 'subject': 'brand', 'text': '一月锁单跟进'},
+            {'id': 'dec-note', 'date': '2026-12-10', 'subject': 'brand', 'text': '十二月权益调整'},
+        ]
+        subjects = [
+            {'id': 'brand', 'name': '样例品牌', 'stage_annotations': [model_note]},
+            {'id': 'model', 'name': '样例车型', 'stage_annotations': [model_note]},
+        ]
+        calendar = self.open_calendar(entries, subjects)
+        # Shanghai is already in January even though the browser clock still shows December.
+        self.assertTrue(calendar.locator('[data-date="2027-01-20"]').is_visible())
+        jan6 = calendar.locator('[data-date="2027-01-06"]')
+        jan8 = calendar.locator('[data-date="2027-01-08"]')
+        jan6.get_by_text('一月锁单跟进', exact=False).first.wait_for()
+        self.assertNotIn('一月锁单跟进', calendar.locator('[data-date="2027-01-07"]').inner_text())
+        self.assertIn('样例车型上市', jan8.inner_text())
+        jan8.get_by_role('button').click()
+        details = self.page.locator('#calendar-day-details')
+        details.wait_for(state='visible')
+        self.assertEqual(details.inner_text().count('样例车型上市'), 1)
+        for day, week in (('2027-01-01', 'W53'), ('2027-01-04', 'W01')):
+            row = calendar.locator('tr').filter(has=self.page.locator(f'[data-date="{day}"]'))
+            self.assertEqual(row.locator('th[scope="row"]').inner_text(), week)
+        calendar.get_by_role('button', name='上个月').click()
+        self.assertIn('十二月权益调整', calendar.locator('[data-date="2026-12-10"]').inner_text())
+        calendar.get_by_role('button', name='下个月').click()
+        self.assertTrue(jan6.is_visible())
+        self.assertEqual(self.counts['GET', '/orderiq/api/annotations'], 0)
+
+    def test_calendar_date_opens_all_notes_on_a_narrow_screen(self):
+        self.page.set_viewport_size({'width': 390, 'height': 844})
+        messages = ['样例备注甲', '样例备注乙', '样例备注丙', '样例备注丁']
+        entries = [
+            {'id': str(index), 'date': '2027-01-08', 'subject': 'brand', 'text': message}
+            for index, message in enumerate(messages)
+        ]
+        entries.append({'id': 'other-day', 'date': '2027-01-09', 'subject': 'brand', 'text': '另一天的事'})
+        calendar = self.open_calendar(entries, [{'id': 'brand', 'name': '样例品牌', 'stage_annotations': []}])
+        calendar.locator('[data-date="2027-01-08"]').get_by_role('button').click()
+        details = self.page.locator('#calendar-day-details')
+        details.wait_for(state='visible')
+        for message in messages:
+            self.assertIn(message, details.inner_text())
+        self.assertNotIn('另一天的事', details.inner_text())
+        self.assertLessEqual(self.page.evaluate('document.documentElement.scrollWidth'), 390)
+        calendar.locator('[data-date="2027-01-09"]').get_by_role('button').click()
+        self.assertIn('另一天的事', details.inner_text())
+        self.assertNotIn('样例备注甲', details.inner_text())
+
+    def test_calendar_shows_custom_notes_even_when_order_catalog_is_unavailable(self):
+        calendar = self.open_calendar([
+            {'id': 'saved', 'date': '2027-01-06', 'subject': 'brand', 'text': '保留的日标注'}
+        ], [], catalog_status=503)
+        cell = calendar.locator('[data-date="2027-01-06"]')
+        cell.get_by_text('保留的日标注', exact=False).first.wait_for()
+        self.assertTrue(calendar.get_by_role('button', name='下个月').is_enabled())
 
     def test_all_apps_preserve_documents_drafts_and_history_without_new_requests(self):
         instances = {}
