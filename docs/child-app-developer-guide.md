@@ -68,7 +68,7 @@ node scripts/register-app.mjs --config config.local/new-app.json
 
 ## 页面必须满足的约定
 
-子应用开发者核对标题图标、顶部导航高度及导航到首块看板的间距时，见[工作台 UI 规范 · 内嵌业务页](../design-system/planning-portal/MASTER.md#内嵌业务页)。
+子应用开发者核对标题图标、顶部导航高度及导航到首块看板的间距时，见[工作台 UI 规范 · 内嵌业务页](ui-guidelines.md#内嵌业务页)。
 
 - 应用 ID 唯一。浏览器访问地址固定；内部新标签、新 API 无需门户逐项登记。
 - 资源、API、跳转和下载均在 `/<id>/` 内。支持前缀配置，不能抢占站点根 `/api/`、`/assets/`。
