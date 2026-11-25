@@ -10,6 +10,8 @@
 
 ## 开发联调
 
+修改门户界面前，先查阅[工作台 UI 规范](design-system/planning-portal/MASTER.md)。其中列出了各屏宽的布局尺寸、内嵌业务页的对齐要求和截图验收步骤。
+
 本机修改门户或子应用后，用开发版验证相关改动，无需重新打包或发布。
 
 | 操作 | 入口 |
@@ -37,7 +39,7 @@
 
 线索声量当前接入文件是样例，正式发布必须换成内网真实页面。
 
-开发契约见[应用接入手册](docs/child-app-developer-guide.md)，协作边界见 [AGENTS.md](AGENTS.md)，界面基准见[设计规范](design-system/planning-portal/MASTER.md)。
+开发契约见[应用接入手册](docs/child-app-developer-guide.md)，协作边界见 [AGENTS.md](AGENTS.md)。
 
 ## 集中持久目录
 
