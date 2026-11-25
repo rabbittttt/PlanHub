@@ -5,24 +5,24 @@
   <meta name="viewport" content="width=device-width,initial-scale=1">
   <meta name="color-scheme" content="light">
   <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self'; style-src 'self'; img-src 'self' data:; connect-src 'self'; frame-src 'self'; object-src 'none'; base-uri 'none'; form-action 'self'">
-  <meta name="description" content="智选车计划部数据平台，查看销售需求、制定未来入库计划，统一访问 SOP管理与订单分析。">
+  <meta name="description" content="智选车计划部工作台，统一访问部门业务应用。">
   <meta name="theme-color" content="#f4f6f9">
-  <title>智选车计划部数据平台</title>
+  <title>智选车计划部工作台</title>
   <link rel="icon" href="./assets/favicon.ico?v=clear-p-20261119" sizes="any">
   <link rel="icon" href="./assets/favicon.svg?v=clear-p-20261119" type="image/svg+xml">
   <link rel="apple-touch-icon" href="./assets/apple-touch-icon.png?v=clear-p-20261119">
-  <link rel="stylesheet" href="./css/portal.css?v=canvas-f4f6f9">
+  <link rel="stylesheet" href="./css/portal.css?v=app-directory-1">
   <script src="./js/frame-account.js?v=parent-origin-2"></script>
-  <script type="module" src="./js/portal.js?v=frame-account-1"></script>
+  <script type="module" src="./js/portal.js?v=app-directory-1"></script>
 </head>
 <body>
   <a class="skip-link" href="#main">跳转到工作区</a>
   <div class="shell">
     <aside class="sidebar">
       <div class="sidebar-heading">
-        <a class="brand" href="#/home" aria-label="智选车计划部数据平台" title="智选车计划部数据平台">
+        <a class="brand" href="#/home" aria-label="智选车计划部工作台" title="智选车计划部工作台">
           <img class="brand-mark" src="./assets/planning-icon.svg?v=clear-p-20261119" width="36" height="36" alt="">
-          <span class="brand-copy"><span id="brand-organization" class="brand-organization">智选车</span><strong id="brand-name">计划部数据平台</strong></span>
+          <span class="brand-copy"><span id="brand-organization" class="brand-organization">智选车</span><strong id="brand-name">计划部工作台</strong></span>
         </a>
       </div>
       <nav id="primary-navigation" class="primary-navigation" aria-label="工作台导航">
@@ -35,23 +35,8 @@
     <main id="main" tabindex="-1">
       <div id="boot-state" class="empty-state" role="status"><span class="spinner"></span><h1>正在准备工作空间</h1><p>加载应用配置…</p></div>
       <section id="home-view" class="home-view page-width" hidden aria-labelledby="home-title">
-        <div class="home-heading">
-          <div><h1 id="home-title">本轮计划工作</h1><p class="home-context">围绕需求变化，制定未来各期入库计划</p></div>
-          <div class="home-heading-meta"><span class="demo-badge">DEMO · 计划周期</span><span class="home-date"><span data-icon="calendar"></span><time id="today"></time></span><button id="cycle-reset" class="secondary-button" type="button"><span data-icon="refresh"></span>重置演示</button></div>
-        </div>
-        <p id="cycle-demo-note" class="cycle-demo-notice">阶段、清单和计划窗口为演示，刷新后重置。应用入口按实际接入状态开放。</p>
-        <ol id="cycle-stages" class="cycle-stages" aria-label="演示计划阶段"></ol>
-        <div class="cycle-layout">
-          <section class="cycle-panel cycle-tasks" aria-labelledby="cycle-tasks-title">
-            <div class="cycle-panel-heading"><div><h2 id="cycle-tasks-title">本轮工作清单</h2><span id="cycle-focus"></span></div><span id="cycle-task-summary" role="status" aria-atomic="true"></span></div>
-            <div id="cycle-tasks"></div>
-          </section>
-          <aside class="cycle-aside">
-            <section class="cycle-panel" aria-labelledby="cycle-windows-title"><div class="cycle-panel-heading"><h2 id="cycle-windows-title">关注的计划窗口</h2><span>演示窗口</span></div><div id="cycle-windows"></div></section>
-            <section class="cycle-panel" aria-labelledby="cycle-records-title"><div class="cycle-panel-heading"><h2 id="cycle-records-title">本轮记录</h2><span>演示占位</span></div><div id="cycle-records" class="cycle-record-links"></div><div id="cycle-record-detail" class="cycle-record-detail" role="status" aria-atomic="true" hidden></div></section>
-          </aside>
-        </div>
-        <section class="cycle-apps" aria-labelledby="home-apps-title"><h2 id="home-apps-title">应用入口</h2><div id="home-apps" class="cycle-app-links"></div></section>
+        <h1 id="home-title">智选车计划部工作台</h1>
+        <ul id="home-apps" class="app-directory" aria-label="业务应用"></ul>
       </section>
 
       <section id="app-view" class="app-view" hidden aria-labelledby="app-title">

@@ -37,9 +37,10 @@ class AppNavigationTests(unittest.TestCase):
         self.status = {}
         self.delays = {}
         owner = self
-        config = {'platform': {'name': 'Fixture portal', 'defaultApp': 'home', 'loadTimeoutMs': 1000},
+        self.config = {'platform': {'name': 'Fixture portal', 'defaultApp': 'home', 'loadTimeoutMs': 1000},
                   'groups': [{'id': 'test', 'name': 'Fixture apps', 'apps': [
                       {'id': name, 'name': name, 'url': f'/{name}/', 'enabled': True,
+                       'description': f'Introduction for {name}',
                        'status': 'pending' if name == 'pending' else 'ready'}
                       for name in ('alpha', 'beta', 'pending')]}]}
 
@@ -64,7 +65,7 @@ class AppNavigationTests(unittest.TestCase):
                 if gate:
                     gate.wait(3)
                 if path == '/config/apps.json':
-                    body = json.dumps(config).encode()
+                    body = json.dumps(owner.config).encode()
                     kind = 'application/json'
                 elif path.startswith(('/alpha/', '/beta/', '/pending/', '/escaped/')):
                     body = (f'<!doctype html><title>{path}</title><input aria-label="draft">'
@@ -113,6 +114,35 @@ class AppNavigationTests(unittest.TestCase):
 
     def frame(self):
         return self.page.locator('#app-frame').element_handle().content_frame()
+
+    def test_home_lists_enabled_apps_and_opens_ready_apps_from_the_keyboard(self):
+        apps = self.config['groups'][0]['apps']
+        apps.extend([
+            dict(apps[0], id='paused', name='Paused', status='maintenance', url='/paused/'),
+            dict(apps[0], id='hidden', name='Hidden', enabled=False, url='/hidden/'),
+        ])
+        self.page.reload()
+        home = self.page.locator('#home-view')
+        home.wait_for(state='visible')
+        self.assertEqual(home.locator('h1').inner_text(), self.config['platform']['name'])
+        cards = home.get_by_role('listitem')
+        self.assertEqual(cards.count(), 4)
+        for app in apps:
+            if app['enabled']:
+                card = cards.filter(has=self.page.get_by_role('heading', name=app['name'], exact=True))
+                self.assertIn(app['description'], card.inner_text())
+                if app['status'] != 'ready':
+                    self.assertEqual(card.get_by_role('link').count(), 0)
+                    self.assertIn({'pending': '待接入', 'maintenance': '维护中'}[app['status']], card.inner_text())
+        self.assertEqual(home.get_by_role('heading', name='Hidden', exact=True).count(), 0)
+        links = home.get_by_role('link')
+        self.assertEqual([item.get_attribute('href') for item in links.all()], ['#/app/alpha', '#/app/beta'])
+        self.assertNotRegex(home.inner_text(), r'(?i)demo|演示|本轮工作清单')
+        links.first.focus()
+        self.page.keyboard.press('Enter')
+        self.page.wait_for_url('**/#/app/alpha')
+        self.page.wait_for_selector('#frame-overlay', state='hidden')
+        self.assertEqual(self.page.locator('iframe:visible').get_attribute('data-app'), 'alpha')
 
     def test_all_apps_preserve_documents_drafts_and_history_without_new_requests(self):
         instances = {}

@@ -1,8 +1,8 @@
 {
   "platform": {
-    "name": "智选车计划部数据平台",
+    "name": "智选车计划部工作台",
     "organization": "智选车",
-    "shortName": "计划部数据平台",
+    "shortName": "计划部工作台",
     "version": "0.2.2",
     "defaultApp": "home",
     "loadTimeoutMs": 20000,
@@ -68,7 +68,7 @@
           "id": "leads",
           "name": "线索声量",
           "subtitle": "Leads",
-          "description": "",
+          "description": "查看客户线索与声量变化。",
           "url": "/leads/",
           "icon": "users",
           "enabled": true,
@@ -99,6 +99,7 @@
         {
           "id": "vehicle-config",
           "name": "车型配置",
+          "description": "查询和维护各车型的配置资料。",
           "url": "/vehicle-config/",
           "icon": "sliders",
           "enabled": true,

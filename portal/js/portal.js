@@ -1,5 +1,4 @@
 import { validateConfig, routeFromHash, orderedApps } from './config.js';
-import { mountWorkbench } from './workbench.js?v=stage-symbols-20261120';
 
 const $ = id => document.getElementById(id);
 const paths = {
@@ -92,6 +91,28 @@ function renderNavigation() {
     $('app-nav').append(link);
   }
 }
+function renderDirectory() {
+  const list = $('home-apps');
+  list.replaceChildren();
+  for (const app of orderedApps(config.apps)) {
+    const ready = app.status === 'ready';
+    const item = element('li');
+    const card = element(ready ? 'a' : 'div', 'app-card');
+    const symbol = element('span', 'app-symbol');
+    symbol.append(icon(app.icon));
+    card.append(symbol, element('h2', 'app-name', app.name));
+    if (ready) {
+      card.href = `#/app/${app.id}`;
+      card.append(icon('arrow'));
+    } else {
+      card.append(element('span', 'app-status', labels[app.status]));
+    }
+    if (app.description) card.append(element('p', 'app-description', app.description));
+    item.append(card);
+    list.append(item);
+  }
+}
+
 function discardFrame(entry) {
   if (!entry) return;
   entry.disposed = true;
@@ -215,7 +236,7 @@ function navigate() {
   const app = config.apps.find(app => app.id === current);
   $('home-view').hidden = current !== 'home';
   $('app-view').hidden = current === 'home';
-  document.title = `${app?.name || '工作台'} · ${config.platform.name}`;
+  document.title = app ? `${app.name} · ${config.platform.name}` : config.platform.name;
   document.querySelectorAll('.nav-item').forEach(link => {
     const active = (link.dataset.app || 'home') === current;
     link.classList.toggle('active', active);
@@ -235,10 +256,11 @@ async function boot() {
     brand.title = config.platform.name;
     $('brand-organization').textContent = config.platform.organization || '智选车';
     const brandName = $('brand-name');
-    const shortName = config.platform.shortName || config.platform.name || '计划管理平台';
+    const shortName = config.platform.shortName || config.platform.name;
     if (brandName.textContent !== shortName) brandName.textContent = shortName;
-    $('today').textContent = new Intl.DateTimeFormat('zh-CN', { year: 'numeric', month: 'long', day: 'numeric', weekday: 'long', timeZone: 'Asia/Shanghai' }).format(new Date());
-    renderNavigation(); mountWorkbench($('home-view'), config.apps, icon);
+    $('home-title').textContent = config.platform.name;
+    renderNavigation();
+    renderDirectory();
     $('boot-state').hidden = true;
     navigate();
   } catch (error) {
