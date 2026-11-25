@@ -36,7 +36,13 @@
           "{basePath}"
         ]
       },
-      "useReleaseContract": true
+      "useReleaseContract": true,
+      "standalone": {
+        "entries": [
+          "serve.py",
+          "scripts/generate_html/server.py"
+        ]
+      }
     },
     "quicklook": {
       "type": "proxy",
@@ -68,7 +74,12 @@
           ]
         }
       ],
-      "useReleaseContract": true
+      "useReleaseContract": true,
+      "standalone": {
+        "launchers": [
+          "启动数据速查.cmd"
+        ]
+      }
     },
     "leads": {
       "type": "static",
