@@ -189,6 +189,9 @@ class AppNavigationTests(unittest.TestCase):
         instances = {}
         for app in ('alpha', 'beta'):
             self.navigate(app)
+            # Business pages recognize their workbench host on the very first load.
+            self.assertTrue(self.frame().evaluate(
+                """app => window.frameElement.matches(`#frame-container > iframe[data-app="${app}"]`)""", app))
             self.frame().get_by_role('textbox').fill(app + ' draft')
             instances[app] = self.frame().evaluate('window.instance')
         self.navigate('home')

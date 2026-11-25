@@ -71,6 +71,7 @@ node scripts/register-app.mjs --config config.local/new-app.json
 - 应用 ID 唯一。浏览器访问地址固定；内部新标签、新 API 无需门户逐项登记。
 - 资源、API、跳转和下载均在 `/<id>/` 内。支持前缀配置，不能抢占站点根 `/api/`、`/assets/`。
 - 页面允许被 iframe 嵌入。请勿设置 `X-Frame-Options` 或 CSP 的 `frame-ancestors`，也不要用脚本跳出 iframe。嵌入时仍适用部署环境的认证和来源校验。
+- 子应用可通过 `window.frameElement?.matches('#frame-container > iframe[data-app="<应用ID>"]')` 识别工作台的同源嵌入。此时由子应用隐藏标题左侧的产品图标并收起占位，独立打开时使用原样式。该标记仅用于界面展示。
 - 服务存活接口应轻量、只读，建议返回稳定 JSON，不依赖是否已有业务数据。需要区分数据等待或生成失败时另设就绪接口，未就绪返回非 2xx。不要用业务标题或重型数据扫描当存活探针。
 - 前台启动，监听可配置的回环端口。路径从明确基准解析；允许运行时指定数据目录。
 - 新旧程序切换使用同一份正式数据。不得启动时重置，也不同时启动两版写同一数据库。
