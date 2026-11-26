@@ -16,7 +16,7 @@ CONTROLS = {
     "forecast": ANALYTICS,
     "leads": ANALYTICS,
     "sop": (".app-brand strong", ".top-nav", None),
-    "quicklook": (".brand span:visible, .brand strong:visible", "#nav", None),
+    "quicklook": (":is(.workspace-header, .compact-header):has(#nav) .brand :is(span, strong)", "#nav", None),
     "vehicle-config": (".product-title", "header nav", "#mobile-tab"),
 }
 CANVAS = "rgb(244, 246, 249)"
@@ -77,6 +77,7 @@ def check_app(page, app_id):
 def check_tabs(page, doc, nav, active, picker, checked):
     if picker and doc.locator(picker).is_visible():
         select = doc.locator(picker)
+        expect(select).to_have_css("font-weight", "400")
         expect(select).to_be_in_viewport(ratio=0.99)
         check_keyboard_focus(page, select)
         options = select.locator("option:enabled").evaluate_all(
@@ -102,12 +103,15 @@ def check_tabs(page, doc, nav, active, picker, checked):
         if label in checked:
             continue
         try:
+            expect(button).to_have_css("font-weight", "400")
+            button.hover()
+            expect(button).to_have_css("font-weight", "400")
             button.click()
             expect(button).to_have_attribute("aria-current", "page")
             expect(active).to_have_count(1)
             expect(button).to_have_css("background-color", SELECTED)
             expect(button).to_have_css("color", ACCENT)
-            expect(button).to_have_css("font-weight", "600")
+            expect(button).to_have_css("font-weight", "400")
             expect(button).to_have_css("font-size", "14px")
             expect(button).to_be_in_viewport(ratio=0.99)
             if button.bounding_box()["height"] < 44:
