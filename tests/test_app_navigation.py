@@ -71,7 +71,7 @@ class AppNavigationTests(unittest.TestCase):
                 elif path in owner.json_responses:
                     body = json.dumps(owner.json_responses[path]).encode()
                     kind = 'application/json'
-                elif path.startswith(('/alpha/', '/beta/', '/pending/', '/escaped/')):
+                elif path.startswith(('/alpha/', '/beta/', '/pending/', '/escaped/', '/sop/', '/vehicle-config/')):
                     body = (f'<!doctype html><title>{path}</title><input aria-label="draft">'
                             '<a href="details/">Details</a><a href="/escaped/">Leave</a>'
                             '<script>window.instance=crypto.randomUUID()</script>').encode()
@@ -273,6 +273,40 @@ class AppNavigationTests(unittest.TestCase):
         cell = calendar.locator('[data-date="2027-01-06"]')
         cell.get_by_text('保留的日标注', exact=False).first.wait_for()
         self.assertTrue(calendar.get_by_role('button', name='下个月').is_enabled())
+
+    def test_business_account_reaches_sop_and_vehicle_config_on_load_switch_and_signout(self):
+        apps = self.config['groups'][0]['apps']
+        for name in ('sop', 'vehicle-config'):
+            apps.append(dict(apps[0], id=name, name=name, url=f'/{name}/'))
+        self.page.add_init_script("""window.addEventListener('message', event => {
+            if (event.source === parent && event.origin === location.origin)
+                window.lastAccount = event.data.account;
+        });""")
+        self.page.goto(self.origin + '/alpha/')
+        self.page.evaluate("""() => {
+            const portal = document.createElement('iframe');
+            portal.id = 'workbench';
+            portal.src = '/#/app/sop';
+            document.body.append(portal);
+        }""")
+        workbench = self.page.locator('#workbench').element_handle().content_frame()
+        send = """account => document.querySelector('#workbench').contentWindow.postMessage(
+            {account, roleCode:1, roleName:'计划员'}, location.origin)"""
+        workbench.wait_for_selector('#app-nav a')
+        self.page.evaluate(send, 'account-a')
+        sop = workbench.locator('#app-frame[data-app="sop"]').element_handle().content_frame()
+        sop.wait_for_function("window.lastAccount === 'account-a'")
+
+        workbench.evaluate("location.hash='/app/vehicle-config'")
+        config = workbench.locator('#app-frame[data-app="vehicle-config"]').element_handle().content_frame()
+        config.wait_for_function("window.lastAccount === 'account-a'")
+        workbench.evaluate("location.hash='/app/beta'")
+        other = workbench.locator('#app-frame[data-app="beta"]').element_handle().content_frame()
+        for account in ('account-b', ''):
+            self.page.evaluate(send, account)
+            for target in (sop, config):
+                target.wait_for_function("account => window.lastAccount === account", arg=account)
+            self.assertIsNone(other.evaluate('window.lastAccount'))
 
     def test_all_apps_preserve_documents_drafts_and_history_without_new_requests(self):
         instances = {}

@@ -65,10 +65,12 @@ test('preview streams requests through the authenticated portal and replaces all
   const page=await request(f.port);assert.equal(page.status,200);assert.equal(page.body,'unchanged portal page');
   const forged={Host:'127.0.0.1:4173',Origin:LOCAL_PREVIEW_ORIGIN,'Sec-Fetch-Site':'same-origin','Content-Type':'application/json','X-PlanHub-Key':'forged','X-PlanHub-User':'DEPT\\mallory','X-Config-User':'forged','X-Config-Proxy-Key':'forged','X-SOP-User':'forged','X-SOP-Proxy-Key':'forged','X-Forwarded-User':'forged',Forwarded:'for=attacker'};
   const body=JSON.stringify({text:'preserve original bytes 汉字',quantity:12});
-  const result=await request(f.port,{method:'POST',url:'/vehicle-config/api/anything/nested?value=one%20two',headers:forged,body});
+  const identity=encodeURIComponent(JSON.stringify({account:'业务账号',roleCode:'0',roleName:'计划员'}));
+  const result=await request(f.port,{method:'POST',url:'/vehicle-config/api/anything/nested?value=one%20two',headers:{...forged,'Sop-Frame-Identity':identity},body});
   assert.equal(result.status,201);assert.equal(JSON.parse(result.body).actor,'DEPT\\alice');
   const call=f.calls.at(-1);assert.equal(call.method,'POST');assert.equal(call.path,'/api/anything/nested?value=one%20two');assert.equal(call.body,body);
   assert.equal(call.headers.host,'127.0.0.1:4173');assert.equal(call.headers.origin,LOCAL_PREVIEW_ORIGIN);
+  assert.equal(call.headers['sop-frame-identity'],identity);
   assert.equal(call.headers['x-config-user'],'DEPT\\alice');assert.equal(call.headers['x-config-proxy-key'],f.config.vehicleSecret);
   for(const header of ['x-planhub-key','x-planhub-user','x-sop-user','x-sop-proxy-key','x-forwarded-user','forwarded'])assert.equal(call.headers[header],undefined);
   for(const header of ['x-planhub-key','x-config-proxy-key','x-sop-proxy-key'])assert.equal(result.headers[header],undefined);

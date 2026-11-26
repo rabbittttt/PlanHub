@@ -33,12 +33,13 @@ const labels = { ready: '已接入', pending: '待接入', maintenance: '维护�
 let config, calendar, current = 'home', sequence = 0, controller, timer, activeFrame;
 const appFrames = new Map();
 
-function deliverSopAccount(entry) {
-  if (entry?.ready && !entry.disposed && entry.app.id === 'sop' && frameIsValid(entry)) {
+const accountApps = new Set(['sop', 'vehicle-config']);
+function deliverFrameAccount(entry) {
+  if (entry.ready && !entry.disposed && accountApps.has(entry.app.id) && frameIsValid(entry)) {
     window.planHubFrameAccount.send(entry.node.contentWindow);
   }
 }
-window.addEventListener('planhub-account-change', () => deliverSopAccount(appFrames.get('sop')));
+window.addEventListener('planhub-account-change', () => appFrames.forEach(deliverFrameAccount));
 
 function element(tag, className, text) {
   const node = document.createElement(tag);
@@ -268,7 +269,7 @@ async function openApp(app, { reload = false } = {}) {
         return;
       }
       entry.ready = true;
-      deliverSopAccount(entry);
+      deliverFrameAccount(entry);
       if (activeFrame === entry) {
         clearTimeout(timer);
         $('frame-overlay').hidden = true;
