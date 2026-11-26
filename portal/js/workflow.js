@@ -13,7 +13,7 @@ export const stages = [
     tasks: [
       { title: '复核车型销量预测', appId: 'forecast' },
       { title: '对照近期订单变化', appId: 'orderiq' },
-      { title: '查看客户线索与声量', appId: 'leads' }
+      { title: '查看声量与客户线索', appId: 'leads' }
     ]
   },
   {

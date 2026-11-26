@@ -8,6 +8,11 @@
     "type": "static",
     "healthPath": "/"
   },
+  "boutique": {
+    "stripPrefix": true,
+    "type": "static",
+    "healthPath": "/"
+  },
   "orderiq": {
     "arguments": [
       "-B",

@@ -96,12 +96,14 @@ test('concurrent configuration edits are preserved instead of overwritten',async
   await assert.rejects(lstat(path.join(f.root,'config.local/register-app.lock')),/ENOENT/);
 });
 
-test('leads integration uses its unchanged standalone placeholder and orderiq stays dynamic',async()=>{
+test('both static dashboards use their own HTML entry and orderiq stays dynamic',async()=>{
   const root=path.resolve(path.dirname(fileURLToPath(import.meta.url)),'..');
   const registry=await readJson(root,'portal/config/apps.json'),defaults=await readJson(root,'integration/apps.json');
-  const leads=registry.groups.flatMap(g=>g.apps).find(a=>a.id==='leads');
-  assert.equal(leads.name,'线索声量');assert.equal(leads.status,'ready');
-  assert.deepEqual(defaults.applications.leads,{type:'static',root:'../线索声量',entry:'lead-dashboard.html',publicPaths:['lead-dashboard.html']});
+  for (const [id,name,entry] of [['leads','声量线索','lead-dashboard.html'],['boutique','精品附件','boutique-dashboard.html']]) {
+    const app=registry.groups.flatMap(g=>g.apps).find(a=>a.id===id);
+    assert.equal(app.name,name);assert.equal(app.status,'ready');assert.equal(app.url,'/'+id+'/');
+    assert.deepEqual(defaults.applications[id],{type:'static',root:'../'+name,entry,publicPaths:[entry]});
+  }
   assert.equal(defaults.applications.orderiq.type,'proxy');
   assert.equal((await readJson(root,'deploy/docker/bindings.json')).orderiq.type,'service');
 });

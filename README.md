@@ -1,6 +1,6 @@
 # 智选车计划部工作台 · PlanHub
 
-首页按四个阶段整理计划工作。选择阶段后，可从工作清单进入对应的业务网页。订单日历按日期展示订单批注和阶段事件，每行左侧显示 ISO 周次，计划记录可进入 SOP管理查看。首页底部保留 SOP管理、订单分析、销量预测、线索声量、数据速查和车型配置的介绍与链接。
+首页按四个阶段整理计划工作。选择阶段后，可从工作清单进入对应的业务网页。订单日历按日期展示订单批注和阶段事件，每行左侧显示 ISO 周次，计划记录可进入 SOP管理查看。首页底部保留 SOP管理、订单分析、销量预测、声量线索、精品附件、数据速查和车型配置的介绍与链接。
 
 ## 从 A 打包，到 B 试运行和部署
 
@@ -36,11 +36,12 @@
 | sop | `../SOP维护` | `/sop/` |
 | orderiq | `../订单分析/scripts` | `/orderiq/` |
 | forecast | `../销量预测` | `/forecast/` |
-| leads | `../线索声量` | `/leads/` |
+| leads | `../声量线索/lead-dashboard.html` | `/leads/` |
+| boutique | `../精品附件/boutique-dashboard.html` | `/boutique/` |
 | quicklook | `../数据速查` | `/quicklook/` |
 | vehicle-config | `../配置管理` | `/vehicle-config/` |
 
-线索声量当前接入文件是样例，正式发布必须换成内网真实页面。
+声量线索和精品附件直接读取各自项目的 HTML。正式发布前，请在内网 A 机核对两个入口都是对应的业务页面。
 
 开发契约见[应用接入手册](docs/child-app-developer-guide.md)，协作边界见 [AGENTS.md](AGENTS.md)。
 

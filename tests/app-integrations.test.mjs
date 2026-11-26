@@ -86,10 +86,10 @@ test('static packaging preserves original bytes, excludes unrelated data and bac
   assert.equal(await readFile(path.join(f.release,'secret.json'),'utf8'),'not public');
 });
 
-test('configured navigation order removes inventory and places vehicle configuration after quicklook',async()=>{
+test('configured navigation places boutique after leads and vehicle configuration after quicklook',async()=>{
   const raw=JSON.parse(await readFile(new URL('../portal/config/apps.json',import.meta.url),'utf8'));
   const config=validateConfig(raw);
-  assert.deepEqual(orderedApps(config.apps).map(a=>a.id),['sop','orderiq','forecast','leads','quicklook','vehicle-config']);
+  assert.deepEqual(orderedApps(config.apps).map(a=>a.id),['sop','orderiq','forecast','leads','boutique','quicklook','vehicle-config']);
   assert.equal(config.apps.find(a=>a.id==='forecast').status,'ready');
 });
 

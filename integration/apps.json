@@ -83,7 +83,7 @@
     },
     "leads": {
       "type": "static",
-      "root": "../线索声量",
+      "root": "../声量线索",
       "entry": "lead-dashboard.html",
       "publicPaths": [
         "lead-dashboard.html"
@@ -108,6 +108,14 @@
         ]
       },
       "useReleaseContract": true
+    },
+    "boutique": {
+      "type": "static",
+      "root": "../精品附件",
+      "entry": "boutique-dashboard.html",
+      "publicPaths": [
+        "boutique-dashboard.html"
+      ]
     }
   },
   "dataRoot": "../工作台数据"

@@ -66,9 +66,9 @@
       "apps": [
         {
           "id": "leads",
-          "name": "线索声量",
+          "name": "声量线索",
           "subtitle": "Leads",
-          "description": "查看客户线索与声量变化。",
+          "description": "查看声量变化与客户线索。",
           "url": "/leads/",
           "icon": "users",
           "enabled": true,
@@ -76,6 +76,16 @@
           "version": null,
           "dataUpdatedAt": null,
           "order": 40
+        },
+        {
+          "id": "boutique",
+          "name": "精品附件",
+          "description": "查看精品附件看板。",
+          "url": "/boutique/",
+          "icon": "box",
+          "enabled": true,
+          "status": "ready",
+          "order": 45
         }
       ]
     },

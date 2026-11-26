@@ -34,10 +34,11 @@ async function fakeRuntime(output,{requirements}){
 }
 test('delivery packages unchanged releases, Windows runtime and Linux materials without Docker',async t=>{
   const base=await temporary(t);
-  const portal=await release(base,'planhub',{'index.html':'portal','config/apps.json':JSON.stringify({groups:[{apps:[{id:'leads',enabled:true}]}]})});
+  const portal=await release(base,'planhub',{'index.html':'portal','config/apps.json':JSON.stringify({groups:[{apps:[{id:'leads',enabled:true},{id:'boutique',enabled:true}]}]})});
   const leads=await release(base,'leads',{'index.html':'original child page'}),before=await hashFile(path.join(leads,'app-release.json'));
+  const boutique=await release(base,'boutique',{'index.html':'boutique fixture'});
   const destination=path.join(base,'delivery');
-  await buildDelivery([portal,leads],destination,{complete:true,collectRuntime:fakeRuntime});
+  await buildDelivery([portal,leads,boutique],destination,{complete:true,collectRuntime:fakeRuntime});
   assert.equal(await hashFile(path.join(leads,'app-release.json')),before);
   const names=await readdir(destination);assert.ok(names.every(name=>/^[\x20-\x7e]+$/.test(name)));assert.ok(!names.includes('images.tar'));
   for(const name of ['prepare.cmd','preview.cmd','stop-preview.cmd','build-docker.cmd','start-docker.cmd','stop-docker.cmd','runtime','releases','launcher','docker'])assert.ok(names.includes(name));
@@ -45,16 +46,18 @@ test('delivery packages unchanged releases, Windows runtime and Linux materials 
   assert.ok(!names.includes('start.cmd')&&!names.includes('stop.cmd'));
   const {manifest}=await validateDelivery(destination,{requireComplete:true}),compose=JSON.parse(await readFile(path.join(destination,'compose.json')));
   for(const [name,hash] of Object.entries(manifest.files))assert.equal(await hashFile(path.join(destination,name)),hash);
-  assert.deepEqual(manifest.applications,['planhub','leads']);assert.equal(manifest.complete,true);
+  assert.deepEqual(manifest.applications,['planhub','leads','boutique']);assert.equal(manifest.complete,true);
   assert.equal(compose.services.leads.network_mode,'service:network');assert.equal(compose.services.leads.pull_policy,'never');
   assert.equal(compose.services.leads.volumes[0].target,'/runtime');assert.equal(compose.services.leads.read_only,true);
   assert.equal(Object.values(compose.services).filter(v=>v.ports).length,1);
   assert.equal(await readFile(path.join(destination,'releases/leads/payload/index.html'),'utf8'),'original child page');
   assert.equal(await hashFile(path.join(destination,'releases/leads/app-release.json')),before);
+  assert.equal(await readFile(path.join(destination,'releases/boutique/payload/index.html'),'utf8'),'boutique fixture');
+  assert.equal(compose.services.boutique.network_mode,'service:network');
   const dockerfile=await readFile(path.join(destination,'docker/leads.Dockerfile'),'utf8');
   assert.match(dockerfile,/COPY releases\/leads \.\/release/);assert.doesNotMatch(dockerfile,/runtime\/node|runtime\/python/);
   assert.match(await readFile(path.join(destination,'.dockerignore'),'utf8'),/^\*\*/);
-  await assert.rejects(buildDelivery([portal,leads],destination,{complete:true,collectRuntime:fakeRuntime}),/exists/);
+  await assert.rejects(buildDelivery([portal,leads,boutique],destination,{complete:true,collectRuntime:fakeRuntime}),/exists/);
   await assert.rejects(buildDelivery([portal],path.join(base,'incomplete'),{complete:true,collectRuntime:fakeRuntime}),/Incomplete/);
   await writeFile(path.join(destination,'runtime/node/node.exe'),'corrupted');await assert.rejects(validateDelivery(destination),/damaged/);
   await writeFile(path.join(leads,'payload/index.html'),'tampered');

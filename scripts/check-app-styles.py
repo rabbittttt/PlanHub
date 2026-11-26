@@ -15,6 +15,7 @@ CONTROLS = {
     "orderiq": ANALYTICS,
     "forecast": ANALYTICS,
     "leads": ANALYTICS,
+    "boutique": ANALYTICS,
     "sop": (".app-brand strong", ".top-nav", None),
     "quicklook": (":is(.workspace-header, .compact-header):has(#nav) .brand :is(span, strong)", "#nav", None),
     "vehicle-config": (".product-title", "header nav", "#mobile-tab"),
