@@ -41,7 +41,7 @@
 | quicklook | `../数据速查` | `/quicklook/` |
 | vehicle-config | `../配置管理` | `/vehicle-config/` |
 
-声量线索和精品附件直接读取各自项目的 HTML。正式发布前，请在内网 A 机核对两个入口都是对应的业务页面。
+默认配置下，如果同级没有 `声量线索/` 目录，开发联调和打包都会读取旧目录的 `../线索声量/lead-dashboard.html`。正式发布时，请在 A 打开声量线索和精品附件的 HTML，确认两份都是内网业务页面。自定义路径见[部署说明第一步](docs/deployment.md#第一步-在-a-准备源码)。
 
 开发契约见[应用接入手册](docs/child-app-developer-guide.md)，协作边界见 [AGENTS.md](AGENTS.md)。
 

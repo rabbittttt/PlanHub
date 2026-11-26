@@ -102,7 +102,9 @@ test('both static dashboards use their own HTML entry and orderiq stays dynamic'
   for (const [id,name,entry] of [['leads','声量线索','lead-dashboard.html'],['boutique','精品附件','boutique-dashboard.html']]) {
     const app=registry.groups.flatMap(g=>g.apps).find(a=>a.id===id);
     assert.equal(app.name,name);assert.equal(app.status,'ready');assert.equal(app.url,'/'+id+'/');
-    assert.deepEqual(defaults.applications[id],{type:'static',root:'../'+name,entry,publicPaths:[entry]});
+    const expected={type:'static',root:'../'+name,entry,publicPaths:[entry]};
+    if(id==='leads')expected.previousRoot='../线索声量';
+    assert.deepEqual(defaults.applications[id],expected);
   }
   assert.equal(defaults.applications.orderiq.type,'proxy');
   assert.equal((await readJson(root,'deploy/docker/bindings.json')).orderiq.type,'service');

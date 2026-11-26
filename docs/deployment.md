@@ -4,15 +4,17 @@
 
 ## 第一步 在 A 准备源码
 
-1. 在 A 打开能看到 `发布应用.bat` 的门户源码目录。更新门户和所有已启用的子应用，确认 A 上的 Windows 64 位 Node.js、Python 构建环境和各应用依赖可用。打开下面两个 HTML，核对各自显示的业务内容。打包会原样收集这两个静态网页。
+1. 在 A 打开能看到 `发布应用.bat` 的门户源码目录。更新门户和所有已启用的子应用，确认 A 上的 Windows 64 位 Node.js、Python 构建环境和各应用依赖可用。打开下面两个 HTML，核对各自显示的业务内容。正式包只用内网业务页面，接入样例仅供测试。
 
    | 门户显示顺序 | A 上的默认文件 | 发布后的入口 |
    |---|---|---|
    | 声量线索 | `../声量线索/lead-dashboard.html` | `/leads/` |
    | 精品附件 | `../精品附件/boutique-dashboard.html` | `/boutique/` |
 
+   A 还沿用旧目录名 **线索声量** 时，可以原地打包。默认先找 `../声量线索/`，只有这个目录不存在时才读取 `../线索声量/lead-dashboard.html`。若新目录已存在但缺少入口文件，打包会报错。B 上照常使用包内的 `/leads/` 入口。
+
 2. 双击门户源码目录里的 **`发布应用.bat`**。首次运行会自动创建 `config.local/publish.json`。如果项目按默认目录摆放，且共用 `../.venv/Scripts/python.exe`，留在编号菜单，继续第二步。
-3. 仅当路径有差异时，关闭菜单。静态网页放在其他位置时，在 `config.local/apps.json` 的 `applications.leads` 或 `applications.boutique` 下填写 `root`（目录）、`entry`（入口文件）和 `publicPaths`（随包收集的文件）。若曾为声量线索单独填过旧目录，在这里更新。动态应用的源码目录、构建程序和随包交付的 Python 在 `config.local/publish.json` 中设置。保存后重新双击 `发布应用.bat`。
+3. 仅当路径有差异时，关闭菜单。静态网页放在其他位置时，在 `config.local/apps.json` 的 `applications.leads` 或 `applications.boutique` 下填写 `root`（目录）、`entry`（入口文件）和 `publicPaths`（随包收集的文件）。若已填写 `applications.leads.root`，工具只查这个目录。动态应用的源码目录、构建程序和随包交付的 Python 在 `config.local/publish.json` 中设置。保存后重新双击 `发布应用.bat`。
 
 ## 第二步 在 A 打完整包并复制到 B
 

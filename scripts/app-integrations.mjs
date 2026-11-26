@@ -1,5 +1,5 @@
 // Portal-owned integration metadata only; child source and responses remain unchanged.
-import {readFile} from 'node:fs/promises';
+import {lstat,readFile} from 'node:fs/promises';
 import path from 'node:path';
 import {HEALTH_PATH,STOP_PATH} from './portal-instance.mjs';
 import {readServicePorts} from './service-ports.mjs';
@@ -26,6 +26,16 @@ function fixedProbePath(value) {
 }
 export function publicFile(app, relative) {
   return app.publicPaths.some(p=>p.endsWith('/')?relative.startsWith(p):relative===p);
+}
+
+async function selectStaticRoot(current, previous) {
+  // An incomplete or inaccessible current directory still owns this application.
+  try { await lstat(current); return current; }
+  catch (error) { if (error.code !== 'ENOENT') return current; }
+
+  try { if ((await lstat(previous)).isDirectory()) return previous; }
+  catch (error) { if (error.code !== 'ENOENT') return previous; }
+  return current;
 }
 // Only these reserved placeholders belong to the portal. Other braces belong to the app.
 function expandServiceValue(value,bindings) {
@@ -104,6 +114,12 @@ export async function loadAppIntegrations(root,{env=process.env}={}) {
     if(app.type==='static') {
       if(typeof app.root!=='string'||!app.root.trim()||!relativeFile(app.entry)||!Array.isArray(app.publicPaths)||!app.publicPaths.every(relativeFile)||!publicFile(app,app.entry))throw new Error('无效静态接入: '+id);
       app.root=path.resolve(root,app.root);
+      if(override && Object.hasOwn(override,'root')) delete app.previousRoot;
+      if(app.previousRoot !== undefined) {
+        if(typeof app.previousRoot !== 'string' || !app.previousRoot.trim()) throw new Error('无效静态应用原目录: '+id);
+        app.previousRoot=path.resolve(root,app.previousRoot);
+        app.root=await selectStaticRoot(app.root,app.previousRoot);
+      }
     } else if(app.type==='proxy') {
       if(typeof app.target==='string'&&app.target.includes('{port}')) {
         if(!ports||!Object.hasOwn(ports.applications,id))throw new Error('应用默认端口未登记到 integration/ports.json: '+id);

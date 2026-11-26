@@ -84,6 +84,7 @@
     "leads": {
       "type": "static",
       "root": "../声量线索",
+      "previousRoot": "../线索声量",
       "entry": "lead-dashboard.html",
       "publicPaths": [
         "lead-dashboard.html"

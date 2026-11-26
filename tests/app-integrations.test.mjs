@@ -42,6 +42,58 @@ test('relative mounts survive a complete workspace move and expose only release 
   assert.equal((await fetch(origin+'/forecast/forecast_assets/leak.json')).status,403);
 });
 
+test('the previous leads folder serves and packages the original bytes until the new folder exists',async t=>{
+  const {root}=await fixture(t);
+  const {applications:{leads,boutique}}=JSON.parse(await readFile(new URL('../integration/apps.json',import.meta.url),'utf8'));
+  await writeFile(path.join(root,'integration/apps.json'),JSON.stringify({applications:{leads,boutique}}));
+  const previous=path.resolve(root,'../线索声量'),current=path.resolve(root,'../声量线索');
+  const body=Buffer.from('\uFEFF<!doctype html>\r\n<title>临时网页</title>\r\n');
+  let apps=await loadAppIntegrations(root);
+  await assert.rejects(prepareStaticApp(root,'leads',apps.leads),error=>{
+    for(const text of ['声量线索','线索声量','config.local/apps.json'])assert.ok(error.message.includes(text),error.message);
+    return true;
+  });
+
+  await mkdir(previous);
+  await writeFile(path.join(previous,leads.entry),body);
+  apps=await loadAppIntegrations(root);
+  assert.equal(apps.leads.root,previous);
+  assert.equal(apps.boutique.root,path.resolve(root,'../精品附件'));
+  const origin=await listen(t,createServer({root,applications:apps}));
+  const response=await fetch(origin+'/leads/');
+  assert.equal(response.status,200);
+  assert.deepEqual(Buffer.from(await response.arrayBuffer()),body);
+  await prepareStaticApp(root,'leads',apps.leads);
+  assert.deepEqual(await readFile(path.join(root,'apps/leads/index.html')),body);
+
+  await mkdir(current);
+  apps=await loadAppIntegrations(root);
+  assert.equal(apps.leads.root,current);
+  await assert.rejects(prepareStaticApp(root,'leads',apps.leads),/lead-dashboard\.html/);
+  const currentBody=Buffer.from('<title>新版</title>');
+  await writeFile(path.join(current,leads.entry),currentBody);
+  await prepareStaticApp(root,'leads',(await loadAppIntegrations(root)).leads);
+  assert.deepEqual(await readFile(path.join(root,'apps/leads/index.html')),currentBody);
+});
+
+test('an explicit static root controls collection even when the historical folder is present',async t=>{
+  const {root}=await fixture(t);
+  const {applications:{leads}}=JSON.parse(await readFile(new URL('../integration/apps.json',import.meta.url),'utf8'));
+  await writeFile(path.join(root,'integration/apps.json'),JSON.stringify({applications:{leads}}));
+  const previous=path.resolve(root,'../线索声量'),custom=path.resolve(root,'../custom');
+  await mkdir(previous);
+  await writeFile(path.join(previous,leads.entry),'previous');
+  await writeFile(path.join(root,'config.local/apps.json'),JSON.stringify({applications:{leads:{root:'../custom'}}}));
+  let app=(await loadAppIntegrations(root)).leads;
+  assert.equal(app.root,custom);
+  await assert.rejects(prepareStaticApp(root,'leads',app),/custom/);
+  await mkdir(custom);
+  await writeFile(path.join(custom,leads.entry),'explicit');
+  app=(await loadAppIntegrations(root)).leads;
+  await prepareStaticApp(root,'leads',app);
+  assert.equal(await readFile(path.join(root,'apps/leads/index.html'),'utf8'),'explicit');
+});
+
 test('proxy preserves request body, public origin, status and security headers without sharing SOP identity',async t=>{
   const f=await fixture(t);const received=[];
   const upstream=http.createServer(async(req,res)=>{
