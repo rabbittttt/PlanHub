@@ -119,7 +119,7 @@ try {
     $configHash=(Get-FileHash -LiteralPath $configFile).Hash
     $state=$null;if(Test-Path -LiteralPath $stateFile){$state=Get-Content -LiteralPath $stateFile -Raw -Encoding UTF8|ConvertFrom-Json}
     if(-not $wholeStack){
-        if($null -eq $state -or -not $state.running){throw 'First deployment requires all applications (selection 0 or 8 on A).'}
+        if($null -eq $state -or -not $state.running){throw 'First deployment requires all applications (selection 0 or 1 on A).'}
         if($state.configHash -cne $configHash -or $state.contractHash -cne $manifest.contractHash){throw 'Runtime configuration or startup contracts changed. Use a complete package.'}
         $networkId=Invoke-DeliveryDocker -Arguments @('ps','-aq','--filter','label=com.docker.compose.project=planhub','--filter','label=com.docker.compose.service=network') -Capture
         if(-not $networkId){throw 'The shared network service is not running. Use a complete package.'}

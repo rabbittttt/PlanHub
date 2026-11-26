@@ -4,14 +4,19 @@
 
 ## 第一步 在 A 准备源码
 
-1. 在 A 打开能看到 `发布应用.bat` 的门户源码目录。更新门户和所有已启用的子应用，确认 A 上的 Windows 64 位 Node.js、Python 构建环境和各应用依赖可用。确认声量线索的 `../声量线索/lead-dashboard.html` 和精品附件的 `../精品附件/boutique-dashboard.html` 均为内网实际业务页面。
+1. 在 A 打开能看到 `发布应用.bat` 的门户源码目录。更新门户和所有已启用的子应用，确认 A 上的 Windows 64 位 Node.js、Python 构建环境和各应用依赖可用。打开下面两个 HTML，核对各自显示的业务内容。打包会原样收集这两个静态网页。
+
+   | 门户显示顺序 | A 上的默认文件 | 发布后的入口 |
+   |---|---|---|
+   | 声量线索 | `../声量线索/lead-dashboard.html` | `/leads/` |
+   | 精品附件 | `../精品附件/boutique-dashboard.html` | `/boutique/` |
 
 2. 双击门户源码目录里的 **`发布应用.bat`**。首次运行会自动创建 `config.local/publish.json`。如果项目按默认目录摆放，且共用 `../.venv/Scripts/python.exe`，留在编号菜单，继续第二步。
-3. 仅当路径有差异时，关闭菜单，用记事本打开 `config.local/publish.json`。核对各应用的 `sourceRoot`（源码目录）、`build.command`（构建程序）和 `runtimePython`（随包交付的 Python）。保存后重新双击 `发布应用.bat`。
+3. 仅当路径有差异时，关闭菜单。静态网页放在其他位置时，在 `config.local/apps.json` 的 `applications.leads` 或 `applications.boutique` 下填写 `root`（目录）、`entry`（入口文件）和 `publicPaths`（随包收集的文件）。若曾为声量线索单独填过旧目录，在这里更新。动态应用的源码目录、构建程序和随包交付的 Python 在 `config.local/publish.json` 中设置。保存后重新双击 `发布应用.bat`。
 
 ## 第二步 在 A 打完整包并复制到 B
 
-1. 首次交付在 A 的 `发布应用.bat` 菜单选 **`0`**（全部应用和 Windows 环境）。以后更新程序选 **`8`**（全部应用，复用 B 上的环境）。两种包都有 `preview.cmd`。等窗口显示“打包完成”，资源管理器会选中 `release/planhub-时间戳/`。
+1. 首次交付在 A 的 `发布应用.bat` 菜单选 **`0`**（全部应用和 Windows 环境）。以后更新程序选 **`1`**（全部应用，复用 B 上的环境）。两种包都有 `preview.cmd`。等窗口显示“打包完成”，资源管理器会选中 `release/planhub-时间戳/`。
 2. 在 B 选一个长期保留的位置，新建或打开 `planhub/` 文件夹。把 A 上**选中的整个版本文件夹**复制进去。在 B 打开 `planhub/planhub-时间戳/`，确认能看到 `prepare.cmd` 和 `preview.cmd`。
 
 ## 第三步 在 B 放好数据并试运行
@@ -88,7 +93,7 @@ Windows 试运行直接读取 B 的 `planhub-runtime/`。正式部署时，Docke
 
 ### B 正在本机试运行时更新程序
 
-1. 在 A 选 **`8`**。把新版本文件夹复制到 B，和旧包、`planhub-runtime/` 并排放好。保留同层一个可用的 `0` 包供复用环境。提示环境缺失或不兼容时，在 A 选 `0` 重新打包。
+1. 在 A 选 **`1`**。把新版本文件夹复制到 B，和旧包、`planhub-runtime/` 并排放好。保留同层一个可用的 `0` 包供复用环境。提示环境缺失或不兼容时，在 A 选 `0` 重新打包。
 2. 在旧看板保存正在编辑的内容，等导入、导出和后台维护结束。**直接双击新包的 `preview.cmd`**，跳过 `stop-preview.cmd` 和 `prepare.cmd`。校验新包和环境期间旧服务继续工作；校验失败时仍可用旧版。
 3. 窗口开始切换后，暂停查询和保存。等窗口显示新版就绪，使用自动打开的新页面。网址仍使用 `4173` 端口。若要继续用原来的标签页，先刷新整个工作台。
 
@@ -96,7 +101,7 @@ Windows 试运行直接读取 B 的 `planhub-runtime/`。正式部署时，Docke
 
 ### B 已运行 Docker 正式服务时更新程序
 
-- **更新程序**：A 选 `8`，把新包复制到 B。在新包双击 `build-docker.cmd`，构建成功、当前业务操作结束后再双击 `start-docker.cmd`，按第五步验收。若要切回 Windows 本机试运行，先由部署同事用完整包停止 Docker。
+- **更新程序**：A 选 `1`，把新包复制到 B。在新包双击 `build-docker.cmd`，构建成功、当前业务操作结束后再双击 `start-docker.cmd`，按第五步验收。若要切回 Windows 本机试运行，先由部署同事用完整包停止 Docker。
 
 ### 更新数据或配置
 

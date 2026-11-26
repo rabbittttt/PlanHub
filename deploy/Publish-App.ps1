@@ -13,7 +13,7 @@ param(
 )
 $ErrorActionPreference='Stop'
 if($BuildOnly -and (-not $AppId -or $All -or $WithoutRuntime)){throw 'BuildOnly stages one application and cannot create a delivery.'}
-if(($AppId -or $ReleasePath) -and -not $BuildOnly){throw '单个应用不能单独交付。请选 0 或 8 打包整套工作台。'}
+if(($AppId -or $ReleasePath) -and -not $BuildOnly){throw '单个应用不能单独交付。请选 0 或 1 打包整套工作台。'}
 . (Join-Path $PSScriptRoot 'Publish.Common.ps1')
 $root=Split-Path -Parent $PSScriptRoot
 Set-Location -LiteralPath $root
@@ -33,11 +33,11 @@ $apps+=@($registry.groups | ForEach-Object {$_.apps} | Where-Object {$_.enabled}
 if (-not $BuildOnly -and -not $All) {
     if($NonInteractive){throw 'Use -All to package all applications, optionally with -WithoutRuntime.'}
     Write-Host '0. 打包全部应用及 Windows 运行环境（首次交付选此项）'
-    Write-Host '8. 打包全部应用，仅程序（B 复用旧完整包的运行环境）'
-    $selected=Read-Host '选择打包方式（0 或 8）'
-    if($selected -notin @('0','8')){throw '请输入 0 或 8。'}
+    Write-Host '1. 打包全部应用，仅程序（B 复用旧完整包的运行环境）'
+    $selected=Read-Host '选择打包方式（0 或 1）'
+    if($selected -notin @('0','1')){throw '请输入 0 或 1。'}
     $All=$true
-    $WithoutRuntime=$selected -eq '8'
+    $WithoutRuntime=$selected -eq '1'
 }
 if($All -and -not $WithoutRuntime){
     & node (Join-Path $root 'scripts/build-delivery.mjs') --check-node-runtime | Out-Host

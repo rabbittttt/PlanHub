@@ -105,7 +105,7 @@ No-Link $source;No-Link $previewRoot
 if((Within $source $previewRoot) -or (Within $previewRoot $source) -or (Within $package $source) -or (Within $source $package)){throw 'Preview snapshots, source data and the package must be separate directories.'}
 if($Action -eq 'Start'){Write-Host '正在检查发布包和 Windows 运行环境…'}
 $manifest=& (Join-Path $package 'deploy.ps1') -Action Validate
-if(-not $manifest.complete){throw 'Use a complete package built with selection 0 or 8 for local preview.'}
+if(-not $manifest.complete){throw 'Use a complete package built with selection 0 or 1 for local preview.'}
 $runtimeHelper=Join-Path $package 'runtime-common.ps1';No-Link $runtimeHelper
 if(-not(Test-Path -LiteralPath $runtimeHelper -PathType Leaf)){throw 'Runtime resolver is missing. Copy the complete delivery folder again.'}
 . $runtimeHelper

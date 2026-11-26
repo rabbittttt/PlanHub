@@ -53,8 +53,10 @@ try {
         $global:LASTEXITCODE=0
     }
     Reject {& $publish -AppId planhub -Version docker-v2 -ConfigPath $config -NonInteractive}
-    function Read-Host {return '1'}
-    Reject {& $publish -ConfigPath $config}
+    function Read-Host {return '8'}
+    $selectionError=$null
+    try { & $publish -ConfigPath $config } catch { $selectionError=$_.Exception.Message }
+    Check ($selectionError -eq '请输入 0 或 1。') 'The retired menu choice must be rejected before building'
     Remove-Item Function:Read-Host
     Check (-not (Test-Path -LiteralPath (Join-Path $fixture 'release'))) 'Single-app requests must not produce a delivery'
     Put (Join-Path $fixture 'portal/config/apps.json') '{"groups":[]}'
@@ -63,6 +65,12 @@ try {
     Check (Test-Path -LiteralPath $all.deliveryPath -PathType Container) 'Selection 0 did not return a delivery folder'
     Check ($publishTestState.deliveryArgs.Count -eq 6) 'Complete package did not receive the built releases and runtime executable'
     $preflights=$publishTestState.runtimePreflights
+    function Read-Host {return '1'}
+    function Start-Process {} # Suppress opening Explorer for the interactive fixture.
+    & $publish -Version menu-v1 -ConfigPath $config
+    Remove-Item Function:Read-Host,Function:Start-Process
+    Check ($publishTestState.deliveryArgs[1] -eq '--complete' -and $publishTestState.deliveryArgs[2] -eq '--without-runtime') 'Menu selection 1 must build all applications without the Windows runtime'
+    Check ($publishTestState.runtimePreflights -eq $preflights) 'Menu selection 1 should skip the Windows runtime preflight'
     $programOnly=& $publish -All -WithoutRuntime -Version all-code-v4 -ConfigPath $config -NonInteractive
     Check ($publishTestState.deliveryArgs[1] -eq '--complete' -and $publishTestState.deliveryArgs[2] -eq '--without-runtime') 'Program-only delivery must include the complete application set and omit Windows runtime'
     Check ($publishTestState.runtimePreflights -eq $preflights) 'Program-only update must skip the Windows runtime license preflight'

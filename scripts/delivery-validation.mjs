@@ -62,7 +62,7 @@ export function validateBindings(bindings,releases){
 export async function validateDelivery(packageRoot,{requireComplete=false}={}){
   const root=path.resolve(packageRoot);await noLinks(root);
   const manifest=await readJson(path.join(root,'delivery.json'));
-  if(manifest.schemaVersion!==DELIVERY_SCHEMA||manifest.platform!==DELIVERY_PLATFORM||typeof manifest.complete!=='boolean'||(requireComplete&&!manifest.complete))throw new Error('Use a complete current delivery folder (selection 0 or 8) for local preview.');
+  if(manifest.schemaVersion!==DELIVERY_SCHEMA||manifest.platform!==DELIVERY_PLATFORM||typeof manifest.complete!=='boolean'||(requireComplete&&!manifest.complete))throw new Error('Use a complete current delivery folder (selection 0 or 1) for local preview.');
   const runtimeMode=manifest.runtimeMode??'included';
   if(!['included',manifest.complete?'reuse':'none'].includes(runtimeMode))throw new Error('Invalid Windows runtime mode.');
   if(!Array.isArray(manifest.applications)||!manifest.applications.length||new Set(manifest.applications).size!==manifest.applications.length||manifest.applications.some(id=>!/^[a-z][a-z0-9-]{0,39}$/.test(id)||id==='network'))throw new Error('Invalid delivery application set');
