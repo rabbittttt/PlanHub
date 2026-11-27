@@ -43,15 +43,19 @@ export function trustedActor(request,config){
   if(['x-planhub-key','x-planhub-user','host'].some(name=>names.filter(n=>n===name).length>1))return null;
   return user;
 }
-export function containerSpec(id,binding,config,{runtime='/runtime',payload='/app/release/payload',python='/usr/local/bin/python',pathApi=path.posix}={}){
+export function containerSpec(id,binding,config,{runtime='/runtime',payload='/app/release/payload',python='/usr/local/bin/python',pathApi=path.posix,vehicleBinding}={}){
   const localPath=value=>{privatePath('/runtime',value);return pathApi.join(runtime,...value.split('/'));};
   const shared=localPath(config.sharedDirectory);
-  let data=pathApi.join(localPath(config.databaseDirectory??'data'),id);
-  if(!config.databaseDirectory&&Object.hasOwn(binding,'sharedDataDirectory')){
-    privatePath('/runtime',binding.sharedDataDirectory);
-    data=pathApi.join(shared,...binding.sharedDataDirectory.split('/'));
+  function dataPath(appId,appBinding){
+    if(!config.databaseDirectory&&appBinding?.sharedDataDirectory!==undefined){
+      privatePath('/runtime',appBinding.sharedDataDirectory);
+      return pathApi.join(shared,...appBinding.sharedDataDirectory.split('/'));
+    }
+    return pathApi.join(localPath(config.databaseDirectory??'data'),appId);
   }
-  const tokens={payload,data,shared,runtime,host:'127.0.0.1',port:String(binding.port),basePath:`/${id}/`,publicOrigin:config.publicOrigin,publicHost:new URL(config.publicOrigin).hostname};
+  const data=dataPath(id,binding);
+  const vehicleData=dataPath('vehicle-config',vehicleBinding);
+  const tokens={payload,data,shared,runtime,vehicleData,host:'127.0.0.1',port:String(binding.port),basePath:`/${id}/`,publicOrigin:config.publicOrigin,publicHost:new URL(config.publicOrigin).hostname};
   const args=(binding.arguments??[]).map(v=>expand(v,tokens));
   const env={...process.env,PYTHONDONTWRITEBYTECODE:'1',PYTHONIOENCODING:'utf-8',PYTHONUNBUFFERED:'1'};
   for(const key of Object.keys(env))if(/^(SOP_.*|ORDER_DASHBOARD_.*|DATA_QUICKLOOK_.*|SALES_FORECAST_.*|SHARED_DATA_ROOT|PLANHUB_DATA_ROOT|VEHICLE_CONFIG_.*|PYTHONPATH|PYTHONHOME|PLANHUB_PYTHON_APP_ROOT)$/.test(key))delete env[key];
@@ -115,7 +119,7 @@ export async function runContainer(id,{appRoot='/app',runtime='/runtime'}={}){
     const stop=()=>{server.close();server.closeAllConnections();};process.once('SIGTERM',stop);process.once('SIGINT',stop);
     return server;
   }
-  const spec=containerSpec(id,binding,config,{runtime,payload:release.payload});
+  const spec=containerSpec(id,binding,config,{runtime,payload:release.payload,vehicleBinding:bindings['vehicle-config']});
   await mkdir(spec.data,{recursive:true});
   if(id==='sop'){
     const rules=privatePath(runtime,config.sopSharedConfig);await access(rules);

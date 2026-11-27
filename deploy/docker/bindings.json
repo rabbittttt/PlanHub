@@ -34,7 +34,10 @@
       "--allowed-origin",
       "{publicOrigin}"
     ],
-    "environment": {},
+    "environment": {
+      "SHARED_DATA_ROOT": "{shared}",
+      "VEHICLE_CONFIG_CAMPAIGN_DB": "{vehicleData}/campaigns/campaigns.sqlite3"
+    },
     "stripPrefix": true,
     "healthExpected": {
       "status": "ok",
@@ -58,7 +61,8 @@
       "{basePath}"
     ],
     "environment": {
-      "SHARED_DATA_ROOT": "{shared}"
+      "SHARED_DATA_ROOT": "{shared}",
+      "VEHICLE_CONFIG_CAMPAIGN_DB": "{vehicleData}/campaigns/campaigns.sqlite3"
     },
     "stripPrefix": true,
     "healthExpected": {

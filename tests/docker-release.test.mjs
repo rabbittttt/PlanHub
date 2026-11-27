@@ -138,6 +138,15 @@ test('container contracts keep original loopback, public prefix, external paths 
   const sop=containerSpec('sop',bindings.sop,config);assert.equal(sop.env.SOP_LOCAL_RELEASE_SECRET,config.sopSecret);assert.equal(sop.env.SOP_LOG_DIR,'/runtime/logs/sop');
   const vehicle=containerSpec('vehicle-config',bindings['vehicle-config'],config);assert.ok(vehicle.args.includes('--require-proxy-identity'));assert.equal(vehicle.env.VEHICLE_CONFIG_PROXY_SECRET,config.vehicleSecret);
   assert.equal(vehicle.data,'/runtime/shared/车型配置');
+  for(const settings of [config,{...config,databaseDirectory:'custom/db'}]){
+    const vehicleBinding=bindings['vehicle-config'];
+    const expected=containerSpec('vehicle-config',vehicleBinding,settings).data;
+    for(const appId of ['orderiq','forecast']){
+      const consumer=containerSpec(appId,bindings[appId],settings,{vehicleBinding});
+      assert.equal(consumer.env.VEHICLE_CONFIG_CAMPAIGN_DB,expected+'/campaigns/campaigns.sqlite3');
+      assert.equal(consumer.env.SHARED_DATA_ROOT,consumer.shared);
+    }
+  }
   assert.equal(vehicle.args[vehicle.args.indexOf('--data-dir')+1],vehicle.data);
   const custom=containerSpec('vehicle-config',bindings['vehicle-config'],{...config,sharedDirectory:'business/shared'});
   assert.equal(custom.data,'/runtime/business/shared/车型配置');

@@ -202,7 +202,7 @@ export async function runNativePreview(plan,{startService=spawnService,serviceTi
         const listener=createServer({root:plan.runtimeRoot,portalRoot:release.payload,applications:{}});
         staticServers.push(listener);await allocation.reservations.get(id).release();await listen(listener,binding.port);portRecord.processes[id]=process.pid;continue;
       }
-      const spec=containerSpec(id,binding,plan.config,{runtime:plan.runtimeRoot,payload:release.payload,python:plan.python,pathApi:path});
+      const spec=containerSpec(id,binding,plan.config,{runtime:plan.runtimeRoot,payload:release.payload,python:plan.python,pathApi:path,vehicleBinding:plan.bindings['vehicle-config']});
       spec.env.PLANHUB_PYTHON_APP_ROOT=release.payload;
       delete spec.env.VIRTUAL_ENV;
       const nodeDirectory=path.join(plan.runtimeDirectory,'node');
@@ -326,7 +326,7 @@ export async function switchNativePreview(packageRoot,runtimeRoot,user,launchOpt
   for(const [id,binding] of Object.entries(plan.bindings)){
     if(binding.type!=='service')continue;
     const release=plan.releases[id];
-    const spec=containerSpec(id,binding,config,{runtime:runtimeRoot,payload:release.payload,python:plan.python,pathApi:path});
+    const spec=containerSpec(id,binding,config,{runtime:runtimeRoot,payload:release.payload,python:plan.python,pathApi:path,vehicleBinding:plan.bindings['vehicle-config']});
     portablePythonArguments(spec.args,release);
     requirements.push(path.join(release.payload,'requirements.txt'));
   }
