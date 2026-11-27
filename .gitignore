@@ -47,3 +47,6 @@ update_script.bat
 
 # Machine-specific release inputs.
 deploy/app-releases.local.json
+
+# Local audit reports and asset snapshots.
+/audit/
