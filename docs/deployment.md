@@ -2,6 +2,8 @@
 
 你在 A 打包，在 B 本机验证。试运行通过后，由部署同事在 B 安装 Docker、启动正式服务并接入部门内网。前三步用不到 Docker，首次完整包自带 B 试运行所需的 Python 和 Node.js。
 
+首次交付一个新接入的应用时，由工作台维护者先核对[新应用的发布配置](#新应用首次交付前的配置)。已配置好的应用从第一步开始。
+
 ## 第一步 在 A 准备源码
 
 1. 在 A 打开能看到 `发布应用.bat` 的门户源码目录。更新门户和所有已启用的子应用，确认 A 上的 Windows 64 位 Node.js、Python 构建环境和各应用依赖可用。打开下面两个 HTML，核对各自显示的业务内容。正式包只用内网业务页面，接入样例仅供测试。
@@ -115,3 +117,15 @@ Windows 试运行直接读取 B 的 `planhub-runtime/`。正式部署时，Docke
 ### 从共享目录核对 B 的版本
 
 A 的交付包在 `delivery.json` 的 `versions` 列出应用版本。B 使用正式 Docker 时，打开 `planhub-runtime/deployment-state.json` 核对 `versions` 和 `updatedAt`；B 使用默认 Windows 试运行时，看同目录 `native-direct.json` 的 `versions` 和 `confirmedAt`。这些值记录 B 上最近一次成功启动时确认的版本。旧包或尚未完成启动时可能没有版本记录。查看当前进程健康状态仍需访问 B 的服务。共享这些状态文件时只授予读取权限，含密钥的运行配置仅供部署机使用。
+
+## 新应用首次交付前的配置
+
+工作台维护者在 A 按已登记的应用 ID 补齐下表。可对照静态应用 `boutique` 和动态应用 `quicklook`。发布工具收集注册表中所有 `enabled` 的应用，包含状态仍为 `pending` 的项。
+
+| 文件 | 首次交付时核对什么 |
+|---|---|
+| `integration/ports.json` | 核对 `applications.<id>` 已登记。静态服务也需要独立端口，动态服务沿用原项目默认端口。 |
+| `deploy/docker/bindings.json` | 静态页填 `{"type":"static","stripPrefix":true,"healthPath":"/"}`。动态页填 `type: service`、程序参数 `arguments`、环境变量 `environment`、`stripPrefix`、`healthPath` 和 `healthExpected`。用 `{payload}`、`{port}`、`{shared}`、`{data}` 引用程序、端口、共享目录和本应用数据目录。 |
+| `deploy/publish.example.json` | 静态页可填 `{"kind":"static"}`，工具会按已登记的公开文件清单收集。标准 Python 服务用 `kind: release`，填 `sourceRoot`、`build.command` 和 `build.args`，把 `{version}` 和 `{output}` 传给原项目的构建脚本。A 已有 `config.local/publish.json` 时，把新动态应用的条目同步到该文件，保留其他本机设置。 |
+
+标准动态包的顶层为 `app-release.json` 和 `payload/`，后者含程序入口、同版前端和 `requirements.txt`。构建需兼容 Windows 本机试运行及 Linux 容器中的 Python 3.12。既有订单分析使用 `kind: payload`，SOP 使用 `kind: sop`。
