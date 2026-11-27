@@ -10,15 +10,15 @@ from playwright.sync_api import Error, expect, sync_playwright
 
 ROOT = Path(__file__).resolve().parents[1]
 # Only the element lookup is application-specific. Each check uses rendered values.
-ANALYTICS = (".brand strong", "#moduleNav", "#moduleSelect")
+ANALYTICS = (".brand strong", "#moduleNav")
 CONTROLS = {
     "orderiq": ANALYTICS,
     "forecast": ANALYTICS,
     "leads": ANALYTICS,
     "boutique": ANALYTICS,
-    "sop": (".app-brand strong", ".top-nav", None),
-    "quicklook": (":is(.workspace-header, .compact-header):has(#nav) .brand :is(span, strong)", "#nav", None),
-    "vehicle-config": (".product-title", "header nav", "#mobile-tab"),
+    "sop": (".app-brand strong", ".top-nav"),
+    "quicklook": (":is(.workspace-header, .compact-header):has(#nav) .brand :is(span, strong)", "#nav"),
+    "vehicle-config": (".product-title", "header nav"),
 }
 CANVAS = "rgb(244, 246, 249)"
 SELECTED = "rgb(237, 242, 255)"
@@ -48,18 +48,18 @@ def check_keyboard_focus(page, control):
 
 
 def check_app(page, app_id):
-    title, navigation, picker = CONTROLS[app_id]
+    title, navigation = CONTROLS[app_id]
     page.locator(f'#app-nav [data-app="{app_id}"]').click()
     doc = page.frame_locator(f'iframe[data-app="{app_id}"]:visible')
     heading = doc.locator(title)
     expect(heading).to_be_visible(timeout=20000)
     nav = doc.locator(navigation)
     active = nav.locator('[aria-current="page"]')
-    # Wait for the application to initialize its selection, including hidden desktop tabs.
+    # Wait for the application to initialize its selection, before testing each navigation state.
     expect(active).to_have_count(1)
     check_page(doc, heading)
     checked = set()
-    check_tabs(page, doc, nav, active, picker, checked)
+    check_tabs(page, nav, active, checked)
     if app_id == "orderiq":
         # Some order reports only exist for individual vehicles.
         subjects = doc.locator("#subjectSelect")
@@ -71,29 +71,14 @@ def check_app(page, app_id):
                 continue
             subjects.select_option(value)
             frame.wait_for_url(lambda url: parse_qs(urlsplit(url).query).get("subject") == [value])
-            check_tabs(page, doc, nav, active, picker, checked)
+            check_tabs(page, nav, active, checked)
     return len(checked)
 
 
-def check_tabs(page, doc, nav, active, picker, checked):
-    if picker and doc.locator(picker).is_visible():
-        select = doc.locator(picker)
-        expect(select).to_have_css("font-weight", "400")
-        expect(select).to_be_in_viewport(ratio=0.99)
-        check_keyboard_focus(page, select)
-        options = select.locator("option:enabled").evaluate_all(
-            "options => options.map(o => [o.value, o.label.trim()])"
-        )
-        if not options:
-            raise AssertionError("模块选择框没有可用选项")
-        for value, label in options:
-            if label in checked:
-                continue
-            select.select_option(value)
-            expect(active).to_have_text(label)
-            checked.add(label)
-        return
-
+def check_tabs(page, nav, active, checked):
+    expect(nav).to_be_visible()
+    expect(nav).to_have_css("column-gap", "2px")
+    expect(nav).to_have_css("scrollbar-width", "none")
     buttons = nav.locator('button:enabled:visible')
     count = buttons.count()
     if not count:
@@ -104,20 +89,51 @@ def check_tabs(page, doc, nav, active, picker, checked):
         if label in checked:
             continue
         try:
-            expect(button).to_have_css("font-weight", "400")
-            button.hover()
-            expect(button).to_have_css("font-weight", "400")
+            # Move away before sampling the default state after scrolling or switching tabs.
+            page.mouse.move(0, 0)
+            button.scroll_into_view_if_needed()
+            expect(button).to_have_css("height", "56px")
+            expect(button).to_have_css("min-height", "56px")
+            expect(button).to_have_css("padding-left", "16px")
+            expect(button).to_have_css("padding-right", "16px")
+            expect(button).to_have_css("column-gap", "7px")
+            expect(button).to_have_css("font-size", "14px")
+            expect(button).to_have_css("white-space", "nowrap")
+            expect(button).to_have_css("border-radius", "0px")
+            expect(button).to_have_css("border-bottom-style", "solid")
+            # The browser snaps a 2.5 CSS pixel border to a whole device pixel.
+            border = button.evaluate("""el => {
+                const scale = devicePixelRatio;
+                return parseFloat(getComputedStyle(el).borderBottomWidth) === Math.floor(2.5 * scale) / scale;
+            }""")
+            if not border:
+                raise AssertionError("页签底边应为 2.5 CSS 像素")
+            icon = button.locator("svg").first
+            if button.get_attribute("aria-current") != "page":
+                expect(button).to_have_css("font-weight", "400")
+                expect(button).to_have_css("color", "rgb(96, 103, 117)")
+                expect(button).to_have_css("background-color", "rgba(0, 0, 0, 0)")
+                if icon.count():
+                    expect(icon).to_have_css("opacity", "0.8")
+                button.hover()
+                expect(button).to_have_css("background-color", SELECTED)
+                expect(button).to_have_css("color", ACCENT)
+                expect(button).to_have_css("font-weight", "400")
+                expect(button).to_have_css("border-bottom-color", "rgba(0, 0, 0, 0)")
+            # Test the focus ring before navigation moves focus into the new view.
+            check_keyboard_focus(page, button)
             button.click()
             expect(button).to_have_attribute("aria-current", "page")
             expect(active).to_have_count(1)
+            expect(button).to_have_css("height", "56px")
             expect(button).to_have_css("background-color", SELECTED)
             expect(button).to_have_css("color", ACCENT)
-            expect(button).to_have_css("font-weight", "400")
-            expect(button).to_have_css("font-size", "14px")
+            expect(button).to_have_css("font-weight", "700")
+            expect(button).to_have_css("border-bottom-color", "rgb(40, 89, 245)")
+            expect(button).to_have_css("box-shadow", "none")
+            if icon.count():
+                expect(icon).to_have_css("opacity", "1")
             expect(button).to_be_in_viewport(ratio=0.99)
-            if button.bounding_box()["height"] < 44:
-                raise AssertionError("导航点击区域低于 44px")
-            check_keyboard_focus(page, button)
             checked.add(label)
         except (AssertionError, Error) as exc:
             raise AssertionError(f"{label}: {exc}") from exc
