@@ -29,7 +29,7 @@
 
 `npm run test:py` 调用 PATH 中的 `python`。从门户根目录直接运行 `..\.venv\Scripts\python.exe -B -m unittest discover -s tests`，即可使用工作区共享环境。浏览器回归需要 Playwright 和 Edge，请核对 unittest 输出中的跳过项。
 
-源码目录需要 Node.js 20+ 和各原项目的 Python 环境；本机设置放在 `config.local/`。开发启动成功 3 秒后窗口关闭，后台继续运行。不要让两套服务同时写同一份业务数据。
+在新电脑上使用下载的源码时，先将 ZIP 全部解压。开发入口需要 Node.js 20+，各业务网页还需要对应的子项目及其运行环境。本机设置放在 `config.local/`。双击 `启动本地门户.cmd` 后，看到启动成功即可在浏览器打开 `http://127.0.0.1:4173/`；窗口在确认服务正常 3 秒后关闭。如果窗口一闪而过且网址打不开，在解压目录的地址栏输入 `cmd` 并回车，再运行 `node scripts\start-background.mjs` 查看报错。不要让两套服务同时写同一份业务数据。
 
 | 应用 ID | 默认源码位置 | 公共前缀 |
 |---|---|---|
