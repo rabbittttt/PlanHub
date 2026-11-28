@@ -89,8 +89,9 @@ class StopStandaloneTest(unittest.TestCase):
         root = base / "临时 计划工作台"
         entry = base / "测试 应用" / "standalone_fixture.py"
         foreign = base / "另一份源码" / entry.name
+        dormant = base / "未启动项目" / entry.name
         wrapper = root / "scripts" / "start-background.mjs"
-        for script in (entry, foreign):
+        for script in (entry, foreign, dormant):
             script.parent.mkdir(parents=True)
             script.write_text(SERVER, encoding="utf-8")
         wrapper.parent.mkdir(parents=True)
@@ -107,16 +108,23 @@ class StopStandaloneTest(unittest.TestCase):
         managed, managed_port = self.start_fixture(base, entry, "portal-owned", wrapper)
         write_json(root / "portal/config/apps.json", {
             "platform": {"name": "测试工作台"},
-            "groups": [{"id": "fixture-group", "name": "测试", "apps": [{
-                "id": "fixture", "enabled": True, "status": "ready", "name": "测试网页", "url": "/fixture/",
-            }]}],
+            "groups": [{"id": "fixture-group", "name": "测试", "apps": [
+                {"id": "fixture", "name": "测试网页", "enabled": True, "status": "ready", "url": "/fixture/"},
+                {"id": "dormant", "name": "未启动网页", "enabled": True, "status": "ready", "url": "/dormant/"},
+                {"id": "report", "name": "静态报表", "enabled": True, "status": "ready", "url": "/report/"},
+            ]}],
         })
-        write_json(root / "integration/apps.json", {"applications": {"fixture": {
+        fixture_settings = {
             "type": "proxy", "target": "http://127.0.0.1:{port}", "stripPrefix": True, "rootRoutes": [],
             "healthPath": "/health", "healthKeys": ["app"], "healthExpected": {"app": "fixture"},
             "standalone": {"launchers": [launcher.name]},
             "start": {"cwd": "../测试 应用", "command": sys.executable, "args": ["-B", entry.name]},
-        }}})
+        }
+        write_json(root / "integration/apps.json", {"applications": {
+            "fixture": fixture_settings,
+            "dormant": {**fixture_settings, "start": {**fixture_settings["start"], "cwd": "../未启动项目"}},
+            "report": {"type": "static", "root": "../静态报表", "entry": "index.html", "publicPaths": ["index.html"]},
+        }})
         # The registered port is deliberately occupied by the unrelated copy.
         write_json(root / "integration/ports.json", {
             "schemaVersion": 1, "portal": 1, "applications": {"fixture": foreign_port},
@@ -140,14 +148,20 @@ class StopStandaloneTest(unittest.TestCase):
         pids = [health(port) for port in ports]
         preview = run_stop("-ListOnly")
         self.assertEqual([health(port) for port in ports], pids)
-        for pid in pids[:2]:
-            self.assertRegex(preview, rf"\bPID {pid}\b")
-        for pid in pids[2:]:
-            self.assertNotRegex(preview, rf"\bPID {pid}\b")
-        run_stop()
+        stopped = run_stop()
         target.wait(timeout=10)
         relative.wait(timeout=10)
-        run_stop()
+        repeat = run_stop()
+        for output in (preview, stopped, repeat):
+            self.assertIn("未启动网页：未发现可确认的独立监听进程。", output)
+            self.assertIn("静态报表：静态入口，无独立应用服务。", output)
+            self.assertRegex(output, rf"门户托管：测试网页[^\n]*\bPID {pids[3]}\b[^\n]*\b{managed_port}\b")
+            self.assertNotRegex(output, rf"\bPID {pids[2]}\b")
+            self.assertNotRegex(output, rf"(可停止|已停止)：[^\n]*\bPID {pids[3]}\b")
+        for action, output in (("可停止", preview), ("已停止", stopped)):
+            for pid, port in zip(pids[:2], ports[:2]):
+                self.assertRegex(output, rf"{action}：测试网页[^\n]*\bPID {pid}\b[^\n]*\b{port}\b")
+        self.assertNotIn("已停止：测试网页", repeat)
         self.assertIsNone(other.poll())
         self.assertIsNone(managed.poll())
         self.assertEqual([health(foreign_port), health(managed_port)], pids[2:])
